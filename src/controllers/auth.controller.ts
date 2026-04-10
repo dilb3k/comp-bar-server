@@ -4,7 +4,7 @@ import { authService } from "../services/auth.service";
 export const authController = {
   async register(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await authService.register(req.body);
+      const result = await authService.register(req.body, req.auth);
       res.status(201).json({
         success: true,
         data: result

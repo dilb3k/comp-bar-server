@@ -5,15 +5,14 @@ import { UserModel } from "../models/user.model";
 import { WorkspaceModel } from "../models/workspace.model";
 import { UserRole } from "../types/domain";
 import { HttpError } from "../utils/http-error";
-import { signAccessToken } from "../utils/jwt";
+import { AuthPayload, signAccessToken } from "../utils/jwt";
 
 type RegisterInput = {
-  workspaceName?: string;
   workspaceId?: string;
   name: string;
   email: string;
   password: string;
-  role?: UserRole;
+  role?: "staff";
 };
 
 type LoginInput = {
@@ -22,14 +21,31 @@ type LoginInput = {
 };
 
 export const authService = {
-  async register(input: RegisterInput) {
+  async register(input: RegisterInput, actor?: AuthPayload) {
+    if (!actor) {
+      throw new HttpError(401, "Unauthorized");
+    }
+
+    if (actor.role !== "admin") {
+      throw new HttpError(403, "Forbidden");
+    }
+
+    const workspaceId = input.workspaceId ?? actor.workspaceId;
+    if (workspaceId !== actor.workspaceId) {
+      throw new HttpError(403, "You can only create staff for your own workspace");
+    }
+
+    const role: UserRole = input.role ?? "staff";
+    if (role !== "staff") {
+      throw new HttpError(400, "Only staff accounts can be created from this endpoint");
+    }
+
     const existingUser = await UserModel.findOne({ email: input.email.toLowerCase() }).lean();
     if (existingUser) {
       throw new HttpError(409, "Email is already registered");
     }
 
     const passwordHash = await bcrypt.hash(input.password, 10);
-    const role: UserRole = input.workspaceName ? "admin" : input.role ?? "staff";
     const session = await mongoose.startSession();
 
     let output:
@@ -41,16 +57,7 @@ export const authService = {
 
     try {
       await session.withTransaction(async () => {
-        const workspace = input.workspaceId
-          ? await WorkspaceModel.findOne({ id: input.workspaceId }).session(session)
-          : await WorkspaceModel.create(
-              [
-                {
-                  name: input.workspaceName
-                }
-              ],
-              { session }
-            ).then((rows) => rows[0]);
+        const workspace = await WorkspaceModel.findOne({ id: workspaceId }).session(session);
 
         if (!workspace) {
           throw new HttpError(404, "Workspace not found");
@@ -73,11 +80,15 @@ export const authService = {
           [
             {
               workspaceId: workspace.id,
-              actorId: user.id,
+              actorId: actor.userId,
               action: "USER_REGISTERED",
               entityType: "User",
               entityId: user.id,
-              meta: { email: user.email, role: user.role }
+              meta: {
+                email: user.email,
+                role: user.role,
+                createdBy: actor.userId
+              }
             }
           ],
           { session }
@@ -106,14 +117,7 @@ export const authService = {
       throw new HttpError(500, "Failed to register user");
     }
 
-    const token = signAccessToken({
-      userId: output.user.id,
-      workspaceId: output.workspace.id,
-      role: output.user.role
-    });
-
     return {
-      token,
       user: output.user,
       workspace: output.workspace
     };
