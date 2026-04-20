@@ -1,92 +1,51 @@
-# Postman Examples
+# Sample cURL
 
-Base URL: `http://localhost:4000/api`
+## Health
 
-## 1) Register Admin + Create Workspace
-
-`POST /auth/register`
-
-```json
-{
-  "workspaceName": "Cyber Club A",
-  "name": "Owner",
-  "email": "owner@club.com",
-  "password": "secret123"
-}
+```bash
+curl http://localhost:4000/api/health
 ```
 
-## 2) Login
+## Create product
 
-`POST /auth/login`
-
-```json
-{
-  "email": "owner@club.com",
-  "password": "secret123"
-}
+```bash
+curl -X POST http://localhost:4000/api/products \
+  -H "Content-Type: application/json" \
+  -d "{\"deviceId\":\"expo-device-1\",\"name\":\"Pepsi\",\"quantity\":30,\"buyPrice\":9000,\"sellPrice\":14000}"
 ```
 
-Use `data.token` as `Bearer <token>`.
+## Search products
 
-## 3) Create Product
-
-`POST /products`
-
-Headers:
-- `Authorization: Bearer <token>`
-
-```json
-{
-  "name": "Energy Drink",
-  "costPrice": 0.6,
-  "sellPrice": 1.2,
-  "initialStock": 100
-}
+```bash
+curl "http://localhost:4000/api/products?search=pep"
 ```
 
-## 4) Push Offline Queue
+## Inventory list
 
-`POST /sync`
-
-Headers:
-- `Authorization: Bearer <token>`
-
-```json
-{
-  "deviceId": "device-01",
-  "actions": [
-    {
-      "type": "CREATE_SALE",
-      "data": {
-        "id": "3017c9a4-57d2-4f70-a2ae-e9fbb4b778c5",
-        "productId": "REPLACE_PRODUCT_ID",
-        "quantity": 2,
-        "createdAt": "2026-04-03T08:30:00.000Z"
-      }
-    }
-  ]
-}
+```bash
+curl "http://localhost:4000/api/inventory?date=2026-04-20"
 ```
 
-Duplicate `id` is ignored (idempotent).
+## Update current quantity
 
-## 5) Pull Sync
+```bash
+curl -X PUT http://localhost:4000/api/inventory/bulk-current \
+  -H "Content-Type: application/json" \
+  -d "{\"deviceId\":\"expo-device-1\",\"date\":\"2026-04-20\",\"items\":[{\"productId\":\"prd_demo\",\"currentQuantity\":10}]}"
+```
 
-`GET /sync?lastSync=2026-04-03T00:00:00.000Z&page=1&pageSize=100`
+## Upsert daily snapshot
 
-Headers:
-- `Authorization: Bearer <token>`
+```bash
+curl -X POST http://localhost:4000/api/snapshots/daily \
+  -H "Content-Type: application/json" \
+  -d "{\"deviceId\":\"expo-device-1\",\"date\":\"2026-04-20\"}"
+```
 
-## 6) Summary Stats
+## Sync
 
-`GET /stats/summary?dateFrom=2026-04-01T00:00:00.000Z&dateTo=2026-04-30T23:59:59.999Z`
-
-Headers:
-- `Authorization: Bearer <token>`
-
-## 7) Product Stats
-
-`GET /stats/products?dateFrom=2026-04-01T00:00:00.000Z&dateTo=2026-04-30T23:59:59.999Z`
-
-Headers:
-- `Authorization: Bearer <token>`
+```bash
+curl -X POST http://localhost:4000/api/sync \
+  -H "Content-Type: application/json" \
+  -d "{\"products\":[],\"inventory\":[],\"snapshots\":[],\"lastSyncAt\":\"2026-04-20T10:00:00.000Z\"}"
+```
