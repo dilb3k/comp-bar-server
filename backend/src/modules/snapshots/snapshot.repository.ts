@@ -1,29 +1,35 @@
 import { DailySnapshotModel } from "./snapshot.model";
 
 export class SnapshotRepository {
-  async findDaily(date: string) {
-    return DailySnapshotModel.findOne({ date, isDeleted: false }).sort({ updatedAt: -1 });
+  async findDaily(ownerAdminId: string, date: string) {
+    return DailySnapshotModel.findOne({ ownerAdminId, date, isDeleted: false }).sort({ updatedAt: -1 });
   }
 
-  async findRange(from: string, to: string) {
+  async findRange(ownerAdminId: string, from: string, to: string) {
     return DailySnapshotModel.find({
+      ownerAdminId,
       date: { $gte: from, $lte: to },
       isDeleted: false
     }).sort({ date: 1, updatedAt: 1 });
   }
 
-  async findUpdatedSince(lastSyncAt?: string) {
+  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { updatedAt: { $gt: new Date(lastSyncAt) } }
-      : {};
+      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      : { ownerAdminId };
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
   }
 
-  async upsertByDate(date: string, deviceId: string, payload: Record<string, unknown>) {
+  async upsertByDate(
+    ownerAdminId: string,
+    date: string,
+    deviceId: string,
+    payload: Record<string, unknown>
+  ) {
     return DailySnapshotModel.findOneAndUpdate(
-      { date, deviceId },
-      payload,
+      { ownerAdminId, date, deviceId },
+      { ownerAdminId, ...payload },
       {
         new: true,
         upsert: true,
@@ -34,12 +40,13 @@ export class SnapshotRepository {
   }
 
   async upsertLastWriteWins(
+    ownerAdminId: string,
     payload: Record<string, unknown> & { localId: string; updatedAt: Date | string }
   ) {
-    const existing = await DailySnapshotModel.findOne({ localId: payload.localId });
+    const existing = await DailySnapshotModel.findOne({ ownerAdminId, localId: payload.localId });
 
     if (!existing) {
-      return DailySnapshotModel.create(payload);
+      return DailySnapshotModel.create({ ownerAdminId, ...payload });
     }
 
     if (new Date(existing.updatedAt).getTime() > new Date(payload.updatedAt).getTime()) {

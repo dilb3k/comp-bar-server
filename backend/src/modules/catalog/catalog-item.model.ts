@@ -12,10 +12,15 @@ const catalogItemSchema = new Schema(
       enum: ["product", "inventory"],
       index: true
     },
+    ownerAdminId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true
+    },
     localId: {
       type: String,
       required: true,
-      unique: true,
       trim: true
     },
     deviceId: {
@@ -81,6 +86,7 @@ const catalogItemSchema = new Schema(
         ret.id = ret._id.toString();
         delete ret._id;
         delete ret.entityType;
+        delete ret.ownerAdminId;
         delete ret.deletedAt;
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
@@ -130,16 +136,17 @@ catalogItemSchema.pre("validate", function validateCatalogItem(next) {
   next();
 });
 
-catalogItemSchema.index({ entityType: 1, updatedAt: -1 });
+catalogItemSchema.index({ ownerAdminId: 1, entityType: 1, isDeleted: 1, updatedAt: -1 });
+catalogItemSchema.index({ ownerAdminId: 1, entityType: 1, localId: 1 }, { unique: true });
 catalogItemSchema.index(
-  { productId: 1, date: 1 },
+  { ownerAdminId: 1, productId: 1, date: 1 },
   {
     unique: true,
     partialFilterExpression: { entityType: "inventory" }
   }
 );
 catalogItemSchema.index(
-  { name: "text" },
+  { ownerAdminId: 1, name: "text" },
   {
     partialFilterExpression: { entityType: "product" }
   }

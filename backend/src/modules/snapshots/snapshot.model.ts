@@ -1,4 +1,4 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, models } from "mongoose";
 
 function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
@@ -44,10 +44,15 @@ const snapshotItemSchema = new Schema(
 
 const dailySnapshotSchema = new Schema(
   {
+    ownerAdminId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true
+    },
     localId: {
       type: String,
       required: true,
-      unique: true,
       trim: true
     },
     deviceId: {
@@ -91,6 +96,7 @@ const dailySnapshotSchema = new Schema(
       transform(_doc, ret: any) {
         ret.id = ret._id.toString();
         delete ret._id;
+        delete ret.ownerAdminId;
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
         return ret;
@@ -99,7 +105,9 @@ const dailySnapshotSchema = new Schema(
   }
 );
 
-dailySnapshotSchema.index({ deviceId: 1, date: 1 }, { unique: true });
-dailySnapshotSchema.index({ updatedAt: -1 });
+dailySnapshotSchema.index({ ownerAdminId: 1, localId: 1 }, { unique: true });
+dailySnapshotSchema.index({ ownerAdminId: 1, deviceId: 1, date: 1 }, { unique: true });
+dailySnapshotSchema.index({ ownerAdminId: 1, date: 1, isDeleted: 1, updatedAt: -1 });
 
-export const DailySnapshotModel = model("DailySnapshot", dailySnapshotSchema);
+export const DailySnapshotModel =
+  models.DailySnapshot ?? model("DailySnapshot", dailySnapshotSchema);

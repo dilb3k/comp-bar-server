@@ -1,9 +1,16 @@
 import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
+import { authService } from "./modules/auth/auth.service";
 import { createApp } from "./app";
 
 async function bootstrap() {
   await connectDatabase();
+  const seededSuperAdmin = await authService.ensureSuperAdminSeeded();
+
+  if (seededSuperAdmin) {
+    await authService.migrateLegacyOwnership(seededSuperAdmin._id.toString());
+  }
+
   const app = createApp();
 
   app.listen(env.PORT, () => {

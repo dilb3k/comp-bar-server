@@ -3,6 +3,7 @@ import type { Product } from "../../types/domain";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
 import { getBusinessDateFromTimestamp, getCurrentBusinessDate } from "../../utils/business-day";
+import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
 import { productRepository } from "./product.repository";
@@ -16,12 +17,12 @@ type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt" | "isDe
 type UpdateProductInput = Partial<CreateProductInput>;
 
 export class ProductService {
-  async getAll(search?: string) {
-    return productRepository.findActive(search);
+  async getAll(actor: AuthUser, search?: string) {
+    return productRepository.findActive(actor.userId, search);
   }
 
-  async getByIdentifier(identifier: string) {
-    const product = await productRepository.findByIdentifier(identifier);
+  async getByIdentifier(actor: AuthUser, identifier: string) {
+    const product = await productRepository.findByIdentifier(actor.userId, identifier);
 
     if (!product) {
       throw new AppError("Product not found", 404);
@@ -30,9 +31,10 @@ export class ProductService {
     return product;
   }
 
-  async create(payload: CreateProductInput) {
+  async create(actor: AuthUser, payload: CreateProductInput) {
     const timestamp = payload.createdAt ? new Date(payload.createdAt) : new Date();
     const product = await productRepository.create({
+      ownerAdminId: actor.userId,
       localId: payload.localId ?? createLocalId("prd", payload.deviceId),
       deviceId: payload.deviceId,
       name: payload.name,
@@ -47,7 +49,7 @@ export class ProductService {
 
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
 
-    await inventoryRepository.upsertByProductAndDate((product as any).localId, today, {
+    await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
       localId: createLocalId("inv", `${(product as any).localId}_${today}`),
       deviceId: payload.deviceId,
       productId: (product as any).localId,
@@ -63,8 +65,8 @@ export class ProductService {
     return product;
   }
 
-  async update(identifier: string, payload: UpdateProductInput) {
-    const product = await this.getByIdentifier(identifier);
+  async update(actor: AuthUser, identifier: string, payload: UpdateProductInput) {
+    const product = await this.getByIdentifier(actor, identifier);
 
     if (product.isDeleted) {
       throw new AppError("Deleted product cannot be updated", 409);
@@ -79,7 +81,7 @@ export class ProductService {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
     }
 
-    const updatedProduct = await productRepository.updateById((product as any)._id.toString(), {
+    const updatedProduct = await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
       deviceId: payload.deviceId ?? (product as any).deviceId,
       name: payload.name ?? (product as any).name,
       quantity: nextQuantity,
@@ -90,7 +92,7 @@ export class ProductService {
     });
 
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
-    const inventoryEntry = await inventoryRepository.findByProductAndDate((product as any).localId, today);
+    const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today);
 
     if (inventoryEntry) {
       const adjusted = getAdjustedInventoryQuantities(
@@ -99,7 +101,7 @@ export class ProductService {
         nextQuantity
       );
 
-      await inventoryRepository.upsertByProductAndDate((product as any).localId, today, {
+      await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
         localId: (inventoryEntry as any).localId,
         deviceId: payload.deviceId ?? (product as any).deviceId,
         productId: (product as any).localId,
@@ -112,7 +114,7 @@ export class ProductService {
         updatedAt
       });
     } else {
-      await inventoryRepository.upsertByProductAndDate((product as any).localId, today, {
+      await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
         localId: createLocalId("inv", `${(product as any).localId}_${today}`),
         deviceId: payload.deviceId ?? (product as any).deviceId,
         productId: (product as any).localId,
@@ -129,11 +131,11 @@ export class ProductService {
     return updatedProduct;
   }
 
-  async remove(identifier: string) {
-    const product = await this.getByIdentifier(identifier);
+  async remove(actor: AuthUser, identifier: string) {
+    const product = await this.getByIdentifier(actor, identifier);
     const now = new Date();
 
-    const deletedProduct = await productRepository.updateById((product as any)._id.toString(), {
+    const deletedProduct = await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
       isDeleted: true,
       deletedAt: now,
       updatedAt: now

@@ -1,3 +1,4 @@
+import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
@@ -10,14 +11,14 @@ type SyncInput = {
 };
 
 export class SyncService {
-  async sync(payload: SyncInput) {
+  async sync(actor: AuthUser, payload: SyncInput) {
     const products = payload.products ?? [];
     const inventory = payload.inventory ?? [];
     const snapshots = payload.snapshots ?? [];
 
     await Promise.all(
       products.map((item) =>
-        productRepository.upsertLastWriteWins({
+        productRepository.upsertLastWriteWins(actor.userId, {
           ...item,
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt),
@@ -28,7 +29,7 @@ export class SyncService {
 
     await Promise.all(
       inventory.map((item) =>
-        inventoryRepository.upsertLastWriteWins({
+        inventoryRepository.upsertLastWriteWins(actor.userId, {
           ...item,
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt)
@@ -38,7 +39,7 @@ export class SyncService {
 
     await Promise.all(
       snapshots.map((item) =>
-        snapshotRepository.upsertLastWriteWins({
+        snapshotRepository.upsertLastWriteWins(actor.userId, {
           ...item,
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt)
@@ -47,9 +48,9 @@ export class SyncService {
     );
 
     const [serverProducts, serverInventory, serverSnapshots] = await Promise.all([
-      productRepository.findAllUpdatedSince(payload.lastSyncAt),
-      inventoryRepository.findUpdatedSince(payload.lastSyncAt),
-      snapshotRepository.findUpdatedSince(payload.lastSyncAt)
+      productRepository.findAllUpdatedSince(actor.userId, payload.lastSyncAt),
+      inventoryRepository.findUpdatedSince(actor.userId, payload.lastSyncAt),
+      snapshotRepository.findUpdatedSince(actor.userId, payload.lastSyncAt)
     ]);
 
     return {

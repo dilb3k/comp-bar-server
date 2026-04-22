@@ -9,6 +9,21 @@ export function errorMiddleware(
   res: Response,
   _next: NextFunction
 ) {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "number" &&
+    (error as { code: number }).code === 11000
+  ) {
+    return res.status(409).json({
+      success: false,
+      error: {
+        message: "Duplicate value",
+        details: null
+      }
+    });
+  }
+
   if (error instanceof AppError) {
     return res.status(error.statusCode).json({
       success: false,

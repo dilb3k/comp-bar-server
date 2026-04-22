@@ -7,6 +7,7 @@ import {
   isPastBusinessDate
 } from "../../utils/business-day";
 import { createLocalId } from "../../utils/ids";
+import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { deriveMissingInventoryEntry } from "../inventory/inventory.logic";
 import { productRepository } from "../products/product.repository";
@@ -35,22 +36,22 @@ type UpsertSnapshotInput = {
 };
 
 export class SnapshotService {
-  async getDaily(date: string) {
+  async getDaily(actor: AuthUser, date: string) {
     const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
     assertNotFutureDayKey(date, currentBusinessDate, "Future snapshot dates are not allowed");
 
-    return snapshotRepository.findDaily(date);
+    return snapshotRepository.findDaily(actor.userId, date);
   }
 
-  async getRange(from: string, to: string) {
+  async getRange(actor: AuthUser, from: string, to: string) {
     if (compareDayKeys(from, to) > 0) {
       throw new AppError("from must be less than or equal to to", 422);
     }
 
-    return snapshotRepository.findRange(from, to);
+    return snapshotRepository.findRange(actor.userId, from, to);
   }
 
-  async createOrUpdate(payload: UpsertSnapshotInput) {
+  async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
     const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
 
     assertNotFutureDayKey(payload.date, currentBusinessDate, "Future snapshot dates are not allowed");
@@ -60,8 +61,8 @@ export class SnapshotService {
     }
 
     const [entries, products] = await Promise.all([
-      inventoryRepository.findByDate(payload.date),
-      productRepository.findAllUpdatedSince()
+      inventoryRepository.findByDate(actor.userId, payload.date),
+      productRepository.findAllByOwner(actor.userId)
     ]);
 
     const visibleProducts = products.filter((product) =>
@@ -113,8 +114,8 @@ export class SnapshotService {
 
     const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
 
-    return snapshotRepository.upsertByDate(payload.date, payload.deviceId ?? "server", {
-      localId: payload.localId ?? createLocalId("snap", payload.date),
+    return snapshotRepository.upsertByDate(actor.userId, payload.date, payload.deviceId ?? "server", {
+      localId: payload.localId ?? createLocalId("snap", `${actor.userId}_${payload.date}`),
       deviceId: payload.deviceId ?? "server",
       date: payload.date,
       totalRevenue: payload.totalRevenue ?? totals.totalRevenue,

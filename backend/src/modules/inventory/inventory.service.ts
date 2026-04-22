@@ -7,6 +7,7 @@ import {
   isPastBusinessDate
 } from "../../utils/business-day";
 import { createLocalId } from "../../utils/ids";
+import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { productService } from "../products/product.service";
 import {
@@ -53,13 +54,13 @@ export class InventoryService {
     return { targetDate, currentBusinessDate };
   }
 
-  async getByDate(date: string) {
+  async getByDate(actor: AuthUser, date: string) {
     const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
     assertNotFutureDayKey(date, currentBusinessDate, "Future inventory dates are not allowed");
 
     const [entries, products] = await Promise.all([
-      inventoryRepository.findByDate(date),
-      productRepository.findAllUpdatedSince()
+      inventoryRepository.findByDate(actor.userId, date),
+      productRepository.findAllByOwner(actor.userId)
     ]);
 
     const visibleProducts = products.filter((product) =>
@@ -87,14 +88,14 @@ export class InventoryService {
     });
   }
 
-  async getRange(from: string, to: string) {
+  async getRange(actor: AuthUser, from: string, to: string) {
     if (compareDayKeys(from, to) > 0) {
       throw new AppError("from must be less than or equal to to", 422);
     }
 
     const [entries, products] = await Promise.all([
-      inventoryRepository.findRange(from, to),
-      productRepository.findAllUpdatedSince()
+      inventoryRepository.findRange(actor.userId, from, to),
+      productRepository.findAllByOwner(actor.userId)
     ]);
 
     const productMap = new Map(products.map((product) => [product.localId, product]));
@@ -106,13 +107,23 @@ export class InventoryService {
     }));
   }
 
-  async startDay(payload: StartDayInput) {
+  async startDay(actor: AuthUser, payload: StartDayInput) {
     const { targetDate } = this.getAllowedDate(payload.date);
     const now = new Date();
+    const products = await productRepository.findByIdentifiers(
+      actor.userId,
+      payload.items.map((item) => item.productId)
+    );
+    const productMap = new Map<string, any>();
+
+    for (const product of products) {
+      productMap.set(product.localId, product);
+      productMap.set(product._id.toString(), product);
+    }
 
     return Promise.all(
       payload.items.map(async (item) => {
-        const product = await productRepository.findByIdentifier(item.productId);
+        const product = productMap.get(item.productId);
 
         if (!product || product.isDeleted) {
           throw new AppError(`Active product not found for productId=${item.productId}`, 404);
@@ -125,7 +136,7 @@ export class InventoryService {
           throw new AppError("currentQuantity cannot be greater than startQuantity", 422);
         }
 
-        const entry = await inventoryRepository.upsertByProductAndDate((product as any).localId, targetDate, {
+        const entry = await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, targetDate, {
           localId: item.localId ?? createLocalId("inv", `${product.localId}_${targetDate}`),
           deviceId: payload.deviceId,
           productId: (product as any).localId,
@@ -138,7 +149,7 @@ export class InventoryService {
           updatedAt: item.updatedAt ? new Date(item.updatedAt) : now
         });
 
-        await productRepository.updateById((product as any)._id.toString(), {
+        await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
           quantity: currentQuantity,
           updatedAt: now
         });
@@ -146,25 +157,39 @@ export class InventoryService {
         return {
           ...entry?.toJSON(),
           sold: calculateSold(startQuantity, currentQuantity),
-          product: (await productRepository.findByIdentifier((product as any).localId))?.toJSON()
+          product: {
+            ...product.toJSON(),
+            quantity: currentQuantity,
+            updatedAt: now.toISOString()
+          }
         };
       })
     );
   }
 
-  async bulkUpdateCurrent(payload: BulkCurrentInput) {
+  async bulkUpdateCurrent(actor: AuthUser, payload: BulkCurrentInput) {
     const { targetDate } = this.getAllowedDate(payload.date);
     const now = new Date();
+    const products = await productRepository.findByIdentifiers(
+      actor.userId,
+      payload.items.map((item) => item.productId)
+    );
+    const productMap = new Map<string, any>();
+
+    for (const product of products) {
+      productMap.set(product.localId, product);
+      productMap.set(product._id.toString(), product);
+    }
 
     return Promise.all(
       payload.items.map(async (item) => {
-        const product = await productRepository.findByIdentifier(item.productId);
+        const product = productMap.get(item.productId);
 
         if (!product || product.isDeleted) {
           throw new AppError(`Active product not found for productId=${item.productId}`, 404);
         }
 
-        const existing = await inventoryRepository.findByProductAndDate((product as any).localId, targetDate);
+        const existing = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, targetDate);
 
         if (!existing) {
           throw new AppError(
@@ -177,7 +202,7 @@ export class InventoryService {
           throw new AppError("currentQuantity cannot be greater than startQuantity", 422);
         }
 
-        const updated = await inventoryRepository.upsertByProductAndDate((product as any).localId, targetDate, {
+        const updated = await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, targetDate, {
           localId: (existing as any).localId,
           deviceId: payload.deviceId,
           productId: (product as any).localId,
@@ -190,7 +215,7 @@ export class InventoryService {
           updatedAt: now
         });
 
-        await productRepository.updateById((product as any)._id.toString(), {
+        await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
           quantity: item.currentQuantity,
           updatedAt: now
         });
@@ -198,7 +223,11 @@ export class InventoryService {
         return {
           ...updated?.toJSON(),
           sold: calculateSold(Number((existing as any).startQuantity), item.currentQuantity),
-          product: (await productRepository.findByIdentifier((product as any).localId))?.toJSON()
+          product: {
+            ...product.toJSON(),
+            quantity: item.currentQuantity,
+            updatedAt: now.toISOString()
+          }
         };
       })
     );
