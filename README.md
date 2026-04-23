@@ -37,6 +37,8 @@ BUSINESS_DAY_START_HOUR=7
 
 Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulanishi kerak bo‘ladi. Android emulator uchun ko‘p holatda `10.0.2.2` ishlatiladi.
 
+`superAdmin` account `.env` dan olinmaydi. U MongoDB ichidagi `users` kolleksiyasida mavjud bo'lishi kerak.
+
 ## Asosiy biznes qoidalar
 
 - Business day `07:00` da boshlanadi

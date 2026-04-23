@@ -1,4 +1,3 @@
-import { env } from "../../config/env";
 import { CatalogItemModel } from "../catalog/catalog-item.model";
 import { DailySnapshotModel } from "../snapshots/snapshot.model";
 import { AppError } from "../../utils/app-error";
@@ -75,23 +74,8 @@ export class AuthService {
     return authRepository.listAdmins();
   }
 
-  async ensureSuperAdminSeeded() {
-    if (!env.SUPERADMIN_USERNAME || !env.SUPERADMIN_PASSWORD) {
-      return null;
-    }
-
-    const existing = await authRepository.findByUsername(env.SUPERADMIN_USERNAME);
-
-    if (existing) {
-      return existing;
-    }
-
-    return authRepository.createUser({
-      username: env.SUPERADMIN_USERNAME,
-      password: await hashPassword(env.SUPERADMIN_PASSWORD),
-      role: "superAdmin",
-      createdBy: null,
-    });
+  async findSuperAdmin() {
+    return authRepository.findSuperAdmin();
   }
 
   async migrateLegacyOwnership(defaultOwnerAdminId: string) {

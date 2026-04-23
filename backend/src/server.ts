@@ -5,10 +5,10 @@ import { createApp } from "./app";
 
 async function bootstrap() {
   await connectDatabase();
-  const seededSuperAdmin = await authService.ensureSuperAdminSeeded();
+  const superAdmin = await authService.findSuperAdmin();
 
-  if (seededSuperAdmin) {
-    await authService.migrateLegacyOwnership(seededSuperAdmin._id.toString());
+  if (superAdmin) {
+    await authService.migrateLegacyOwnership(superAdmin._id.toString());
   }
 
   const app = createApp();

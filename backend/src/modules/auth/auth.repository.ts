@@ -7,6 +7,12 @@ export class AuthRepository {
     return UserModel.findOne({ username: username.trim().toLowerCase() });
   }
 
+  async findSuperAdmin() {
+    return UserModel.findOne({ role: "superAdmin", isActive: true }).sort({
+      createdAt: 1,
+    });
+  }
+
   async findById(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       return null;
