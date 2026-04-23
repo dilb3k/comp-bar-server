@@ -4,7 +4,9 @@ import { UserModel } from "./user.model";
 
 export class AuthRepository {
   async findByUsername(username: string) {
-    return UserModel.findOne({ username: username.trim().toLowerCase() });
+    return UserModel.findOne({
+      username: username.trim().toLowerCase(),
+    }).select("+passwordHash");
   }
 
   async findById(id: string) {
@@ -25,12 +27,14 @@ export class AuthRepository {
       username: payload.username.trim().toLowerCase(),
       passwordHash: payload.passwordHash,
       role: payload.role,
-      createdBy: payload.createdBy ?? null
+      createdBy: payload.createdBy ?? null,
     });
   }
 
   async listAdmins() {
-    return UserModel.find({ role: "admin", isActive: true }).sort({ createdAt: -1 });
+    return UserModel.find({ role: "admin", isActive: true }).sort({
+      createdAt: -1,
+    });
   }
 }
 
