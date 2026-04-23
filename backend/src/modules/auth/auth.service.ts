@@ -14,7 +14,7 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    const isValidPassword = await verifyPassword(password, user.passwordHash);
+    const isValidPassword = await verifyPassword(password, user.password);
 
     if (!isValidPassword) {
       throw new AppError("Invalid username or password", 401);
@@ -61,9 +61,9 @@ export class AuthService {
 
     return authRepository.createUser({
       username: payload.username,
-      passwordHash: await hashPassword(payload.password),
+      password: await hashPassword(payload.password),
       role: "admin",
-      createdBy: actor.userId
+      createdBy: actor.userId,
     });
   }
 
@@ -88,9 +88,9 @@ export class AuthService {
 
     return authRepository.createUser({
       username: env.SUPERADMIN_USERNAME,
-      passwordHash: await hashPassword(env.SUPERADMIN_PASSWORD),
+      password: await hashPassword(env.SUPERADMIN_PASSWORD),
       role: "superAdmin",
-      createdBy: null
+      createdBy: null,
     });
   }
 

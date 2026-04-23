@@ -6,28 +6,28 @@ const userSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      lowercase: true
+      lowercase: true,
     },
-    passwordHash: {
+    password: {
       type: String,
-      required: true
+      required: true,
     },
     role: {
       type: String,
       required: true,
       enum: ["admin", "superAdmin"],
-      index: true
+      index: true,
     },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      default: null
+      default: null,
     },
     isActive: {
       type: Boolean,
       default: true,
-      index: true
-    }
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -36,11 +36,11 @@ const userSchema = new Schema(
       transform(_doc, ret: any) {
         ret.id = ret._id.toString();
         delete ret._id;
-        delete ret.passwordHash;
+        delete ret.password;
         return ret;
-      }
-    }
-  }
+      },
+    },
+  },
 );
 
 userSchema.index({ username: 1 }, { unique: true });
