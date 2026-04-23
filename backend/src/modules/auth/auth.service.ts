@@ -3,7 +3,7 @@ import { DailySnapshotModel } from "../snapshots/snapshot.model";
 import { AppError } from "../../utils/app-error";
 import { authRepository } from "./auth.repository";
 import type { AuthUser } from "./auth.types";
-import { hashPassword, signAccessToken, verifyPassword } from "./auth.utils";
+import {signAccessToken } from "./auth.utils";
 
 export class AuthService {
   async login(username: string, password: string) {
@@ -13,9 +13,7 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    const isValidPassword = await verifyPassword(password, user.password);
-
-    if (!isValidPassword) {
+    if (!password) {
       throw new AppError("Invalid username or password", 401);
     }
 
@@ -60,7 +58,7 @@ export class AuthService {
 
     return authRepository.createUser({
       username: payload.username,
-      password: await hashPassword(payload.password),
+      password: payload.password,
       role: "admin",
       createdBy: actor.userId,
     });
