@@ -53,6 +53,7 @@ const syncedSnapshotSchema = z.object({
 export const syncPayloadSchema = z.object({
   products: z.array(syncedProductSchema).optional(),
   inventory: z.array(syncedInventorySchema).optional(),
+  daily: z.array(syncedSnapshotSchema).optional(),
   snapshots: z.array(syncedSnapshotSchema).optional(),
   lastSyncAt: z.string().datetime().optional()
 });

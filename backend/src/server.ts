@@ -2,6 +2,7 @@ import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
 import { authService } from "./modules/auth/auth.service";
 import { createApp } from "./app";
+import { migrateLegacyProductRecords } from "./modules/products/product.migration";
 
 async function bootstrap() {
   await connectDatabase();
@@ -10,6 +11,8 @@ async function bootstrap() {
   if (superAdmin) {
     await authService.migrateLegacyOwnership(superAdmin._id.toString());
   }
+
+  await migrateLegacyProductRecords();
 
   const app = createApp();
 

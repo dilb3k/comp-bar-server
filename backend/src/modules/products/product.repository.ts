@@ -2,32 +2,99 @@ import { FilterQuery, Types } from "mongoose";
 
 import { ProductModel } from "./product.model";
 
+type ProductRecordPayload = Record<string, unknown>;
+
+function buildProductRecord(payload: ProductRecordPayload) {
+  return {
+    ownerAdminId: payload.ownerAdminId,
+    localId: payload.localId,
+    deviceId: payload.deviceId,
+    isDeleted: payload.isDeleted ?? false,
+    deletedAt: payload.deletedAt ?? null,
+    createdAt: payload.createdAt,
+    updatedAt: payload.updatedAt,
+    product: {
+      name: payload.name,
+      quantity: payload.quantity,
+      buyPrice: payload.buyPrice,
+      sellPrice: payload.sellPrice,
+      image: payload.image ?? ""
+    }
+  };
+}
+
+function buildProductUpdate(payload: ProductRecordPayload) {
+  const update: Record<string, unknown> = {};
+
+  if ("deviceId" in payload) {
+    update.deviceId = payload.deviceId;
+  }
+
+  if ("isDeleted" in payload) {
+    update.isDeleted = payload.isDeleted;
+  }
+
+  if ("deletedAt" in payload) {
+    update.deletedAt = payload.deletedAt;
+  }
+
+  if ("createdAt" in payload) {
+    update.createdAt = payload.createdAt;
+  }
+
+  if ("updatedAt" in payload) {
+    update.updatedAt = payload.updatedAt;
+  }
+
+  if ("name" in payload) {
+    update["product.name"] = payload.name;
+  }
+
+  if ("quantity" in payload) {
+    update["product.quantity"] = payload.quantity;
+  }
+
+  if ("buyPrice" in payload) {
+    update["product.buyPrice"] = payload.buyPrice;
+  }
+
+  if ("sellPrice" in payload) {
+    update["product.sellPrice"] = payload.sellPrice;
+  }
+
+  if ("image" in payload) {
+    update["product.image"] = payload.image;
+  }
+
+  return update;
+}
+
 export class ProductRepository {
   async findActive(ownerAdminId: string, search?: string) {
     const filter: FilterQuery<typeof ProductModel> = {
       ownerAdminId,
-      entityType: "product",
+      recordType: "product",
       isDeleted: false
     };
 
     if (search?.trim()) {
-      filter.name = { $regex: search.trim(), $options: "i" };
+      filter["product.name"] = { $regex: search.trim(), $options: "i" };
     }
 
-    return ProductModel.find(filter).sort({ name: 1 });
+    return ProductModel.find(filter).sort({ "product.name": 1 });
   }
 
   async findAllByOwner(ownerAdminId: string) {
     return ProductModel.find({
       ownerAdminId,
-      entityType: "product"
+      recordType: "product"
     }).sort({ updatedAt: 1 });
   }
 
   async findAllUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, entityType: "product", updatedAt: { $gt: new Date(lastSyncAt) } }
-      : { ownerAdminId, entityType: "product" };
+      ? { ownerAdminId, recordType: "product", updatedAt: { $gt: new Date(lastSyncAt) } }
+      : { ownerAdminId, recordType: "product" };
 
     return ProductModel.find(filter).sort({ updatedAt: 1 });
   }
@@ -39,11 +106,11 @@ export class ProductRepository {
       orConditions.push({ _id: identifier });
     }
 
-    return ProductModel.findOne({ ownerAdminId, entityType: "product", $or: orConditions });
+    return ProductModel.findOne({ ownerAdminId, recordType: "product", $or: orConditions });
   }
 
   async findByLocalIds(ownerAdminId: string, localIds: string[]) {
-    return ProductModel.find({ ownerAdminId, entityType: "product", localId: { $in: localIds } });
+    return ProductModel.find({ ownerAdminId, recordType: "product", localId: { $in: localIds } });
   }
 
   async findByIdentifiers(ownerAdminId: string, identifiers: string[]) {
@@ -57,50 +124,60 @@ export class ProductRepository {
 
     return ProductModel.find({
       ownerAdminId,
-      entityType: "product",
+      recordType: "product",
       $or: orFilters
     });
   }
 
-  async create(payload: Record<string, unknown>) {
-    return ProductModel.create({ entityType: "product", ...payload });
+  async create(payload: ProductRecordPayload) {
+    return ProductModel.create({
+      recordType: "product",
+      ...buildProductRecord(payload)
+    });
   }
 
-  async updateById(ownerAdminId: string, id: string, payload: Record<string, unknown>) {
+  async updateById(ownerAdminId: string, id: string, payload: ProductRecordPayload) {
     return ProductModel.findOneAndUpdate(
-      { _id: id, ownerAdminId, entityType: "product" },
-      payload,
+      { _id: id, ownerAdminId, recordType: "product" },
+      { $set: buildProductUpdate(payload) },
       { new: true, runValidators: true }
     );
   }
 
-  async updateByLocalId(ownerAdminId: string, localId: string, payload: Record<string, unknown>) {
-    return ProductModel.findOneAndUpdate({ ownerAdminId, entityType: "product", localId }, payload, {
-      new: true,
-      upsert: false,
-      runValidators: true
-    });
+  async updateByLocalId(ownerAdminId: string, localId: string, payload: ProductRecordPayload) {
+    return ProductModel.findOneAndUpdate(
+      { ownerAdminId, recordType: "product", localId },
+      { $set: buildProductUpdate(payload) },
+      {
+        new: true,
+        upsert: false,
+        runValidators: true
+      }
+    );
   }
 
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: Record<string, unknown> & { localId: string; updatedAt: Date | string }
+    payload: ProductRecordPayload & { localId: string; updatedAt: Date | string }
   ) {
     const existing = await ProductModel.findOne({
       ownerAdminId,
-      entityType: "product",
+      recordType: "product",
       localId: payload.localId
     });
 
     if (!existing) {
-      return ProductModel.create({ ownerAdminId, entityType: "product", ...payload });
+      return ProductModel.create({
+        recordType: "product",
+        ...buildProductRecord({ ownerAdminId, ...payload })
+      });
     }
 
     if (new Date(existing.updatedAt).getTime() > new Date(payload.updatedAt).getTime()) {
       return existing;
     }
 
-    Object.assign(existing, payload);
+    Object.assign(existing, buildProductRecord({ ownerAdminId, ...payload }));
     return existing.save();
   }
 }

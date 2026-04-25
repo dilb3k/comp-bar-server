@@ -7,6 +7,7 @@ Expo React Native kassir app uchun production-ready Express + MongoDB backend.
 - `backend/` ichida modular TypeScript server
 - `products`, `inventory`, `snapshots`, `sync`, `health` modullari
 - MongoDB + Mongoose schema va indexlar
+- `auth` dan tashqari barcha data bitta `products` collection ichida `recordType + product/inventory/daily` ko'rinishida saqlanadi
 - Zod validation, consistent error responses
 - 07:00 business day logikasi
 - Soft delete, daily snapshot derivation, offline sync
@@ -124,6 +125,7 @@ Body:
 {
   "products": [],
   "inventory": [],
+  "daily": [],
   "snapshots": [],
   "lastSyncAt": "2026-04-20T10:00:00.000Z"
 }
@@ -137,6 +139,7 @@ Response:
   "data": {
     "products": [],
     "inventory": [],
+    "daily": [],
     "snapshots": [],
     "serverTime": "2026-04-20T10:05:00.000Z"
   }

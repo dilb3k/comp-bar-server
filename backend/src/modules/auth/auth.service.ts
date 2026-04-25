@@ -1,5 +1,6 @@
-import { CatalogItemModel } from "../catalog/catalog-item.model";
-import { DailySnapshotModel } from "../snapshots/snapshot.model";
+import mongoose from "mongoose";
+
+import { ProductModel } from "../products/product.model";
 import { AppError } from "../../utils/app-error";
 import { authRepository } from "./auth.repository";
 import type { AuthUser } from "./auth.types";
@@ -78,7 +79,7 @@ export class AuthService {
 
   async migrateLegacyOwnership(defaultOwnerAdminId: string) {
     await Promise.all([
-      CatalogItemModel.updateMany(
+      ProductModel.updateMany(
         {
           $or: [
             { ownerAdminId: { $exists: false } },
@@ -88,7 +89,17 @@ export class AuthService {
         },
         { $set: { ownerAdminId: defaultOwnerAdminId } }
       ),
-      DailySnapshotModel.updateMany(
+      mongoose.connection.collection("catalog_items").updateMany(
+        {
+          $or: [
+            { ownerAdminId: { $exists: false } },
+            { ownerAdminId: null },
+            { ownerAdminId: "" }
+          ]
+        },
+        { $set: { ownerAdminId: defaultOwnerAdminId } }
+      ),
+      mongoose.connection.collection("dailysnapshots").updateMany(
         {
           $or: [
             { ownerAdminId: { $exists: false } },

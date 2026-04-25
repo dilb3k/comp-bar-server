@@ -53,6 +53,7 @@ export interface DailySnapshot {
 export interface SyncPayload {
   products?: Product[];
   inventory?: InventoryEntry[];
+  daily?: DailySnapshot[];
   snapshots?: DailySnapshot[];
   lastSyncAt?: string;
 }

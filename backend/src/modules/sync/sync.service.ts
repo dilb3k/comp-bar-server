@@ -6,6 +6,7 @@ import { snapshotRepository } from "../snapshots/snapshot.repository";
 type SyncInput = {
   products?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
   inventory?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
+  daily?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
   snapshots?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
   lastSyncAt?: string;
 };
@@ -14,7 +15,7 @@ export class SyncService {
   async sync(actor: AuthUser, payload: SyncInput) {
     const products = payload.products ?? [];
     const inventory = payload.inventory ?? [];
-    const snapshots = payload.snapshots ?? [];
+    const snapshots = payload.daily ?? payload.snapshots ?? [];
 
     await Promise.all(
       products.map((item) =>
@@ -56,6 +57,7 @@ export class SyncService {
     return {
       products: serverProducts.map((item) => item.toJSON()),
       inventory: serverInventory.map((item) => item.toJSON()),
+      daily: serverSnapshots.map((item) => item.toJSON()),
       snapshots: serverSnapshots.map((item) => item.toJSON()),
       serverTime: new Date().toISOString()
     };
