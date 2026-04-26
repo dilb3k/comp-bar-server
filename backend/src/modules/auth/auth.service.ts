@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 import { ProductModel } from "../products/product.model";
+import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
 import { authRepository } from "./auth.repository";
 import type { AuthUser } from "./auth.types";
@@ -57,12 +58,20 @@ export class AuthService {
       throw new AppError("Username already exists", 409);
     }
 
-    return authRepository.createUser({
+    const admin = await authRepository.createUser({
       username: payload.username,
       password: payload.password,
       role: "admin",
       createdBy: actor.userId,
     });
+
+    telegramReportService.reportAdminCreated(actor, {
+      username: (admin as any).username,
+      role: (admin as any).role,
+      createdBy: (admin as any).createdBy ?? actor.userId
+    });
+
+    return admin;
   }
 
   async listAdmins(actor: AuthUser) {

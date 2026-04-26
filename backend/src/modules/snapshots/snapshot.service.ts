@@ -1,4 +1,5 @@
 import { env } from "../../config/env";
+import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
 import {
   assertNotFutureDayKey,
@@ -114,7 +115,7 @@ export class SnapshotService {
 
     const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
 
-    return snapshotRepository.upsertByDate(actor.userId, payload.date, payload.deviceId ?? "server", {
+    const snapshot = await snapshotRepository.upsertByDate(actor.userId, payload.date, payload.deviceId ?? "server", {
       localId: payload.localId ?? createLocalId("snap", `${actor.userId}_${payload.date}`),
       deviceId: payload.deviceId ?? "server",
       date: payload.date,
@@ -126,6 +127,17 @@ export class SnapshotService {
       createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
       updatedAt: now
     });
+
+    telegramReportService.reportSnapshotSaved(actor, {
+      date: payload.date,
+      totalRevenue: Number((snapshot as any).totalRevenue),
+      totalProfit: Number((snapshot as any).totalProfit),
+      totalSoldItems: Number((snapshot as any).totalSoldItems),
+      itemCount: Array.isArray((snapshot as any).items) ? (snapshot as any).items.length : 0,
+      deviceId: (snapshot as any).deviceId
+    });
+
+    return snapshot;
   }
 }
 

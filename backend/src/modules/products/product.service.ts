@@ -3,6 +3,7 @@ import type { Product } from "../../types/domain";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
 import { getBusinessDateFromTimestamp, getCurrentBusinessDate } from "../../utils/business-day";
+import { telegramReportService } from "../../services/telegram-report.service";
 import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
@@ -60,6 +61,15 @@ export class ProductService {
       isDeleted: false,
       createdAt: timestamp,
       updatedAt: timestamp
+    });
+
+    telegramReportService.reportProductCreated(actor, {
+      localId: (product as any).localId,
+      name: (product as any).name,
+      quantity: (product as any).quantity,
+      buyPrice: (product as any).buyPrice,
+      sellPrice: (product as any).sellPrice,
+      deviceId: (product as any).deviceId
     });
 
     return product;
@@ -128,6 +138,17 @@ export class ProductService {
       });
     }
 
+    if (updatedProduct) {
+      telegramReportService.reportProductUpdated(actor, {
+        localId: (updatedProduct as any).localId,
+        name: (updatedProduct as any).name,
+        quantity: (updatedProduct as any).quantity,
+        buyPrice: (updatedProduct as any).buyPrice,
+        sellPrice: (updatedProduct as any).sellPrice,
+        deviceId: (updatedProduct as any).deviceId
+      });
+    }
+
     return updatedProduct;
   }
 
@@ -140,6 +161,13 @@ export class ProductService {
       deletedAt: now,
       updatedAt: now
     });
+
+    if (deletedProduct) {
+      telegramReportService.reportProductDeleted(actor, {
+        localId: (deletedProduct as any).localId,
+        name: (deletedProduct as any).name
+      });
+    }
 
     return deletedProduct;
   }

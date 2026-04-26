@@ -10,7 +10,9 @@ const envSchema = z.object({
   CLIENT_URL: z.string().default("*"),
   BUSINESS_DAY_START_HOUR: z.coerce.number().int().min(0).max(23).default(7),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
-  JWT_EXPIRES_IN: z.string().default("7d")
+  JWT_EXPIRES_IN: z.string().default("7d"),
+  BOT_TOKEN: z.string().trim().min(1).optional(),
+  TELEGRAM_CHAT_ID: z.string().trim().min(1).optional()
 });
 
 const parsed = envSchema.safeParse(process.env);

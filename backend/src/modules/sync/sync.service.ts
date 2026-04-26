@@ -1,4 +1,5 @@
 import type { AuthUser } from "../auth/auth.types";
+import { telegramReportService } from "../../services/telegram-report.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
@@ -53,6 +54,15 @@ export class SyncService {
       inventoryRepository.findUpdatedSince(actor.userId, payload.lastSyncAt),
       snapshotRepository.findUpdatedSince(actor.userId, payload.lastSyncAt)
     ]);
+
+    if (products.length > 0 || inventory.length > 0 || snapshots.length > 0) {
+      telegramReportService.reportSync(actor, {
+        products: products.length,
+        inventory: inventory.length,
+        snapshots: snapshots.length,
+        lastSyncAt: payload.lastSyncAt
+      });
+    }
 
     return {
       products: serverProducts.map((item) => item.toJSON()),

@@ -1,5 +1,6 @@
 import { env } from "../../config/env";
 import { AppError } from "../../utils/app-error";
+import { telegramReportService } from "../../services/telegram-report.service";
 import {
   assertNotFutureDayKey,
   compareDayKeys,
@@ -121,7 +122,7 @@ export class InventoryService {
       productMap.set(product._id.toString(), product);
     }
 
-    return Promise.all(
+    const results = await Promise.all(
       payload.items.map(async (item) => {
         const product = productMap.get(item.productId);
 
@@ -165,6 +166,19 @@ export class InventoryService {
         };
       })
     );
+
+    telegramReportService.reportInventoryStarted(actor, {
+      date: targetDate,
+      deviceId: payload.deviceId,
+      items: results.map((entry) => ({
+        productName: entry.product?.name,
+        startQuantity: Number(entry.startQuantity),
+        currentQuantity: Number(entry.currentQuantity),
+        sold: Number(entry.sold)
+      }))
+    });
+
+    return results;
   }
 
   async bulkUpdateCurrent(actor: AuthUser, payload: BulkCurrentInput) {
@@ -181,7 +195,7 @@ export class InventoryService {
       productMap.set(product._id.toString(), product);
     }
 
-    return Promise.all(
+    const results = await Promise.all(
       payload.items.map(async (item) => {
         const product = productMap.get(item.productId);
 
@@ -231,6 +245,19 @@ export class InventoryService {
         };
       })
     );
+
+    telegramReportService.reportInventoryUpdated(actor, {
+      date: targetDate,
+      deviceId: payload.deviceId,
+      items: results.map((entry) => ({
+        productName: entry.product?.name,
+        startQuantity: Number(entry.startQuantity),
+        currentQuantity: Number(entry.currentQuantity),
+        sold: Number(entry.sold)
+      }))
+    });
+
+    return results;
   }
 }
 
