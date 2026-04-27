@@ -7,6 +7,7 @@ import { telegramReportService } from "../../services/telegram-report.service";
 import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
+import { normalizeProductImage } from "./product-image";
 import { productRepository } from "./product.repository";
 
 type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt" | "isDeleted"> & {
@@ -34,6 +35,7 @@ export class ProductService {
 
   async create(actor: AuthUser, payload: CreateProductInput) {
     const timestamp = payload.createdAt ? new Date(payload.createdAt) : new Date();
+    const normalizedImage = normalizeProductImage(payload.image);
     const product = await productRepository.create({
       ownerAdminId: actor.userId,
       localId: payload.localId ?? createLocalId("prd", payload.deviceId),
@@ -42,7 +44,7 @@ export class ProductService {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
-      image: payload.image ?? "",
+      image: normalizedImage ?? "",
       isDeleted: false,
       createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
       updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
@@ -86,6 +88,7 @@ export class ProductService {
     const nextQuantity = payload.quantity ?? (product as any).quantity;
     const nextBuyPrice = payload.buyPrice ?? (product as any).buyPrice;
     const nextSellPrice = payload.sellPrice ?? (product as any).sellPrice;
+    const normalizedImage = normalizeProductImage(payload.image);
 
     if (nextSellPrice < nextBuyPrice) {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
@@ -97,7 +100,10 @@ export class ProductService {
       quantity: nextQuantity,
       buyPrice: nextBuyPrice,
       sellPrice: nextSellPrice,
-      image: payload.image ?? (product as any).image ?? "",
+      image:
+        payload.image !== undefined
+          ? normalizedImage ?? (product as any).image ?? ""
+          : (product as any).image ?? "",
       updatedAt
     });
 

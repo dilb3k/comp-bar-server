@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeProductImage } from "./product-image";
 
 const isoDateTime = z.string().datetime().optional();
 const productBaseSchema = z.object({
@@ -8,7 +9,7 @@ const productBaseSchema = z.object({
   quantity: z.number().int().min(0, "quantity must be >= 0"),
   buyPrice: z.number().positive("buyPrice must be > 0"),
   sellPrice: z.number().positive("sellPrice must be > 0"),
-  image: z.string().trim().optional(),
+  image: z.string().optional().transform((value) => normalizeProductImage(value)),
   createdAt: isoDateTime,
   updatedAt: isoDateTime
 });

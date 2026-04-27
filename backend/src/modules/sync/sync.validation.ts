@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeProductImage } from "../products/product-image";
 
 
 const syncedProductSchema = z.object({
@@ -8,7 +9,7 @@ const syncedProductSchema = z.object({
   quantity: z.number().int().min(0),
   buyPrice: z.number().positive(),
   sellPrice: z.number().positive(),
-  image: z.string().optional(),
+  image: z.string().optional().transform((value) => normalizeProductImage(value)),
   isDeleted: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()

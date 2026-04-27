@@ -5,6 +5,7 @@ import {
   calculateSold,
   getAdjustedInventoryQuantities
 } from "../modules/inventory/inventory.logic";
+import { normalizeProductImage } from "../modules/products/product-image";
 import { updateProductSchema } from "../modules/products/product.validation";
 import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snapshot.logic";
 import { syncPayloadSchema } from "../modules/sync/sync.validation";
@@ -85,4 +86,20 @@ run("sync validation preserves existing image when client omits the field", () =
   });
 
   assert.equal("image" in (parsed.products?.[0] ?? {}), false);
+});
+
+run("product image normalization drops local device paths", () => {
+  assert.equal(normalizeProductImage("file:///data/user/0/app/cache/photo.jpg"), undefined);
+  assert.equal(normalizeProductImage("content://media/external/images/1"), undefined);
+});
+
+run("product image normalization keeps shareable image values", () => {
+  assert.equal(
+    normalizeProductImage("https://cdn.example.com/products/cola.png"),
+    "https://cdn.example.com/products/cola.png"
+  );
+  assert.equal(
+    normalizeProductImage("data:image/png;base64,AAAA"),
+    "data:image/png;base64,AAAA"
+  );
 });
