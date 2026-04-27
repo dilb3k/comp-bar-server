@@ -4,6 +4,10 @@ import { ProductModel } from "./product.model";
 
 type ProductRecordPayload = Record<string, unknown>;
 
+function hasOwn(payload: ProductRecordPayload, key: string) {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
+
 function buildProductRecord(payload: ProductRecordPayload) {
   return {
     ownerAdminId: payload.ownerAdminId,
@@ -18,7 +22,7 @@ function buildProductRecord(payload: ProductRecordPayload) {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
-      image: payload.image ?? ""
+      ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {})
     }
   };
 }
@@ -62,7 +66,7 @@ function buildProductUpdate(payload: ProductRecordPayload) {
     update["product.sellPrice"] = payload.sellPrice;
   }
 
-  if ("image" in payload) {
+  if (hasOwn(payload, "image")) {
     update["product.image"] = payload.image;
   }
 
@@ -177,7 +181,14 @@ export class ProductRepository {
       return existing;
     }
 
-    Object.assign(existing, buildProductRecord({ ownerAdminId, ...payload }));
+    Object.assign(
+      existing,
+      buildProductRecord({
+        ownerAdminId,
+        ...payload,
+        ...(hasOwn(payload, "image") ? {} : { image: (existing as any).product?.image ?? "" })
+      })
+    );
     return existing.save();
   }
 }

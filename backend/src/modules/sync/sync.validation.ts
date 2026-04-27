@@ -8,7 +8,7 @@ const syncedProductSchema = z.object({
   quantity: z.number().int().min(0),
   buyPrice: z.number().positive(),
   sellPrice: z.number().positive(),
-  image: z.string().optional().default(""),
+  image: z.string().optional(),
   isDeleted: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()

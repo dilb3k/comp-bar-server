@@ -5,7 +5,9 @@ import {
   calculateSold,
   getAdjustedInventoryQuantities
 } from "../modules/inventory/inventory.logic";
+import { updateProductSchema } from "../modules/products/product.validation";
 import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snapshot.logic";
+import { syncPayloadSchema } from "../modules/sync/sync.validation";
 
 function run(name: string, fn: () => void) {
   try {
@@ -56,4 +58,31 @@ run("snapshot aggregation derives revenue and profit from inventory", () => {
     totalProfit: 25000,
     totalSoldItems: 5
   });
+});
+
+run("product update validation does not force image to empty string", () => {
+  const parsed = updateProductSchema.parse({
+    name: "Updated Cola"
+  });
+
+  assert.equal("image" in parsed, false);
+});
+
+run("sync validation preserves existing image when client omits the field", () => {
+  const parsed = syncPayloadSchema.parse({
+    products: [
+      {
+        localId: "prd_1",
+        deviceId: "dev_1",
+        name: "Cola",
+        quantity: 5,
+        buyPrice: 10000,
+        sellPrice: 15000,
+        createdAt: "2026-04-20T10:00:00.000Z",
+        updatedAt: "2026-04-20T11:00:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal("image" in (parsed.products?.[0] ?? {}), false);
 });

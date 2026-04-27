@@ -41,6 +41,25 @@ type BulkCurrentInput = {
   }>;
 };
 
+function buildInventoryResponse(product: any, inventory: any) {
+  const productJson = typeof product?.toJSON === "function" ? product.toJSON() : product;
+  const inventoryJson = typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
+
+  return {
+    ...inventoryJson,
+    sold: calculateSold(
+      Number(inventory?.startQuantity),
+      Number(inventory?.currentQuantity)
+    ),
+    name: productJson?.name,
+    quantity: productJson?.quantity,
+    buyPrice: productJson?.buyPrice,
+    sellPrice: productJson?.sellPrice,
+    image: productJson?.image ?? "",
+    product: productJson
+  };
+}
+
 export class InventoryService {
   private getAllowedDate(date?: string) {
     const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
@@ -74,18 +93,8 @@ export class InventoryService {
       const inventory =
         entryMap.get((product as any).localId) ??
         deriveMissingInventoryEntry(product.toJSON() as any, date);
-      const inventoryJson = typeof (inventory as any).toJSON === "function"
-        ? (inventory as any).toJSON()
-        : inventory;
 
-      return {
-        ...inventoryJson,
-        sold: calculateSold(
-          Number((inventory as any).startQuantity),
-          Number((inventory as any).currentQuantity)
-        ),
-        product: product.toJSON()
-      };
+      return buildInventoryResponse(product, inventory);
     });
   }
 
@@ -101,11 +110,20 @@ export class InventoryService {
 
     const productMap = new Map(products.map((product) => [product.localId, product]));
 
-    return entries.map((entry) => ({
-      ...entry.toJSON(),
-      sold: calculateSold(Number((entry as any).startQuantity), Number((entry as any).currentQuantity)),
-      product: productMap.get(entry.productId)?.toJSON() ?? null
-    }));
+    return entries.map((entry) => {
+      const product = productMap.get(entry.productId) ?? null;
+
+      if (!product) {
+        return {
+          ...entry.toJSON(),
+          sold: calculateSold(Number((entry as any).startQuantity), Number((entry as any).currentQuantity)),
+          image: "",
+          product: null
+        };
+      }
+
+      return buildInventoryResponse(product, entry);
+    });
   }
 
   async startDay(actor: AuthUser, payload: StartDayInput) {
@@ -155,15 +173,14 @@ export class InventoryService {
           updatedAt: now
         });
 
-        return {
-          ...entry?.toJSON(),
-          sold: calculateSold(startQuantity, currentQuantity),
-          product: {
+        return buildInventoryResponse(
+          {
             ...product.toJSON(),
             quantity: currentQuantity,
             updatedAt: now.toISOString()
-          }
-        };
+          },
+          entry
+        );
       })
     );
 
@@ -234,15 +251,14 @@ export class InventoryService {
           updatedAt: now
         });
 
-        return {
-          ...updated?.toJSON(),
-          sold: calculateSold(Number((existing as any).startQuantity), item.currentQuantity),
-          product: {
+        return buildInventoryResponse(
+          {
             ...product.toJSON(),
             quantity: item.currentQuantity,
             updatedAt: now.toISOString()
-          }
-        };
+          },
+          updated
+        );
       })
     );
 

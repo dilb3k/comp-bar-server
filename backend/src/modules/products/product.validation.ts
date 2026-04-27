@@ -8,7 +8,7 @@ const productBaseSchema = z.object({
   quantity: z.number().int().min(0, "quantity must be >= 0"),
   buyPrice: z.number().positive("buyPrice must be > 0"),
   sellPrice: z.number().positive("sellPrice must be > 0"),
-  image: z.string().trim().optional().default(""),
+  image: z.string().trim().optional(),
   createdAt: isoDateTime,
   updatedAt: isoDateTime
 });
