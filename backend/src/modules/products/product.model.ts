@@ -9,120 +9,120 @@ const snapshotItemSchema = new Schema(
     productId: {
       type: String,
       required: true,
-      trim: true,
+      trim: true
     },
     productName: {
       type: String,
       required: true,
-      trim: true,
+      trim: true
     },
     sold: {
       type: Number,
       required: true,
-      min: 0,
+      min: 0
     },
     buyPrice: {
       type: Number,
-      min: 0,
+      min: 0
     },
     sellPrice: {
       type: Number,
-      min: 0,
+      min: 0
     },
     revenue: {
       type: Number,
       required: true,
-      min: 0,
+      min: 0
     },
     profit: {
       type: Number,
-      required: true,
-    },
+      required: true
+    }
   },
   {
-    _id: false,
-  },
+    _id: false
+  }
 );
 
 const productDataSchema = new Schema(
   {
     name: {
       type: String,
-      trim: true,
+      trim: true
     },
     quantity: {
       type: Number,
-      min: 0,
+      min: 0
     },
     buyPrice: {
       type: Number,
-      min: 0,
+      min: 0
     },
     sellPrice: {
       type: Number,
-      min: 0,
+      min: 0
     },
     image: {
       type: String,
-      default: "",
-    },
+      default: ""
+    }
   },
   {
-    _id: false,
-  },
+    _id: false
+  }
 );
 
 const inventoryDataSchema = new Schema(
   {
     productId: {
       type: String,
-      trim: true,
+      trim: true
     },
     date: {
-      type: String,
+      type: String
     },
     startQuantity: {
       type: Number,
-      min: 0,
+      min: 0
     },
     currentQuantity: {
       type: Number,
-      min: 0,
+      min: 0
     },
     note: {
       type: String,
-      default: "",
-    },
+      default: ""
+    }
   },
   {
-    _id: false,
-  },
+    _id: false
+  }
 );
 
 const dailyDataSchema = new Schema(
   {
     date: {
-      type: String,
+      type: String
     },
     totalRevenue: {
       type: Number,
-      min: 0,
+      min: 0
     },
     totalProfit: {
-      type: Number,
+      type: Number
     },
     totalSoldItems: {
       type: Number,
-      min: 0,
+      min: 0
     },
     items: {
       type: [snapshotItemSchema],
-      default: [],
-    },
+      default: []
+    }
   },
   {
-    _id: false,
-  },
+    _id: false
+  }
 );
 
 const productRecordSchema = new Schema(
@@ -131,45 +131,45 @@ const productRecordSchema = new Schema(
       type: String,
       required: true,
       enum: ["product", "inventory", "daily"],
-      index: true,
+      index: true
     },
     ownerAdminId: {
       type: String,
       required: true,
       trim: true,
-      index: true,
+      index: true
     },
     localId: {
       type: String,
       required: true,
-      trim: true,
+      trim: true
     },
     deviceId: {
       type: String,
       required: true,
-      trim: true,
+      trim: true
     },
     product: {
       type: productDataSchema,
-      default: undefined,
+      default: undefined
     },
     inventory: {
       type: inventoryDataSchema,
-      default: undefined,
+      default: undefined
     },
     daily: {
       type: dailyDataSchema,
-      default: undefined,
+      default: undefined
     },
     deletedAt: {
       type: Date,
-      default: null,
+      default: null
     },
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
-    },
+      index: true
+    }
   },
   {
     collection: "products",
@@ -201,9 +201,9 @@ const productRecordSchema = new Schema(
         }
 
         return ret;
-      },
-    },
-  },
+      }
+    }
+  }
 );
 
 productRecordSchema.pre("validate", function validateProductRecord(next) {
@@ -245,10 +245,7 @@ productRecordSchema.pre("validate", function validateProductRecord(next) {
     }
 
     if (this.inventory?.currentQuantity === undefined) {
-      this.invalidate(
-        "inventory.currentQuantity",
-        "currentQuantity is required",
-      );
+      this.invalidate("inventory.currentQuantity", "currentQuantity is required");
     }
   }
 
@@ -290,7 +287,7 @@ for (const [virtualName, path] of [
   ["totalRevenue", "daily.totalRevenue"],
   ["totalProfit", "daily.totalProfit"],
   ["totalSoldItems", "daily.totalSoldItems"],
-  ["items", "daily.items"],
+  ["items", "daily.items"]
 ] as const) {
   productRecordSchema.virtual(virtualName).get(function getPayloadValue() {
     return this.get(path);
@@ -301,35 +298,27 @@ productRecordSchema.virtual("date").get(function getRecordDate() {
   return this.get("inventory.date") ?? this.get("daily.date");
 });
 
-productRecordSchema.index({
-  ownerAdminId: 1,
-  recordType: 1,
-  isDeleted: 1,
-  updatedAt: -1,
-});
-productRecordSchema.index(
-  { ownerAdminId: 1, recordType: 1, localId: 1 },
-  { unique: true },
-);
+productRecordSchema.index({ ownerAdminId: 1, recordType: 1, isDeleted: 1, updatedAt: -1 });
+productRecordSchema.index({ ownerAdminId: 1, recordType: 1, localId: 1 }, { unique: true });
 productRecordSchema.index(
   { ownerAdminId: 1, "inventory.productId": 1, "inventory.date": 1 },
   {
     unique: true,
-    partialFilterExpression: { recordType: "inventory" },
-  },
+    partialFilterExpression: { recordType: "inventory" }
+  }
 );
 productRecordSchema.index(
-  { ownerAdminId: 1, "daily.date": 1 },
+  { ownerAdminId: 1, deviceId: 1, "daily.date": 1 },
   {
     unique: true,
-    partialFilterExpression: { recordType: "daily" },
-  },
+    partialFilterExpression: { recordType: "daily" }
+  }
 );
 productRecordSchema.index(
   { ownerAdminId: 1, "product.name": "text" },
   {
-    partialFilterExpression: { recordType: "product" },
-  },
+    partialFilterExpression: { recordType: "product" }
+  }
 );
 
 export const ProductRecordModel =

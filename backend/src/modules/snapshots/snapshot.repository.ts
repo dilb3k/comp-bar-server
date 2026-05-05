@@ -4,6 +4,7 @@ type SnapshotRecordPayload = Record<string, unknown>;
 
 function buildSnapshotRecord(payload: SnapshotRecordPayload) {
   return {
+    recordType: "daily",
     ownerAdminId: payload.ownerAdminId,
     localId: payload.localId,
     deviceId: payload.deviceId,
@@ -15,8 +16,8 @@ function buildSnapshotRecord(payload: SnapshotRecordPayload) {
       totalRevenue: payload.totalRevenue,
       totalProfit: payload.totalProfit,
       totalSoldItems: payload.totalSoldItems,
-      items: payload.items ?? []
-    }
+      items: payload.items ?? [],
+    },
   };
 }
 
@@ -26,7 +27,7 @@ export class SnapshotRepository {
       ownerAdminId,
       recordType: "daily",
       "daily.date": date,
-      isDeleted: false
+      isDeleted: false,
     }).sort({ updatedAt: -1 });
   }
 
@@ -35,13 +36,17 @@ export class SnapshotRepository {
       ownerAdminId,
       recordType: "daily",
       "daily.date": { $gte: from, $lte: to },
-      isDeleted: false
+      isDeleted: false,
     }).sort({ "daily.date": 1, updatedAt: 1 });
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, recordType: "daily", updatedAt: { $gt: new Date(lastSyncAt) } }
+      ? {
+          ownerAdminId,
+          recordType: "daily",
+          updatedAt: { $gt: new Date(lastSyncAt) },
+        }
       : { ownerAdminId, recordType: "daily" };
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
@@ -51,38 +56,47 @@ export class SnapshotRepository {
     ownerAdminId: string,
     date: string,
     deviceId: string,
-    payload: SnapshotRecordPayload
+    payload: SnapshotRecordPayload,
   ) {
     return DailySnapshotModel.findOneAndUpdate(
       { ownerAdminId, recordType: "daily", deviceId, "daily.date": date },
-      { $set: buildSnapshotRecord({ ownerAdminId, ...payload }) },
+      {
+        $set: buildSnapshotRecord({ ownerAdminId, ...payload }),
+        $setOnInsert: { recordType: "daily" },
+      },
       {
         new: true,
         upsert: true,
         setDefaultsOnInsert: true,
-        runValidators: true
-      }
+        runValidators: true,
+      },
     );
   }
 
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: SnapshotRecordPayload & { localId: string; updatedAt: Date | string }
+    payload: SnapshotRecordPayload & {
+      localId: string;
+      updatedAt: Date | string;
+    },
   ) {
     const existing = await DailySnapshotModel.findOne({
       ownerAdminId,
       recordType: "daily",
-      localId: payload.localId
+      localId: payload.localId,
     });
 
     if (!existing) {
       return DailySnapshotModel.create({
         recordType: "daily",
-        ...buildSnapshotRecord({ ownerAdminId, ...payload })
+        ...buildSnapshotRecord({ ownerAdminId, ...payload }),
       });
     }
 
-    if (new Date(existing.updatedAt).getTime() > new Date(payload.updatedAt).getTime()) {
+    if (
+      new Date(existing.updatedAt).getTime() >
+      new Date(payload.updatedAt).getTime()
+    ) {
       return existing;
     }
 
