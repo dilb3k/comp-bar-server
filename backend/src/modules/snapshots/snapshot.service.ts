@@ -102,7 +102,6 @@ export class SnapshotService {
       payload.date,
       payload.deviceId ?? "server",
       {
-        ownerAdminId: actor.userId,
         localId:
           payload.localId ??
           createLocalId("snap", `${actor.userId}_${payload.date}`),

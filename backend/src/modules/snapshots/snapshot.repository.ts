@@ -1,6 +1,6 @@
 import { DailySnapshotModel } from "./snapshot.model";
 
-type SnapshotRecordPayload = {
+export type SnapshotRecordPayload = {
   localId: string;
   deviceId: string;
   date: string;
@@ -54,18 +54,6 @@ export class SnapshotRepository {
     }).sort({ "daily.date": 1, updatedAt: 1 });
   }
 
-  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
-    const filter = lastSyncAt
-      ? {
-          ownerAdminId,
-          recordType: "daily",
-          updatedAt: { $gt: new Date(lastSyncAt) },
-        }
-      : { ownerAdminId, recordType: "daily" };
-
-    return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
-  }
-
   async upsertByDate(
     ownerAdminId: string,
     date: string,
@@ -89,7 +77,6 @@ export class SnapshotRepository {
       {
         new: true,
         upsert: true,
-        setDefaultsOnInsert: true,
         runValidators: true,
       },
     );
@@ -122,7 +109,6 @@ export class SnapshotRepository {
     }
 
     Object.assign(existing, buildSnapshotRecord(ownerAdminId, payload));
-
     return existing.save();
   }
 }
