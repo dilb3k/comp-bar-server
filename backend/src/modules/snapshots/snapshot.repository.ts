@@ -51,7 +51,6 @@ export class SnapshotRepository {
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
   }
-
   async upsertByDate(
     ownerAdminId: string,
     date: string,
@@ -59,10 +58,19 @@ export class SnapshotRepository {
     payload: SnapshotRecordPayload,
   ) {
     return DailySnapshotModel.findOneAndUpdate(
-      { ownerAdminId, recordType: "daily", deviceId, "daily.date": date },
       {
-        $set: buildSnapshotRecord({ ownerAdminId, ...payload }),
-        $setOnInsert: { recordType: "daily" },
+        ownerAdminId,
+        recordType: "daily",
+        deviceId,
+        "daily.date": date,
+      },
+      {
+        $set: buildSnapshotRecord({
+          ...payload,
+          ownerAdminId,
+          deviceId,
+          date,
+        }),
       },
       {
         new: true,
@@ -72,7 +80,6 @@ export class SnapshotRepository {
       },
     );
   }
-
   async upsertLastWriteWins(
     ownerAdminId: string,
     payload: SnapshotRecordPayload & {
