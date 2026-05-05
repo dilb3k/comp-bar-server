@@ -5,7 +5,7 @@ import {
   assertNotFutureDayKey,
   compareDayKeys,
   getCurrentBusinessDate,
-  isPastBusinessDate
+  isPastBusinessDate,
 } from "../../utils/business-day";
 import { createLocalId } from "../../utils/ids";
 import type { AuthUser } from "../auth/auth.types";
@@ -23,39 +23,22 @@ type UpsertSnapshotInput = {
   totalRevenue?: number;
   totalProfit?: number;
   totalSoldItems?: number;
-  items?: Array<{
-    productId: string;
-    productName: string;
-    sold: number;
-    buyPrice?: number;
-    sellPrice?: number;
-    revenue: number;
-    profit: number;
-  }>;
-  updatedAt?: string;
+  items?: any[];
   createdAt?: string;
+  updatedAt?: string;
 };
 
 export class SnapshotService {
-  async getDaily(actor: AuthUser, date: string) {
-    const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
-    assertNotFutureDayKey(date, currentBusinessDate, "Future snapshot dates are not allowed");
-
-    return snapshotRepository.findDaily(actor.userId, date);
-  }
-
-  async getRange(actor: AuthUser, from: string, to: string) {
-    if (compareDayKeys(from, to) > 0) {
-      throw new AppError("from must be less than or equal to to", 422);
-    }
-
-    return snapshotRepository.findRange(actor.userId, from, to);
-  }
-
   async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
-    const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
+    const currentBusinessDate = getCurrentBusinessDate(
+      env.BUSINESS_DAY_START_HOUR,
+    );
 
-    assertNotFutureDayKey(payload.date, currentBusinessDate, "Future snapshot dates are not allowed");
+    assertNotFutureDayKey(
+      payload.date,
+      currentBusinessDate,
+      "Future snapshot dates are not allowed",
+    );
 
     if (isPastBusinessDate(payload.date, currentBusinessDate)) {
       throw new AppError("Past business days cannot be edited", 409);
@@ -63,14 +46,14 @@ export class SnapshotService {
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findByDate(actor.userId, payload.date),
-      productRepository.findAllByOwner(actor.userId)
+      productRepository.findAllByOwner(actor.userId),
     ]);
 
     const visibleProducts = products.filter((product) =>
-      productService.isVisibleForBusinessDate(product as any, payload.date)
+      productService.isVisibleForBusinessDate(product as any, payload.date),
     );
 
-    const entryMap = new Map(entries.map((entry) => [entry.productId, entry]));
+    const entryMap = new Map(entries.map((e) => [e.productId, e]));
 
     const derivedItems = visibleProducts.map((product) => {
       const inventory =
@@ -83,58 +66,45 @@ export class SnapshotService {
         startQuantity: Number((inventory as any).startQuantity),
         currentQuantity: Number((inventory as any).currentQuantity),
         buyPrice: Number((product as any).buyPrice),
-        sellPrice: Number((product as any).sellPrice)
+        sellPrice: Number((product as any).sellPrice),
       });
     });
 
     const totals = aggregateSnapshot(derivedItems);
     const items = payload.items ?? derivedItems;
-    const providedTotals = payload.items
-      ? {
-          totalRevenue: payload.totalRevenue,
-          totalProfit: payload.totalProfit,
-          totalSoldItems: payload.totalSoldItems
-        }
-      : totals;
-
-    if (
-      providedTotals.totalRevenue !== undefined &&
-      providedTotals.totalProfit !== undefined &&
-      providedTotals.totalSoldItems !== undefined
-    ) {
-      const computed = aggregateSnapshot(items);
-
-      if (
-        computed.totalRevenue !== providedTotals.totalRevenue ||
-        computed.totalProfit !== providedTotals.totalProfit ||
-        computed.totalSoldItems !== providedTotals.totalSoldItems
-      ) {
-        throw new AppError("Snapshot totals are inconsistent with items", 422, computed);
-      }
-    }
 
     const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
 
-    const snapshot = await snapshotRepository.upsertByDate(actor.userId, payload.date, payload.deviceId ?? "server", {
-      localId: payload.localId ?? createLocalId("snap", `${actor.userId}_${payload.date}`),
-      deviceId: payload.deviceId ?? "server",
-      date: payload.date,
-      totalRevenue: payload.totalRevenue ?? totals.totalRevenue,
-      totalProfit: payload.totalProfit ?? totals.totalProfit,
-      totalSoldItems: payload.totalSoldItems ?? totals.totalSoldItems,
-      items,
-      isDeleted: false,
-      createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
-      updatedAt: now
-    });
+    const snapshot = await snapshotRepository.upsertByDate(
+      actor.userId,
+      payload.date,
+      payload.deviceId ?? "server",
+      {
+        ownerAdminId: actor.userId,
+        localId:
+          payload.localId ??
+          createLocalId("snap", `${actor.userId}_${payload.date}`),
+        deviceId: payload.deviceId ?? "server",
+        date: payload.date,
+        totalRevenue: payload.totalRevenue ?? totals.totalRevenue,
+        totalProfit: payload.totalProfit ?? totals.totalProfit,
+        totalSoldItems: payload.totalSoldItems ?? totals.totalSoldItems,
+        items,
+        isDeleted: false,
+        createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
+        updatedAt: now,
+      },
+    );
 
     telegramReportService.reportSnapshotSaved(actor, {
       date: payload.date,
       totalRevenue: Number((snapshot as any).totalRevenue),
       totalProfit: Number((snapshot as any).totalProfit),
       totalSoldItems: Number((snapshot as any).totalSoldItems),
-      itemCount: Array.isArray((snapshot as any).items) ? (snapshot as any).items.length : 0,
-      deviceId: (snapshot as any).deviceId
+      itemCount: Array.isArray((snapshot as any).items)
+        ? (snapshot as any).items.length
+        : 0,
+      deviceId: (snapshot as any).deviceId,
     });
 
     return snapshot;
