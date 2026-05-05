@@ -29,6 +29,28 @@ type UpsertSnapshotInput = {
 };
 
 export class SnapshotService {
+  async getDaily(actor: AuthUser, date: string) {
+    const currentBusinessDate = getCurrentBusinessDate(
+      env.BUSINESS_DAY_START_HOUR,
+    );
+
+    assertNotFutureDayKey(
+      date,
+      currentBusinessDate,
+      "Future snapshot dates are not allowed",
+    );
+
+    return snapshotRepository.findDaily(actor.userId, date);
+  }
+
+  async getRange(actor: AuthUser, from: string, to: string) {
+    if (compareDayKeys(from, to) > 0) {
+      throw new AppError("from must be <= to", 422);
+    }
+
+    return snapshotRepository.findRange(actor.userId, from, to);
+  }
+
   async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
     const currentBusinessDate = getCurrentBusinessDate(
       env.BUSINESS_DAY_START_HOUR,
@@ -49,8 +71,8 @@ export class SnapshotService {
       productRepository.findAllByOwner(actor.userId),
     ]);
 
-    const visibleProducts = products.filter((product) =>
-      productService.isVisibleForBusinessDate(product as any, payload.date),
+    const visibleProducts = products.filter((p) =>
+      productService.isVisibleForBusinessDate(p as any, payload.date),
     );
 
     const entryMap = new Map(entries.map((e) => [e.productId, e]));
@@ -70,8 +92,8 @@ export class SnapshotService {
       });
     });
 
-    const totals = aggregateSnapshot(derivedItems);
     const items = payload.items ?? derivedItems;
+    const totals = aggregateSnapshot(items);
 
     const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
 
