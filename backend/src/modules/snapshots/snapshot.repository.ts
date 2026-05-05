@@ -68,13 +68,20 @@ export class SnapshotRepository {
     deviceId: string,
     payload: SnapshotRecordPayload,
   ) {
+    const query: Record<string, unknown> = {
+      ownerAdminId,
+      recordType: "daily",
+    };
+
+    if (payload.localId) {
+      query.localId = payload.localId;
+    } else {
+      query.deviceId = deviceId;
+      query["daily.date"] = date;
+    }
+
     return DailySnapshotModel.findOneAndUpdate(
-      {
-        ownerAdminId,
-        recordType: "daily",
-        deviceId,
-        "daily.date": date,
-      },
+      query,
       {
         $set: buildSnapshotRecord(ownerAdminId, {
           ...payload,
