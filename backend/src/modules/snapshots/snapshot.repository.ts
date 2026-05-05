@@ -1,11 +1,25 @@
 import { DailySnapshotModel } from "./snapshot.model";
 
-type SnapshotRecordPayload = Record<string, unknown>;
+type SnapshotRecordPayload = {
+  localId: string;
+  deviceId: string;
+  date: string;
+  totalRevenue?: number;
+  totalProfit?: number;
+  totalSoldItems?: number;
+  items?: any[];
+  isDeleted?: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+};
 
-function buildSnapshotRecord(payload: SnapshotRecordPayload) {
+function buildSnapshotRecord(
+  ownerAdminId: string,
+  payload: SnapshotRecordPayload,
+) {
   return {
     recordType: "daily",
-    ownerAdminId: payload.ownerAdminId,
+    ownerAdminId,
     localId: payload.localId,
     deviceId: payload.deviceId,
     isDeleted: payload.isDeleted ?? false,
@@ -51,6 +65,7 @@ export class SnapshotRepository {
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
   }
+
   async upsertByDate(
     ownerAdminId: string,
     date: string,
@@ -65,9 +80,8 @@ export class SnapshotRepository {
         "daily.date": date,
       },
       {
-        $set: buildSnapshotRecord({
+        $set: buildSnapshotRecord(ownerAdminId, {
           ...payload,
-          ownerAdminId,
           deviceId,
           date,
         }),
@@ -80,6 +94,7 @@ export class SnapshotRepository {
       },
     );
   }
+
   async upsertLastWriteWins(
     ownerAdminId: string,
     payload: SnapshotRecordPayload & {
@@ -94,10 +109,9 @@ export class SnapshotRepository {
     });
 
     if (!existing) {
-      return DailySnapshotModel.create({
-        recordType: "daily",
-        ...buildSnapshotRecord({ ownerAdminId, ...payload }),
-      });
+      return DailySnapshotModel.create(
+        buildSnapshotRecord(ownerAdminId, payload),
+      );
     }
 
     if (
@@ -107,7 +121,8 @@ export class SnapshotRepository {
       return existing;
     }
 
-    Object.assign(existing, buildSnapshotRecord({ ownerAdminId, ...payload }));
+    Object.assign(existing, buildSnapshotRecord(ownerAdminId, payload));
+
     return existing.save();
   }
 }
