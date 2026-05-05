@@ -7,8 +7,8 @@ import { snapshotRepository } from "../snapshots/snapshot.repository";
 type SyncInput = {
   products?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
   inventory?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
-  daily?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
-  snapshots?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
+  daily?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
+  snapshots?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
   lastSyncAt?: string;
 };
 
@@ -44,7 +44,9 @@ export class SyncService {
         snapshotRepository.upsertLastWriteWins(actor.userId, {
           ...item,
           createdAt: new Date(item.createdAt),
-          updatedAt: new Date(item.updatedAt)
+          updatedAt: new Date(item.updatedAt),
+          deviceId: item.deviceId,
+          date: item.date
         })
       )
     );
@@ -65,10 +67,10 @@ export class SyncService {
     }
 
     return {
-      products: serverProducts.map((item) => item.toJSON()),
-      inventory: serverInventory.map((item) => item.toJSON()),
-      daily: serverSnapshots.map((item) => item.toJSON()),
-      snapshots: serverSnapshots.map((item) => item.toJSON()),
+      products: serverProducts.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+      inventory: serverInventory.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+      daily: serverSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+      snapshots: serverSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
       serverTime: new Date().toISOString()
     };
   }
