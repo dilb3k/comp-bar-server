@@ -37,7 +37,7 @@ export function createApp() {
       success: true,
       data: {
         service: "bar-backend",
-        status: "running",
+        status: "running",_
         docs: "/api/health"
       }
     });
