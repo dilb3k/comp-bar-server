@@ -68,33 +68,24 @@ export class SnapshotRepository {
     deviceId: string,
     payload: SnapshotRecordPayload,
   ) {
-    const query: Record<string, unknown> = {
+    const existing = await DailySnapshotModel.findOne({
       ownerAdminId,
       recordType: "daily",
-    };
+      "daily.date": date,
+    });
 
-    if (payload.localId) {
-      query.localId = payload.localId;
-    } else {
-      query.deviceId = deviceId;
-      query["daily.date"] = date;
+    const updateRecord = buildSnapshotRecord(ownerAdminId, {
+      ...payload,
+      deviceId,
+      date,
+    });
+
+    if (existing) {
+      Object.assign(existing, updateRecord);
+      return existing.save();
     }
 
-    return DailySnapshotModel.findOneAndUpdate(
-      query,
-      {
-        $set: buildSnapshotRecord(ownerAdminId, {
-          ...payload,
-          deviceId,
-          date,
-        }),
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-      },
-    );
+    return DailySnapshotModel.create(updateRecord);
   }
 
   async upsertLastWriteWins(
