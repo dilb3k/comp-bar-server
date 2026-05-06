@@ -5,17 +5,16 @@ import {
   assertNotFutureDayKey,
   compareDayKeys,
   getCurrentBusinessDate,
-  isPastBusinessDate
+  isPastBusinessDate,
 } from "../../utils/business-day";
 import { createLocalId } from "../../utils/ids";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { productService } from "../products/product.service";
-import {
-  calculateSold,
-  deriveMissingInventoryEntry
-} from "./inventory.logic";
+import { calculateSold, deriveMissingInventoryEntry } from "./inventory.logic";
 import { inventoryRepository } from "./inventory.repository";
+import { calculateInventoryMetrics } from "./inventory.logic";
+import { aggregateInventory } from "./inventory.logic";
 
 type StartDayInput = {
   date?: string;
@@ -42,30 +41,42 @@ type BulkCurrentInput = {
 };
 
 function buildInventoryResponse(product: any, inventory: any) {
-  const productJson = typeof product?.toJSON === "function" ? product.toJSON() : product;
-  const inventoryJson = typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
+  const productJson =
+    typeof product?.toJSON === "function" ? product.toJSON() : product;
+  const inventoryJson =
+    typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
+
+  const metrics = calculateInventoryMetrics({
+    startQuantity: Number(inventory?.startQuantity),
+    currentQuantity: Number(inventory?.currentQuantity),
+    buyPrice: Number(productJson?.buyPrice || 0),
+    sellPrice: Number(productJson?.sellPrice || 0),
+  });
 
   return {
     ...inventoryJson,
-    sold: calculateSold(
-      Number(inventory?.startQuantity),
-      Number(inventory?.currentQuantity)
-    ),
+    ...metrics,
     name: productJson?.name,
     quantity: productJson?.quantity,
     buyPrice: productJson?.buyPrice,
     sellPrice: productJson?.sellPrice,
     image: productJson?.image ?? "",
-    product: productJson
+    product: productJson,
   };
 }
 
 export class InventoryService {
   private getAllowedDate(date?: string) {
-    const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
+    const currentBusinessDate = getCurrentBusinessDate(
+      env.BUSINESS_DAY_START_HOUR,
+    );
     const targetDate = date ?? currentBusinessDate;
 
-    assertNotFutureDayKey(targetDate, currentBusinessDate, "Inventory cannot be created for a future date");
+    assertNotFutureDayKey(
+      targetDate,
+      currentBusinessDate,
+      "Inventory cannot be created for a future date",
+    );
 
     if (isPastBusinessDate(targetDate, currentBusinessDate)) {
       throw new AppError("Past business days cannot be edited", 409);
@@ -75,29 +86,39 @@ export class InventoryService {
   }
 
   async getByDate(actor: AuthUser, date: string) {
-    const currentBusinessDate = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
-    assertNotFutureDayKey(date, currentBusinessDate, "Future inventory dates are not allowed");
+    const currentBusinessDate = getCurrentBusinessDate(
+      env.BUSINESS_DAY_START_HOUR,
+    );
+    assertNotFutureDayKey(
+      date,
+      currentBusinessDate,
+      "Future inventory dates are not allowed",
+    );
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findByDate(actor.userId, date),
-      productRepository.findAllByOwner(actor.userId)
+      productRepository.findAllByOwner(actor.userId),
     ]);
 
     const visibleProducts = products.filter((product) =>
-      productService.isVisibleForBusinessDate(product as any, date)
+      productService.isVisibleForBusinessDate(product as any, date),
     );
 
     const entryMap = new Map(entries.map((entry) => [entry.productId, entry]));
 
-    return visibleProducts.map((product) => {
+    const items = visibleProducts.map((product) => {
       const inventory =
         entryMap.get((product as any).localId) ??
-        deriveMissingInventoryEntry(product.toJSON() as any, date);
+        deriveMissingInventoryEntry(product.toJSON(), date);
 
       return buildInventoryResponse(product, inventory);
     });
-  }
 
+    return {
+      items,
+      summary: aggregateInventory(items),
+    };
+  }
   async getRange(actor: AuthUser, from: string, to: string) {
     if (compareDayKeys(from, to) > 0) {
       throw new AppError("from must be less than or equal to to", 422);
@@ -105,25 +126,37 @@ export class InventoryService {
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findRange(actor.userId, from, to),
-      productRepository.findAllByOwner(actor.userId)
+      productRepository.findAllByOwner(actor.userId),
     ]);
 
-    const productMap = new Map(products.map((product) => [product.localId, product]));
+    const productMap = new Map(
+      products.map((product) => [product.localId, product]),
+    );
 
-    return entries.map((entry) => {
+    const items = entries.map((entry) => {
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
         return {
           ...entry.toJSON(),
-          sold: calculateSold(Number((entry as any).startQuantity), Number((entry as any).currentQuantity)),
+          ...calculateInventoryMetrics({
+            startQuantity: Number(entry.startQuantity),
+            currentQuantity: Number(entry.currentQuantity),
+            buyPrice: 0,
+            sellPrice: 0,
+          }),
           image: "",
-          product: null
+          product: null,
         };
       }
 
       return buildInventoryResponse(product, entry);
     });
+
+    return {
+      items,
+      summary: aggregateInventory(items),
+    };
   }
 
   async startDay(actor: AuthUser, payload: StartDayInput) {
@@ -131,7 +164,7 @@ export class InventoryService {
     const now = new Date();
     const products = await productRepository.findByIdentifiers(
       actor.userId,
-      payload.items.map((item) => item.productId)
+      payload.items.map((item) => item.productId),
     );
     const productMap = new Map<string, any>();
 
@@ -145,43 +178,60 @@ export class InventoryService {
         const product = productMap.get(item.productId);
 
         if (!product || product.isDeleted) {
-          throw new AppError(`Active product not found for productId=${item.productId}`, 404);
+          throw new AppError(
+            `Active product not found for productId=${item.productId}`,
+            404,
+          );
         }
 
         const startQuantity = item.startQuantity;
         const currentQuantity = item.currentQuantity ?? item.startQuantity;
 
         if (currentQuantity > startQuantity) {
-          throw new AppError("currentQuantity cannot be greater than startQuantity", 422);
+          throw new AppError(
+            "currentQuantity cannot be greater than startQuantity",
+            422,
+          );
         }
 
-        const entry = await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, targetDate, {
-          localId: item.localId ?? createLocalId("inv", `${product.localId}_${targetDate}`),
-          deviceId: payload.deviceId,
-          productId: (product as any).localId,
-          date: targetDate,
-          startQuantity,
-          currentQuantity,
-          note: item.note ?? "",
-          isDeleted: false,
-          createdAt: item.createdAt ? new Date(item.createdAt) : now,
-          updatedAt: item.updatedAt ? new Date(item.updatedAt) : now
-        });
+        const entry = await inventoryRepository.upsertByProductAndDate(
+          actor.userId,
+          (product as any).localId,
+          targetDate,
+          {
+            localId:
+              item.localId ??
+              createLocalId("inv", `${product.localId}_${targetDate}`),
+            deviceId: payload.deviceId,
+            productId: (product as any).localId,
+            date: targetDate,
+            startQuantity,
+            currentQuantity,
+            note: item.note ?? "",
+            isDeleted: false,
+            createdAt: item.createdAt ? new Date(item.createdAt) : now,
+            updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
+          },
+        );
 
-        await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
-          quantity: currentQuantity,
-          updatedAt: now
-        });
+        await productRepository.updateById(
+          actor.userId,
+          (product as any)._id.toString(),
+          {
+            quantity: currentQuantity,
+            updatedAt: now,
+          },
+        );
 
         return buildInventoryResponse(
           {
             ...product.toJSON(),
             quantity: currentQuantity,
-            updatedAt: now.toISOString()
+            updatedAt: now.toISOString(),
           },
-          entry
+          entry,
         );
-      })
+      }),
     );
 
     telegramReportService.reportInventoryStarted(actor, {
@@ -191,8 +241,8 @@ export class InventoryService {
         productName: entry.product?.name,
         startQuantity: Number(entry.startQuantity),
         currentQuantity: Number(entry.currentQuantity),
-        sold: Number(entry.sold)
-      }))
+        sold: Number(entry.sold),
+      })),
     });
 
     return results;
@@ -203,7 +253,7 @@ export class InventoryService {
     const now = new Date();
     const products = await productRepository.findByIdentifiers(
       actor.userId,
-      payload.items.map((item) => item.productId)
+      payload.items.map((item) => item.productId),
     );
     const productMap = new Map<string, any>();
 
@@ -217,49 +267,68 @@ export class InventoryService {
         const product = productMap.get(item.productId);
 
         if (!product || product.isDeleted) {
-          throw new AppError(`Active product not found for productId=${item.productId}`, 404);
+          throw new AppError(
+            `Active product not found for productId=${item.productId}`,
+            404,
+          );
         }
 
-        const existing = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, targetDate);
+        const existing = await inventoryRepository.findByProductAndDate(
+          actor.userId,
+          (product as any).localId,
+          targetDate,
+        );
 
         if (!existing) {
           throw new AppError(
             `Inventory start entry not found for productId=${item.productId} and date=${targetDate}`,
-            404
+            404,
           );
         }
 
         if (item.currentQuantity > existing.startQuantity) {
-          throw new AppError("currentQuantity cannot be greater than startQuantity", 422);
+          throw new AppError(
+            "currentQuantity cannot be greater than startQuantity",
+            422,
+          );
         }
 
-        const updated = await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, targetDate, {
-          localId: (existing as any).localId,
-          deviceId: payload.deviceId,
-          productId: (product as any).localId,
-          date: targetDate,
-          startQuantity: Number((existing as any).startQuantity),
-          currentQuantity: item.currentQuantity,
-          note: item.note ?? ((existing as any).note ?? ""),
-          isDeleted: false,
-          createdAt: (existing as any).createdAt,
-          updatedAt: now
-        });
+        const updated = await inventoryRepository.upsertByProductAndDate(
+          actor.userId,
+          (product as any).localId,
+          targetDate,
+          {
+            localId: (existing as any).localId,
+            deviceId: payload.deviceId,
+            productId: (product as any).localId,
+            date: targetDate,
+            startQuantity: Number((existing as any).startQuantity),
+            currentQuantity: item.currentQuantity,
+            note: item.note ?? (existing as any).note ?? "",
+            isDeleted: false,
+            createdAt: (existing as any).createdAt,
+            updatedAt: now,
+          },
+        );
 
-        await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
-          quantity: item.currentQuantity,
-          updatedAt: now
-        });
+        await productRepository.updateById(
+          actor.userId,
+          (product as any)._id.toString(),
+          {
+            quantity: item.currentQuantity,
+            updatedAt: now,
+          },
+        );
 
         return buildInventoryResponse(
           {
             ...product.toJSON(),
             quantity: item.currentQuantity,
-            updatedAt: now.toISOString()
+            updatedAt: now.toISOString(),
           },
-          updated
+          updated,
         );
-      })
+      }),
     );
 
     telegramReportService.reportInventoryUpdated(actor, {
@@ -269,8 +338,8 @@ export class InventoryService {
         productName: entry.product?.name,
         startQuantity: Number(entry.startQuantity),
         currentQuantity: Number(entry.currentQuantity),
-        sold: Number(entry.sold)
-      }))
+        sold: Number(entry.sold),
+      })),
     });
 
     return results;
