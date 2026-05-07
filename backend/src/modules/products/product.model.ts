@@ -308,7 +308,7 @@ productRecordSchema.index(
   }
 );
 productRecordSchema.index(
-  { ownerAdminId: 1, deviceId: 1, "daily.date": 1 },
+  { ownerAdminId: 1, "daily.date": 1 },
   {
     unique: true,
     partialFilterExpression: { recordType: "daily" }

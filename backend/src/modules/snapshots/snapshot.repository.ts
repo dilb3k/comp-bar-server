@@ -98,24 +98,25 @@ export class SnapshotRepository {
     const existing = await DailySnapshotModel.findOne({
       ownerAdminId,
       recordType: "daily",
-      localId: payload.localId,
+      "daily.date": payload.date,
     });
 
-    if (!existing) {
-      return DailySnapshotModel.create(
-        buildSnapshotRecord(ownerAdminId, payload),
-      );
-    }
-
     if (
+      existing &&
       new Date(existing.updatedAt).getTime() >
-      new Date(payload.updatedAt).getTime()
+        new Date(payload.updatedAt).getTime()
     ) {
       return existing;
     }
 
-    Object.assign(existing, buildSnapshotRecord(ownerAdminId, payload));
-    return existing.save();
+    const record = buildSnapshotRecord(ownerAdminId, payload);
+
+    if (existing) {
+      Object.assign(existing, record);
+      return existing.save();
+    }
+
+    return DailySnapshotModel.create(record);
   }
 }
 
