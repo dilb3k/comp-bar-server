@@ -39,6 +39,23 @@ export class InventoryRepository {
     }).sort({ "inventory.date": 1, createdAt: 1 });
   }
 
+  async findByDateRange(ownerAdminId: string, from?: string, to?: string) {
+    const filter: Record<string, unknown> = {
+      ownerAdminId,
+      recordType: "inventory",
+      isDeleted: false,
+    };
+
+    if (from || to) {
+      const dateFilter: Record<string, string> = {};
+      if (from) dateFilter.$gte = from;
+      if (to) dateFilter.$lte = to;
+      filter["inventory.date"] = dateFilter;
+    }
+
+    return InventoryEntryModel.find(filter).sort({ "inventory.date": 1, createdAt: 1 });
+  }
+
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
       ? { ownerAdminId, recordType: "inventory", updatedAt: { $gt: new Date(lastSyncAt) } }

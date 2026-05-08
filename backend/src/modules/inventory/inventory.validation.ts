@@ -6,7 +6,8 @@ const dayKeySchema = z.string().refine(isValidDayKey, "date must be YYYY-MM-DD")
 const isoDateTime = z.string().datetime().optional();
 
 export const inventoryDateQuerySchema = z.object({
-  date: dayKeySchema
+  from: dayKeySchema.optional(),
+  to: dayKeySchema.optional()
 });
 
 export const inventoryRangeQuerySchema = z.object({

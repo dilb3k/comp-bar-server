@@ -10,8 +10,6 @@ import {
 import { createLocalId } from "../../utils/ids";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
-import { productService } from "../products/product.service";
-import { calculateSold, deriveMissingInventoryEntry } from "./inventory.logic";
 import { inventoryRepository } from "./inventory.repository";
 import { calculateInventoryMetrics } from "./inventory.logic";
 import { aggregateInventory } from "./inventory.logic";
@@ -85,33 +83,32 @@ export class InventoryService {
     return { targetDate, currentBusinessDate };
   }
 
-  async getByDate(actor: AuthUser, date: string) {
-    const currentBusinessDate = getCurrentBusinessDate(
-      env.BUSINESS_DAY_START_HOUR,
-    );
-    assertNotFutureDayKey(
-      date,
-      currentBusinessDate,
-      "Future inventory dates are not allowed",
-    );
-
+  async getByDate(actor: AuthUser, from?: string, to?: string) {
     const [entries, products] = await Promise.all([
-      inventoryRepository.findByDate(actor.userId, date),
+      inventoryRepository.findByDateRange(actor.userId, from, to),
       productRepository.findAllByOwner(actor.userId),
     ]);
 
-    const visibleProducts = products.filter((product) =>
-      productService.isVisibleForBusinessDate(product as any, date),
-    );
+    const productMap = new Map(products.map((product) => [product.localId, product]));
 
-    const entryMap = new Map(entries.map((entry) => [entry.productId, entry]));
+    const items = entries.map((entry) => {
+      const product = productMap.get(entry.productId) ?? null;
 
-    const items = visibleProducts.map((product) => {
-      const inventory =
-        entryMap.get((product as any).localId) ??
-        deriveMissingInventoryEntry(product.toJSON(), date);
+      if (!product) {
+        return {
+          ...entry.toJSON(),
+          ...calculateInventoryMetrics({
+            startQuantity: Number(entry.startQuantity),
+            currentQuantity: Number(entry.currentQuantity),
+            buyPrice: 0,
+            sellPrice: 0,
+          }),
+          image: "",
+          product: null,
+        };
+      }
 
-      return buildInventoryResponse(product, inventory);
+      return buildInventoryResponse(product, entry);
     });
 
     return {
