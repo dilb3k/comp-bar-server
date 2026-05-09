@@ -4,14 +4,26 @@ import { telegramReportService } from "../../services/telegram-report.service";
 import {
   assertNotFutureDayKey,
   compareDayKeys,
+  getBusinessDateFromTimestamp,
   getCurrentBusinessDate,
   isPastBusinessDate,
 } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { inventoryRepository } from "./inventory.repository";
-import { calculateInventoryMetrics } from "./inventory.logic";
+import { calculateInventoryMetrics, deriveMissingInventoryEntry } from "./inventory.logic";
 import { aggregateInventory } from "./inventory.logic";
+
+function isProductVisibleOnDate(product: any, date: string): boolean {
+  if (!product) return false;
+  const p = typeof product.toJSON === "function" ? product.toJSON() : product;
+  if (p.isDeleted) return false;
+  if (p.createdAt) {
+    const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, env.BUSINESS_DAY_START_HOUR);
+    if (createdBusinessDate > date) return false;
+  }
+  return true;
+}
 
 type StartDayInput = {
   date?: string;
@@ -94,8 +106,10 @@ export class InventoryService {
     ]);
 
     const productMap = new Map(products.map((product) => [product.localId, product]));
+    const productsWithInventory = new Set<string>();
 
     const items = entries.map((entry) => {
+      productsWithInventory.add(entry.productId);
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
@@ -114,6 +128,16 @@ export class InventoryService {
 
       return buildInventoryResponse(product, entry);
     });
+
+    const isSingleDate = from && to && from === to;
+    if (isSingleDate) {
+      for (const product of products) {
+        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from)) {
+          const derived = deriveMissingInventoryEntry(product, from);
+          items.push(buildInventoryResponse(product, derived));
+        }
+      }
+    }
 
     return {
       items,
@@ -133,8 +157,10 @@ export class InventoryService {
     const productMap = new Map(
       products.map((product) => [product.localId, product]),
     );
+    const productsWithInventory = new Set<string>();
 
     const items = entries.map((entry) => {
+      productsWithInventory.add(entry.productId);
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
@@ -153,6 +179,15 @@ export class InventoryService {
 
       return buildInventoryResponse(product, entry);
     });
+
+    if (from === to) {
+      for (const product of products) {
+        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from)) {
+          const derived = deriveMissingInventoryEntry(product, from);
+          items.push(buildInventoryResponse(product, derived));
+        }
+      }
+    }
 
     return {
       items,
