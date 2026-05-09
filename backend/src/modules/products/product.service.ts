@@ -36,7 +36,12 @@ export class ProductService {
   async create(actor: AuthUser, payload: CreateProductInput) {
     const timestamp = payload.createdAt ? new Date(payload.createdAt) : new Date();
     const normalizedImage = normalizeProductImage(payload.image);
-    const storedImage = await processAndStoreProductImage(normalizedImage);
+    let storedImage: string | undefined;
+    try {
+      storedImage = await processAndStoreProductImage(normalizedImage);
+    } catch {
+      storedImage = normalizedImage;
+    }
     const product = await productRepository.create({
       ownerAdminId: actor.userId,
       localId: payload.localId ?? createLocalId("prd", payload.deviceId),
@@ -53,20 +58,24 @@ export class ProductService {
 
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
 
-    await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
-      localId: `${today}-${(product as any).localId}`,
-      deviceId: payload.deviceId,
-      productId: (product as any).localId,
-      date: today,
-      startQuantity: payload.quantity,
-      currentQuantity: payload.quantity,
-      buyPrice: Number(payload.buyPrice || 0),
-      sellPrice: Number(payload.sellPrice || 0),
-      note: "",
-      isDeleted: false,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
+    try {
+      await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
+        localId: `${today}-${(product as any).localId}`,
+        deviceId: payload.deviceId,
+        productId: (product as any).localId,
+        date: today,
+        startQuantity: payload.quantity,
+        currentQuantity: payload.quantity,
+        buyPrice: Number(payload.buyPrice || 0),
+        sellPrice: Number(payload.sellPrice || 0),
+        note: "",
+        isDeleted: false,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+    } catch {
+      // inventory creation is best-effort
+    }
 
     telegramReportService.reportProductCreated(actor, {
       localId: (product as any).localId,
@@ -92,7 +101,12 @@ export class ProductService {
     const nextBuyPrice = payload.buyPrice ?? (product as any).buyPrice;
     const nextSellPrice = payload.sellPrice ?? (product as any).sellPrice;
     const normalizedImage = normalizeProductImage(payload.image);
-    const storedImage = await processAndStoreProductImage(normalizedImage);
+    let storedImage: string | undefined;
+    try {
+      storedImage = await processAndStoreProductImage(normalizedImage);
+    } catch {
+      storedImage = normalizedImage;
+    }
 
     if (nextSellPrice < nextBuyPrice) {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
@@ -112,42 +126,47 @@ export class ProductService {
     });
 
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
-    const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today);
 
-    if (inventoryEntry) {
-      const adjusted = getAdjustedInventoryQuantities(
-        inventoryEntry.startQuantity,
-        inventoryEntry.currentQuantity,
-        nextQuantity
-      );
+    try {
+      const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today);
 
-      await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
-        localId: (inventoryEntry as any).localId,
-        deviceId: payload.deviceId ?? (product as any).deviceId,
-        productId: (product as any).localId,
-        date: today,
-        startQuantity: adjusted.startQuantity,
-        currentQuantity: adjusted.currentQuantity,
-        note: (inventoryEntry as any).note ?? "",
-        isDeleted: false,
-        createdAt: (inventoryEntry as any).createdAt,
-        updatedAt
-      });
-    } else {
-      await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
-        localId: `${today}-${(product as any).localId}`,
-        deviceId: payload.deviceId ?? (product as any).deviceId,
-        productId: (product as any).localId,
-        date: today,
-        startQuantity: nextQuantity,
-        currentQuantity: nextQuantity,
-        buyPrice: Number(nextBuyPrice || 0),
-        sellPrice: Number(nextSellPrice || 0),
-        note: "",
-        isDeleted: false,
-        createdAt: updatedAt,
-        updatedAt
-      });
+      if (inventoryEntry) {
+        const adjusted = getAdjustedInventoryQuantities(
+          inventoryEntry.startQuantity,
+          inventoryEntry.currentQuantity,
+          nextQuantity
+        );
+
+        await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
+          localId: (inventoryEntry as any).localId,
+          deviceId: payload.deviceId ?? (product as any).deviceId,
+          productId: (product as any).localId,
+          date: today,
+          startQuantity: adjusted.startQuantity,
+          currentQuantity: adjusted.currentQuantity,
+          note: (inventoryEntry as any).note ?? "",
+          isDeleted: false,
+          createdAt: (inventoryEntry as any).createdAt,
+          updatedAt
+        });
+      } else {
+        await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
+          localId: `${today}-${(product as any).localId}`,
+          deviceId: payload.deviceId ?? (product as any).deviceId,
+          productId: (product as any).localId,
+          date: today,
+          startQuantity: nextQuantity,
+          currentQuantity: nextQuantity,
+          buyPrice: Number(nextBuyPrice || 0),
+          sellPrice: Number(nextSellPrice || 0),
+          note: "",
+          isDeleted: false,
+          createdAt: updatedAt,
+          updatedAt
+        });
+      }
+    } catch {
+      // inventory sync is best-effort
     }
 
     if (updatedProduct) {

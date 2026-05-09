@@ -21,7 +21,12 @@ export class SyncService {
 
     const processedProducts = await Promise.all(
       products.map(async (item) => {
-        const storedImage = await processAndStoreProductImage(item.image as string | undefined);
+        let storedImage: string | undefined;
+        try {
+          storedImage = await processAndStoreProductImage(item.image as string | undefined);
+        } catch {
+          storedImage = item.image as string | undefined;
+        }
         return {
           ...item,
           image: storedImage ?? (item.image as string | undefined),
