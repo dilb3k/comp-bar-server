@@ -2,9 +2,11 @@ import { ProductImageModel } from "./product-image.model";
 
 export class ProductImageRepository {
   async upsertByHash(hash: string, data: string, mimeType?: string) {
-    const existing = await ProductImageModel.findOne({ hash });
-    if (existing) return existing;
-    return ProductImageModel.create({ hash, data, mimeType });
+    return ProductImageModel.findOneAndUpdate(
+      { hash },
+      { $setOnInsert: { hash, data, mimeType, createdAt: new Date() } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
 
   async findByHash(hash: string) {
