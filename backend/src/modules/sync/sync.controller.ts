@@ -2,7 +2,6 @@ import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
 import { sendSuccess } from "../../utils/response";
-import { resolveProductImages } from "../../utils/resolve-image";
 import { syncService } from "./sync.service";
 
 function requireAuth(req: Request) {
@@ -15,7 +14,6 @@ function requireAuth(req: Request) {
 
 export const syncController = {
   async sync(req: Request, res: Response) {
-    const result = await syncService.sync(requireAuth(req), req.body);
-    return sendSuccess(res, resolveProductImages(req, result));
+    return sendSuccess(res, await syncService.sync(requireAuth(req), req.body));
   }
 };
