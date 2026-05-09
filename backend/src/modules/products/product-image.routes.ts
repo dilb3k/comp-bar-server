@@ -2,7 +2,6 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { productImageRepository } from "./product-image.repository";
 import { AppError } from "../../utils/app-error";
-import { sendSuccess } from "../../utils/response";
 
 const router = Router();
 
@@ -14,7 +13,12 @@ router.get(
     if (!image) {
       throw new AppError("Image not found", 404);
     }
-    return sendSuccess(res, { hash: image.hash, data: image.data, mimeType: image.mimeType });
+    const mimeType = image.mimeType || "image/webp";
+    const buffer = Buffer.from(image.data, "base64");
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.end(buffer);
   })
 );
 
