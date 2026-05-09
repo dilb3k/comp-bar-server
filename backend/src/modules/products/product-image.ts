@@ -33,6 +33,7 @@ export function normalizeProductImage(image?: string | null) {
 
 const DATA_URL_REGEX = /^data:([^;]+);base64,(.+)$/;
 const HASH_REGEX = /^[a-f0-9]{64}$/;
+const IMAGE_ENDPOINT_HASH_REGEX = /\/api\/products\/image\/([a-f0-9]{64})(?:$|\?|#)/;
 
 export async function processAndStoreProductImage(image?: string | null): Promise<string | undefined> {
   if (!image) return undefined;
@@ -45,10 +46,24 @@ export async function processAndStoreProductImage(image?: string | null): Promis
     return trimmed;
   }
 
+  // URL to our own image endpoint — extract hash and verify it exists
+  const endpointMatch = trimmed.match(IMAGE_ENDPOINT_HASH_REGEX);
+  if (endpointMatch) {
+    const hash = endpointMatch[1];
+    const existing = await productImageRepository.findByHash(hash);
+    if (existing) return hash;
+    return trimmed;
+  }
+
+  // Remote URL (http/https) that's not our endpoint — pass through
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
   // Only process data:image/... URLs
   const match = trimmed.match(DATA_URL_REGEX);
   if (!match) {
-    return trimmed;
+    return undefined;
   }
 
   const mimeType = match[1];
