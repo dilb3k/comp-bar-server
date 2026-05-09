@@ -43,11 +43,16 @@ function buildInventoryResponse(product: any, inventory: any) {
   const inventoryJson =
     typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
 
+  const storedBuyPrice = Number(inventoryJson?.buyPrice ?? 0);
+  const storedSellPrice = Number(inventoryJson?.sellPrice ?? 0);
+  const effectiveBuyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(productJson?.buyPrice || 0);
+  const effectiveSellPrice = storedSellPrice > 0 ? storedSellPrice : Number(productJson?.sellPrice || 0);
+
   const metrics = calculateInventoryMetrics({
-    startQuantity: Number(inventory?.startQuantity),
-    currentQuantity: Number(inventory?.currentQuantity),
-    buyPrice: Number(productJson?.buyPrice || 0),
-    sellPrice: Number(productJson?.sellPrice || 0),
+    startQuantity: Number(inventoryJson?.startQuantity ?? 0),
+    currentQuantity: Number(inventoryJson?.currentQuantity ?? 0),
+    buyPrice: effectiveBuyPrice,
+    sellPrice: effectiveSellPrice,
   });
 
   return {
@@ -55,8 +60,8 @@ function buildInventoryResponse(product: any, inventory: any) {
     ...metrics,
     name: productJson?.name,
     quantity: productJson?.quantity,
-    buyPrice: productJson?.buyPrice,
-    sellPrice: productJson?.sellPrice,
+    buyPrice: effectiveBuyPrice,
+    sellPrice: effectiveSellPrice,
     image: productJson?.image ?? "",
     product: productJson,
   };
@@ -203,6 +208,8 @@ export class InventoryService {
             date: targetDate,
             startQuantity,
             currentQuantity,
+            buyPrice: Number(product.buyPrice || 0),
+            sellPrice: Number(product.sellPrice || 0),
             note: item.note ?? "",
             isDeleted: false,
             createdAt: item.createdAt ? new Date(item.createdAt) : now,
@@ -300,6 +307,8 @@ export class InventoryService {
             date: targetDate,
             startQuantity: Number((existing as any).startQuantity),
             currentQuantity: item.currentQuantity,
+            buyPrice: Number((existing as any).buyPrice ?? product.buyPrice ?? 0),
+            sellPrice: Number((existing as any).sellPrice ?? product.sellPrice ?? 0),
             note: item.note ?? (existing as any).note ?? "",
             isDeleted: false,
             createdAt: (existing as any).createdAt,

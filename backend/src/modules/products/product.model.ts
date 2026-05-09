@@ -89,6 +89,16 @@ const inventoryDataSchema = new Schema(
       type: Number,
       min: 0
     },
+    buyPrice: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
+    sellPrice: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
     note: {
       type: String,
       default: ""
@@ -282,6 +292,8 @@ for (const [virtualName, path] of [
   ["productId", "inventory.productId"],
   ["startQuantity", "inventory.startQuantity"],
   ["currentQuantity", "inventory.currentQuantity"],
+  ["buyPrice", "inventory.buyPrice"],
+  ["sellPrice", "inventory.sellPrice"],
   ["note", "inventory.note"],
   ["dailyDate", "daily.date"],
   ["totalRevenue", "daily.totalRevenue"],

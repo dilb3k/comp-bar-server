@@ -3,7 +3,7 @@ import { z } from "zod";
 import { isValidDayKey } from "../../utils/business-day";
 
 const dayKeySchema = z.string().refine(isValidDayKey, "date must be YYYY-MM-DD");
-const isoDateTime = z.string().datetime().optional();
+const isoDateTime = z.string().optional();
 
 export const inventoryDateQuerySchema = z.object({
   date: dayKeySchema.optional(),

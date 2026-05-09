@@ -15,6 +15,8 @@ function buildInventoryRecord(payload: InventoryRecordPayload) {
       date: payload.date,
       startQuantity: payload.startQuantity,
       currentQuantity: payload.currentQuantity,
+      buyPrice: payload.buyPrice ?? 0,
+      sellPrice: payload.sellPrice ?? 0,
       note: payload.note ?? ""
     }
   };
