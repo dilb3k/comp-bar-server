@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
 import { sendSuccess } from "../../utils/response";
+import { resolveProductImages } from "../../utils/resolve-image";
 import { inventoryService } from "./inventory.service";
 
 function requireAuth(req: Request) {
@@ -20,23 +21,17 @@ export const inventoryController = {
     const effectiveDate = date as string | undefined;
 
     if (effectiveDate && !effectiveFrom && !effectiveTo) {
-      return sendSuccess(
-        res,
-        await inventoryService.getByDate(requireAuth(req), effectiveDate, effectiveDate)
-      );
+      const result = await inventoryService.getByDate(requireAuth(req), effectiveDate, effectiveDate);
+      return sendSuccess(res, resolveProductImages(req, result));
     }
 
-    return sendSuccess(
-      res,
-      await inventoryService.getByDate(requireAuth(req), effectiveFrom, effectiveTo)
-    );
+    const result = await inventoryService.getByDate(requireAuth(req), effectiveFrom, effectiveTo);
+    return sendSuccess(res, resolveProductImages(req, result));
   },
 
   async getRange(req: Request, res: Response) {
-    return sendSuccess(
-      res,
-      await inventoryService.getRange(requireAuth(req), String(req.query.from), String(req.query.to))
-    );
+    const result = await inventoryService.getRange(requireAuth(req), String(req.query.from), String(req.query.to));
+    return sendSuccess(res, resolveProductImages(req, result));
   },
 
   async startDay(req: Request, res: Response) {
