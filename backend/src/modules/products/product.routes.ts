@@ -18,11 +18,6 @@ router.get(
 );
 
 router.get(
-  "/image/:hash",
-  asyncHandler(productController.getImage)
-);
-
-router.get(
   "/:id",
   validateRequest({ params: productIdentifierParamsSchema }),
   asyncHandler(productController.get)
