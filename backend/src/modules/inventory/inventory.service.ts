@@ -7,7 +7,6 @@ import {
   getCurrentBusinessDate,
   isPastBusinessDate,
 } from "../../utils/business-day";
-import { createLocalId } from "../../utils/ids";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { inventoryRepository } from "./inventory.repository";
@@ -198,7 +197,7 @@ export class InventoryService {
           {
             localId:
               item.localId ??
-              createLocalId("inv", `${product.localId}_${targetDate}`),
+              `${targetDate}-${product.localId}`,
             deviceId: payload.deviceId,
             productId: (product as any).localId,
             date: targetDate,

@@ -7,7 +7,6 @@ import {
   getCurrentBusinessDate,
   isPastBusinessDate,
 } from "../../utils/business-day";
-import { createLocalId } from "../../utils/ids";
 import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { deriveMissingInventoryEntry } from "../inventory/inventory.logic";
@@ -104,7 +103,7 @@ export class SnapshotService {
       {
         localId:
           payload.localId ??
-          createLocalId("snap", `${actor.userId}_${payload.date}`),
+          `snapshot-${payload.date}-${payload.deviceId ?? "server"}`,
         deviceId: payload.deviceId ?? "server",
         date: payload.date,
         totalRevenue: payload.totalRevenue ?? totals.totalRevenue,

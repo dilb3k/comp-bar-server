@@ -87,7 +87,7 @@ export function getAdjustedInventoryQuantities(
 export function deriveMissingInventoryEntry(product: any, date: string) {
   const now = new Date().toISOString();
   return {
-    localId: `derived_${product.localId}_${date}`,
+    localId: `${date}-${product.localId}`,
     deviceId: product.deviceId,
     productId: product.localId,
     date,

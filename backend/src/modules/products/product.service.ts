@@ -53,7 +53,7 @@ export class ProductService {
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
 
     await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
-      localId: createLocalId("inv", `${(product as any).localId}_${today}`),
+      localId: `${today}-${(product as any).localId}`,
       deviceId: payload.deviceId,
       productId: (product as any).localId,
       date: today,
@@ -131,7 +131,7 @@ export class ProductService {
       });
     } else {
       await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
-        localId: createLocalId("inv", `${(product as any).localId}_${today}`),
+        localId: `${today}-${(product as any).localId}`,
         deviceId: payload.deviceId ?? (product as any).deviceId,
         productId: (product as any).localId,
         date: today,

@@ -70,7 +70,6 @@ export class SyncService {
       products: serverProducts.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
       inventory: serverInventory.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
       daily: serverSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-      snapshots: serverSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
       serverTime: new Date().toISOString()
     };
   }

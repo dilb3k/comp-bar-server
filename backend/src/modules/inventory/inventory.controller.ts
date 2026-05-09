@@ -14,9 +14,21 @@ function requireAuth(req: Request) {
 
 export const inventoryController = {
   async getByDate(req: Request, res: Response) {
+    const { from, to, date } = req.query;
+    const effectiveFrom = from as string | undefined;
+    const effectiveTo = to as string | undefined;
+    const effectiveDate = date as string | undefined;
+
+    if (effectiveDate && !effectiveFrom && !effectiveTo) {
+      return sendSuccess(
+        res,
+        await inventoryService.getByDate(requireAuth(req), effectiveDate, effectiveDate)
+      );
+    }
+
     return sendSuccess(
       res,
-      await inventoryService.getByDate(requireAuth(req), req.query.from as string | undefined, req.query.to as string | undefined)
+      await inventoryService.getByDate(requireAuth(req), effectiveFrom, effectiveTo)
     );
   },
 
