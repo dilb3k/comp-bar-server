@@ -1,5 +1,4 @@
 import { Router } from "express";
-
 import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
 import {
@@ -16,6 +15,11 @@ router.get(
   "/",
   validateRequest({ query: productSearchQuerySchema }),
   asyncHandler(productController.list)
+);
+
+router.get(
+  "/image/:hash",
+  asyncHandler(productController.getImage)
 );
 
 router.get(

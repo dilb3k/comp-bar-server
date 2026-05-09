@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { AppError } from "../../utils/app-error";
 import { sendSuccess } from "../../utils/response";
 import { productService } from "./product.service";
+import { productImageRepository } from "./product-image.repository";
 
 function requireAuth(req: Request) {
   if (!req.auth) {
@@ -32,5 +33,15 @@ export const productController = {
 
   async remove(req: Request, res: Response) {
     return sendSuccess(res, await productService.remove(requireAuth(req), String(req.params.id)));
+  },
+
+  async getImage(req: Request, res: Response) {
+    requireAuth(req);
+    const hash = String(req.params.hash);
+    const image = await productImageRepository.findByHash(hash);
+    if (!image) {
+      throw new AppError("Image not found", 404);
+    }
+    return sendSuccess(res, { hash: image.hash, data: image.data, mimeType: image.mimeType });
   }
 };

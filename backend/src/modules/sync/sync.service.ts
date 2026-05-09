@@ -1,6 +1,7 @@
 import type { AuthUser } from "../auth/auth.types";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
+import { processAndStoreProductImage } from "../products/product-image";
 import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
 
@@ -18,14 +19,22 @@ export class SyncService {
     const inventory = payload.inventory ?? [];
     const snapshots = payload.daily ?? payload.snapshots ?? [];
 
-    await Promise.all(
-      products.map((item) =>
-        productRepository.upsertLastWriteWins(actor.userId, {
+    const processedProducts = await Promise.all(
+      products.map(async (item) => {
+        const storedImage = await processAndStoreProductImage(item.image as string | undefined);
+        return {
           ...item,
+          image: storedImage ?? (item.image as string | undefined),
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt),
           deletedAt: item.isDeleted ? new Date(item.updatedAt) : null
-        })
+        };
+      })
+    );
+
+    await Promise.all(
+      processedProducts.map((item) =>
+        productRepository.upsertLastWriteWins(actor.userId, item)
       )
     );
 

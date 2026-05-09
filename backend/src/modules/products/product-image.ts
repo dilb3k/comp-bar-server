@@ -1,3 +1,6 @@
+import crypto from "crypto";
+import { productImageRepository } from "./product-image.repository";
+
 const LOCAL_IMAGE_PROTOCOLS = ["file://", "content://", "ph://", "assets-library://", "blob:"];
 const REMOTE_IMAGE_PROTOCOLS = ["http://", "https://", "data:image/"];
 
@@ -26,4 +29,32 @@ export function normalizeProductImage(image?: string | null) {
   }
 
   return trimmed;
+}
+
+const DATA_URL_REGEX = /^data:([^;]+);base64,(.+)$/;
+const HASH_REGEX = /^[a-f0-9]{64}$/;
+
+export async function processAndStoreProductImage(image?: string | null): Promise<string | undefined> {
+  if (!image) return undefined;
+
+  const trimmed = image.trim();
+  if (!trimmed) return undefined;
+
+  // Already a hash — keep it
+  if (HASH_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Only process data:image/... URLs
+  const match = trimmed.match(DATA_URL_REGEX);
+  if (!match) {
+    return trimmed;
+  }
+
+  const mimeType = match[1];
+  const base64Data = match[2];
+
+  const hash = crypto.createHash("sha256").update(base64Data).digest("hex");
+  await productImageRepository.upsertByHash(hash, base64Data, mimeType);
+  return hash;
 }
