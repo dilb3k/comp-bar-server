@@ -82,6 +82,56 @@ export class AuthService {
     return authRepository.listAdmins();
   }
 
+  async updateAdmin(
+    actor: AuthUser,
+    id: string,
+    payload: { username?: string; password?: string }
+  ) {
+    if (actor.role !== "superAdmin") {
+      throw new AppError("Only superAdmin can update admins", 403);
+    }
+
+    const existing = await authRepository.findById(id);
+    if (!existing || !existing.isActive) {
+      throw new AppError("User not found", 404);
+    }
+
+    if (existing.role !== "admin") {
+      throw new AppError("Can only update admin users", 400);
+    }
+
+    if (payload.username) {
+      const duplicate = await authRepository.findByUsername(payload.username);
+      if (duplicate && duplicate._id.toString() !== id) {
+        throw new AppError("Username already exists", 409);
+      }
+    }
+
+    const updated = await authRepository.updateAdmin(id, payload);
+    return updated;
+  }
+
+  async deleteAdmin(actor: AuthUser, id: string) {
+    if (actor.role !== "superAdmin") {
+      throw new AppError("Only superAdmin can delete admins", 403);
+    }
+
+    if (actor.userId === id) {
+      throw new AppError("Cannot delete yourself", 400);
+    }
+
+    const existing = await authRepository.findById(id);
+    if (!existing || !existing.isActive) {
+      throw new AppError("User not found", 404);
+    }
+
+    if (existing.role !== "admin") {
+      throw new AppError("Can only delete admin users", 400);
+    }
+
+    return authRepository.deleteAdmin(id);
+  }
+
   async findSuperAdmin() {
     return authRepository.findSuperAdmin();
   }

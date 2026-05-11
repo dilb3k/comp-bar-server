@@ -27,5 +27,13 @@ export const authController = {
 
   async listAdmins(req: Request, res: Response) {
     return sendSuccess(res, await authService.listAdmins(requireAuth(req)));
+  },
+
+  async updateAdmin(req: Request, res: Response) {
+    return sendSuccess(res, await authService.updateAdmin(requireAuth(req), req.params.id, req.body));
+  },
+
+  async deleteAdmin(req: Request, res: Response) {
+    return sendSuccess(res, await authService.deleteAdmin(requireAuth(req), req.params.id));
   }
 };

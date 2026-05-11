@@ -40,6 +40,24 @@ export class AuthRepository {
       createdAt: -1,
     });
   }
+
+  async updateAdmin(
+    id: string,
+    payload: { username?: string; password?: string },
+  ) {
+    if (!Types.ObjectId.isValid(id)) return null;
+
+    const update: Record<string, any> = {};
+    if (payload.username) update.username = payload.username.trim().toLowerCase();
+    if (payload.password) update.password = payload.password;
+
+    return UserModel.findByIdAndUpdate(id, { $set: update }, { new: true });
+  }
+
+  async deleteAdmin(id: string) {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return UserModel.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true });
+  }
 }
 
 export const authRepository = new AuthRepository();

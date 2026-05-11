@@ -35,4 +35,18 @@ router.post(
   asyncHandler(authController.createAdmin)
 );
 
+router.put(
+  "/admins/:id",
+  authenticate,
+  authorize("superAdmin"),
+  asyncHandler(authController.updateAdmin)
+);
+
+router.delete(
+  "/admins/:id",
+  authenticate,
+  authorize("superAdmin"),
+  asyncHandler(authController.deleteAdmin)
+);
+
 export const authRoutes = router;
