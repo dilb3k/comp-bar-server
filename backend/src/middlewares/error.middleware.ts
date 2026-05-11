@@ -2,13 +2,20 @@ import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
 
 import { AppError } from "../utils/app-error";
+import { detectLanguage, translateMessage } from "../utils/i18n";
+
+function getLang(req: Request): string {
+  return detectLanguage(req.headers["accept-language"]);
+}
 
 export function errorMiddleware(
   error: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) {
+  const lang = getLang(req);
+
   if (
     error instanceof Error &&
     "code" in error &&
@@ -18,7 +25,7 @@ export function errorMiddleware(
     return res.status(409).json({
       success: false,
       error: {
-        message: "Duplicate value",
+        message: translateMessage("Duplicate value", lang),
         details: null
       }
     });
@@ -28,7 +35,7 @@ export function errorMiddleware(
     return res.status(error.statusCode).json({
       success: false,
       error: {
-        message: error.message,
+        message: translateMessage(error.message, lang),
         details: error.details ?? null
       }
     });
@@ -49,7 +56,7 @@ export function errorMiddleware(
   return res.status(500).json({
     success: false,
     error: {
-      message,
+      message: translateMessage(message, lang),
       details: null
     }
   });
