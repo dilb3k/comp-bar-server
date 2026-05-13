@@ -68,6 +68,67 @@ export function aggregateInventory(items: any[]) {
   );
 }
 
+export function aggregateInventoryForRange(items: any[]) {
+  const groupedByProduct = new Map<string, any[]>();
+
+  for (const item of items) {
+    const productId = item.productId;
+    if (!productId) continue;
+    if (!groupedByProduct.has(productId)) {
+      groupedByProduct.set(productId, []);
+    }
+    groupedByProduct.get(productId)!.push(item);
+  }
+
+  let totalCurrent = 0;
+  let totalSold = 0;
+  let totalRevenue = 0;
+  let totalProfit = 0;
+  let totalStockSellValue = 0;
+  let totalStockBuyValue = 0;
+  let totalStockProfit = 0;
+
+  for (const [productId, productItems] of groupedByProduct) {
+    if (productItems.length === 0) continue;
+
+    const sortedByDate = [...productItems].sort((a, b) => {
+      if (a.date && b.date) {
+        return a.date.localeCompare(b.date);
+      }
+      if (a.createdAt && b.createdAt) {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      return 0;
+    });
+
+    const lastEntry = sortedByDate[sortedByDate.length - 1];
+
+    totalCurrent += lastEntry.remaining ?? Math.max(lastEntry.currentQuantity || 0, 0);
+    totalStockSellValue += lastEntry.stockSellValue ?? 0;
+    totalStockBuyValue += lastEntry.stockBuyValue ?? 0;
+    totalStockProfit += lastEntry.potentialProfit ?? 0;
+
+    for (const entry of sortedByDate) {
+      totalSold += entry.sold ?? Math.max((entry.startQuantity || 0) - (entry.currentQuantity || 0), 0);
+      totalRevenue += entry.revenue ?? 0;
+      totalProfit += entry.realizedProfit ?? 0;
+    }
+  }
+
+  const totalStart = totalCurrent + totalSold;
+
+  return {
+    totalStart,
+    totalCurrent,
+    totalSold,
+    totalRevenue,
+    totalProfit,
+    totalStockSellValue,
+    totalStockBuyValue,
+    totalStockProfit,
+  };
+}
+
 export function getAdjustedInventoryQuantities(
   previousStartQuantity: number,
   previousCurrentQuantity: number,

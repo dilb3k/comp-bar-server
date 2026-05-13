@@ -22,6 +22,7 @@ function buildProductRecord(payload: ProductRecordPayload) {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
+      displayIndex: payload.displayIndex ?? 0,
       ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {})
     }
   };
@@ -66,6 +67,10 @@ function buildProductUpdate(payload: ProductRecordPayload) {
     update["product.sellPrice"] = payload.sellPrice;
   }
 
+  if ("displayIndex" in payload) {
+    update["product.displayIndex"] = payload.displayIndex;
+  }
+
   if (hasOwn(payload, "image")) {
     update["product.image"] = payload.image;
   }
@@ -85,7 +90,10 @@ export class ProductRepository {
       filter["product.name"] = { $regex: search.trim(), $options: "i" };
     }
 
-    return ProductModel.find(filter).sort({ "product.name": 1 });
+    return ProductModel.find(filter).sort({
+      "product.displayIndex": 1,
+      "product.name": 1
+    });
   }
 
   async findAllByOwner(ownerAdminId: string) {

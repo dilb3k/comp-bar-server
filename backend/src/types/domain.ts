@@ -7,6 +7,7 @@ export interface Product {
   buyPrice: number;
   sellPrice: number;
   image?: string;
+  displayIndex?: number;
   isDeleted: boolean;
   updatedAt: string;
   createdAt: string;

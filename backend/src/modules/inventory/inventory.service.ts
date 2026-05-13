@@ -11,8 +11,12 @@ import {
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { inventoryRepository } from "./inventory.repository";
-import { calculateInventoryMetrics, deriveMissingInventoryEntry } from "./inventory.logic";
-import { aggregateInventory } from "./inventory.logic";
+import {
+  calculateInventoryMetrics,
+  deriveMissingInventoryEntry,
+  aggregateInventory,
+  aggregateInventoryForRange,
+} from "./inventory.logic";
 
 function isProductVisibleOnDate(product: any, date: string): boolean {
   if (!product) return false;
@@ -139,9 +143,11 @@ export class InventoryService {
       }
     }
 
+    const summary = aggregateInventoryForRange(items);
+
     return {
       items,
-      summary: aggregateInventory(items),
+      summary,
     };
   }
   async getRange(actor: AuthUser, from: string, to: string) {
@@ -180,7 +186,8 @@ export class InventoryService {
       return buildInventoryResponse(product, entry);
     });
 
-    if (from === to) {
+    const isSingleDate = from === to;
+    if (isSingleDate) {
       for (const product of products) {
         if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from)) {
           const derived = deriveMissingInventoryEntry(product, from);
@@ -189,9 +196,11 @@ export class InventoryService {
       }
     }
 
+    const summary = aggregateInventoryForRange(items);
+
     return {
       items,
-      summary: aggregateInventory(items),
+      summary,
     };
   }
 

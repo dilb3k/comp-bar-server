@@ -65,6 +65,11 @@ const productDataSchema = new Schema(
     image: {
       type: String,
       default: ""
+    },
+    displayIndex: {
+      type: Number,
+      min: 0,
+      default: 0
     }
   },
   {
@@ -289,6 +294,7 @@ for (const [virtualName, path] of [
   ["buyPrice", "product.buyPrice"],
   ["sellPrice", "product.sellPrice"],
   ["image", "product.image"],
+  ["displayIndex", "product.displayIndex"],
   ["productId", "inventory.productId"],
   ["startQuantity", "inventory.startQuantity"],
   ["currentQuantity", "inventory.currentQuantity"],
@@ -310,26 +316,87 @@ productRecordSchema.virtual("date").get(function getRecordDate() {
   return this.get("inventory.date") ?? this.get("daily.date");
 });
 
-productRecordSchema.index({ ownerAdminId: 1, recordType: 1, isDeleted: 1, updatedAt: -1 });
-productRecordSchema.index({ ownerAdminId: 1, recordType: 1, localId: 1 }, { unique: true });
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, localId: 1 },
+  {
+    unique: true,
+    name: "idx_unique_owner_record_localid",
+    background: true
+  }
+);
+
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, isDeleted: 1, "product.displayIndex": 1 },
+  {
+    partialFilterExpression: { recordType: "product" },
+    name: "idx_product_list_active_sorted",
+    background: true
+  }
+);
+
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, updatedAt: 1 },
+  {
+    name: "idx_owner_record_updatedat",
+    background: true
+  }
+);
+
 productRecordSchema.index(
   { ownerAdminId: 1, "inventory.productId": 1, "inventory.date": 1 },
   {
     unique: true,
-    partialFilterExpression: { recordType: "inventory" }
+    partialFilterExpression: { recordType: "inventory" },
+    name: "idx_unique_inventory_product_date",
+    background: true
   }
 );
+
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, isDeleted: 1, "inventory.date": 1, createdAt: 1 },
+  {
+    partialFilterExpression: { recordType: "inventory", isDeleted: false },
+    name: "idx_inventory_range_date",
+    background: true
+  }
+);
+
 productRecordSchema.index(
   { ownerAdminId: 1, "daily.date": 1 },
   {
     unique: true,
-    partialFilterExpression: { recordType: "daily" }
+    partialFilterExpression: { recordType: "daily" },
+    name: "idx_unique_daily_date",
+    background: true
   }
 );
+
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, "daily.date": 1 },
+  {
+    partialFilterExpression: { recordType: "daily" },
+    name: "idx_daily_range",
+    background: true
+  }
+);
+
 productRecordSchema.index(
   { ownerAdminId: 1, "product.name": "text" },
   {
-    partialFilterExpression: { recordType: "product" }
+    partialFilterExpression: { recordType: "product" },
+    name: "idx_product_name_text",
+    default_language: "none",
+    background: true
+  }
+);
+
+productRecordSchema.index(
+  { ownerAdminId: 1, recordType: 1, isDeleted: 1, "product.name": 1 },
+  {
+    partialFilterExpression: { recordType: "product", isDeleted: false },
+    name: "idx_product_name_regex",
+    collation: { locale: "en", strength: 2 },
+    background: true
   }
 );
 

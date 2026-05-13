@@ -50,6 +50,7 @@ export class ProductService {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
+      displayIndex: payload.displayIndex ?? 0,
       image: storedImage ?? "",
       isDeleted: false,
       createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
@@ -112,7 +113,7 @@ export class ProductService {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
     }
 
-    const updatedProduct = await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
+    const updatePayload: Record<string, unknown> = {
       deviceId: payload.deviceId ?? (product as any).deviceId,
       name: payload.name ?? (product as any).name,
       quantity: nextQuantity,
@@ -123,7 +124,17 @@ export class ProductService {
           ? storedImage ?? (product as any).image ?? ""
           : (product as any).image ?? "",
       updatedAt
-    });
+    };
+
+    if (payload.displayIndex !== undefined) {
+      updatePayload.displayIndex = payload.displayIndex;
+    }
+
+    const updatedProduct = await productRepository.updateById(
+      actor.userId,
+      (product as any)._id.toString(),
+      updatePayload
+    );
 
     const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
 
