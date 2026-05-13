@@ -69,28 +69,69 @@ export function aggregateInventory(items: any[]) {
 }
 
 export function aggregateInventoryForRange(items: any[]) {
-  const groupedByProduct = new Map<string, any[]>();
+  const productLatestEntry = new Map<string, any>();
+  const productTotalSold = new Map<string, number>();
+  const productTotalRevenue = new Map<string, number>();
+  const productTotalProfit = new Map<string, number>();
 
   for (const item of items) {
     let productId: string | undefined;
 
-    const productObj = item.product;
-    if (productObj) {
-      productId = productObj.localId ?? productObj.id;
+    if (item.product) {
+      productId = item.product.localId ?? item.product.id;
     }
 
     if (!productId) {
-      productId = item.productId ?? item.inventory?.productId;
+      productId = item.productId;
     }
 
     if (!productId) continue;
 
-    if (!groupedByProduct.has(productId)) {
-      groupedByProduct.set(productId, []);
+    const entrySold = item.sold ?? Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0);
+    const entryRevenue = item.revenue ?? 0;
+    const entryProfit = item.realizedProfit ?? 0;
+
+    productTotalSold.set(
+      productId,
+      (productTotalSold.get(productId) ?? 0) + entrySold
+    );
+    productTotalRevenue.set(
+      productId,
+      (productTotalRevenue.get(productId) ?? 0) + entryRevenue
+    );
+    productTotalProfit.set(
+      productId,
+      (productTotalProfit.get(productId) ?? 0) + entryProfit
+    );
+
+    const existing = productLatestEntry.get(productId);
+
+    if (!existing) {
+      productLatestEntry.set(productId, item);
+      continue;
     }
-    groupedByProduct.get(productId)!.push(item);
+
+    const existingDate = existing.date;
+    const itemDate = item.date;
+
+    if (itemDate && existingDate) {
+      if (itemDate.localeCompare(existingDate) > 0) {
+        productLatestEntry.set(productId, item);
+      }
+      continue;
+    }
+
+    const existingCreatedAt = existing.createdAt;
+    const itemCreatedAt = item.createdAt;
+
+    if (itemCreatedAt && existingCreatedAt) {
+      if (new Date(itemCreatedAt).getTime() > new Date(existingCreatedAt).getTime()) {
+        productLatestEntry.set(productId, item);
+      }
+    }
   }
 
+  let totalStart = 0;
   let totalCurrent = 0;
   let totalSold = 0;
   let totalRevenue = 0;
@@ -99,34 +140,26 @@ export function aggregateInventoryForRange(items: any[]) {
   let totalStockBuyValue = 0;
   let totalStockProfit = 0;
 
-  for (const [productId, productItems] of groupedByProduct) {
-    if (productItems.length === 0) continue;
+  for (const [productId, latestEntry] of productLatestEntry) {
+    const latestRemaining = latestEntry.remaining ?? Math.max(latestEntry.currentQuantity ?? 0, 0);
+    const latestStockSell = latestEntry.stockSellValue ?? 0;
+    const latestStockBuy = latestEntry.stockBuyValue ?? 0;
+    const latestStockProfit = latestEntry.potentialProfit ?? 0;
 
-    const sortedByDate = [...productItems].sort((a, b) => {
-      if (a.date && b.date) {
-        return a.date.localeCompare(b.date);
-      }
-      if (a.createdAt && b.createdAt) {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      }
-      return 0;
-    });
+    const sold = productTotalSold.get(productId) ?? 0;
+    const revenue = productTotalRevenue.get(productId) ?? 0;
+    const profit = productTotalProfit.get(productId) ?? 0;
 
-    const lastEntry = sortedByDate[sortedByDate.length - 1];
-
-    totalCurrent += lastEntry.remaining ?? Math.max(lastEntry.currentQuantity || 0, 0);
-    totalStockSellValue += lastEntry.stockSellValue ?? 0;
-    totalStockBuyValue += lastEntry.stockBuyValue ?? 0;
-    totalStockProfit += lastEntry.potentialProfit ?? 0;
-
-    for (const entry of sortedByDate) {
-      totalSold += entry.sold ?? Math.max((entry.startQuantity || 0) - (entry.currentQuantity || 0), 0);
-      totalRevenue += entry.revenue ?? 0;
-      totalProfit += entry.realizedProfit ?? 0;
-    }
+    totalCurrent += latestRemaining;
+    totalStockSellValue += latestStockSell;
+    totalStockBuyValue += latestStockBuy;
+    totalStockProfit += latestStockProfit;
+    totalSold += sold;
+    totalRevenue += revenue;
+    totalProfit += profit;
   }
 
-  const totalStart = totalCurrent + totalSold;
+  totalStart = totalCurrent + totalSold;
 
   return {
     totalStart,
