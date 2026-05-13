@@ -47,7 +47,14 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    if (!password) {
+    let passwordIsValid = false;
+    if (user.password.startsWith("$2a$") || user.password.startsWith("$2b$")) {
+      passwordIsValid = await (user as any).comparePassword(password);
+    } else {
+      passwordIsValid = user.password === password;
+    }
+
+    if (!passwordIsValid) {
       throw new AppError("Invalid username or password", 401);
     }
 

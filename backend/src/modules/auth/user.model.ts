@@ -1,4 +1,7 @@
 import { Schema, model, models } from "mongoose";
+import bcrypt from "bcryptjs";
+
+const SALT_WORK_FACTOR = 10;
 
 const userSchema = new Schema(
   {
@@ -47,6 +50,25 @@ const userSchema = new Schema(
     },
   },
 );
+
+userSchema.pre("save", async function (next) {
+  if (!this.isModified("password")) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(SALT_WORK_FACTOR);
+    const hash = await bcrypt.hash(this.password, salt);
+    this.password = hash;
+    next();
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
+  return bcrypt.compare(candidatePassword, this.password);
+};
 
 userSchema.index({ username: 1 }, { unique: true });
 

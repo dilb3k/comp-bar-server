@@ -42,6 +42,12 @@ export class ProductService {
     } catch {
       storedImage = normalizedImage;
     }
+
+    let displayIndex = payload.displayIndex;
+    if (displayIndex === undefined || displayIndex === null) {
+      displayIndex = await productRepository.getNextDisplayIndex(actor.userId);
+    }
+
     const product = await productRepository.create({
       ownerAdminId: actor.userId,
       localId: payload.localId ?? createLocalId("prd", payload.deviceId),
@@ -50,7 +56,7 @@ export class ProductService {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
-      displayIndex: payload.displayIndex ?? 0,
+      displayIndex,
       image: storedImage ?? "",
       isDeleted: false,
       createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,

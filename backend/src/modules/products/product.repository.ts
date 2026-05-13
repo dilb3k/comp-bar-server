@@ -79,6 +79,18 @@ function buildProductUpdate(payload: ProductRecordPayload) {
 }
 
 export class ProductRepository {
+  async getNextDisplayIndex(ownerAdminId: string): Promise<number> {
+    const maxProduct = await ProductModel.findOne(
+      { ownerAdminId, recordType: "product", isDeleted: false },
+      { "product.displayIndex": 1, _id: 0 }
+    ).sort({ "product.displayIndex": -1 }).limit(1);
+
+    if (maxProduct && (maxProduct as any)?.product?.displayIndex !== undefined) {
+      return (maxProduct as any).product.displayIndex + 1;
+    }
+    return 0;
+  }
+
   async findActive(ownerAdminId: string, search?: string) {
     const filter: FilterQuery<typeof ProductModel> = {
       ownerAdminId,
