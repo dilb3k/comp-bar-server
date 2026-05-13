@@ -72,13 +72,15 @@ export function aggregateInventoryForRange(items: any[]) {
   const groupedByProduct = new Map<string, any[]>();
 
   for (const item of items) {
-    let productId = item.productId ?? item.inventory?.productId;
+    let productId: string | undefined;
+
+    const productObj = item.product;
+    if (productObj) {
+      productId = productObj.localId ?? productObj.id;
+    }
 
     if (!productId) {
-      const productObj = item.product;
-      if (productObj) {
-        productId = productObj.localId ?? productObj.id;
-      }
+      productId = item.productId ?? item.inventory?.productId;
     }
 
     if (!productId) continue;
