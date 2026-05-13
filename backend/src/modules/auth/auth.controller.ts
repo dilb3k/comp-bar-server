@@ -53,7 +53,7 @@ export const authController = {
 
   async updateAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
-    const updated = await authService.updateAdmin(actor, req.params.id, {
+    const updated = await authService.updateAdmin(actor, String(req.params.id), {
       username: req.body.username,
       password: req.body.password,
       isPayed: req.body.isPayed
@@ -63,7 +63,7 @@ export const authController = {
 
   async deleteAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
-    const deleted = await authService.deleteAdmin(actor, req.params.id);
+    const deleted = await authService.deleteAdmin(actor, String(req.params.id));
     return sendSuccess(res, deleted);
   }
 };
