@@ -102,24 +102,51 @@ export class InventoryRepository {
     ownerAdminId: string,
     payload: InventoryRecordPayload & { localId: string; updatedAt: Date | string }
   ) {
+    const record = buildInventoryRecord({ ownerAdminId, ...payload });
+    const payloadUpdatedAt = new Date(payload.updatedAt);
+
     const existing = await InventoryEntryModel.findOne({
       ownerAdminId,
       recordType: "inventory",
-      localId: payload.localId
+      $or: [
+        { localId: payload.localId },
+        { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
+      ]
     });
 
     if (!existing) {
-      return InventoryEntryModel.create({
-        recordType: "inventory",
-        ...buildInventoryRecord({ ownerAdminId, ...payload })
-      });
+      try {
+        return await InventoryEntryModel.create({
+          recordType: "inventory",
+          ...record
+        });
+      } catch (error: any) {
+        if (error.code === 11000) {
+          const conflicting = await InventoryEntryModel.findOne({
+            ownerAdminId,
+            recordType: "inventory",
+            $or: [
+              { localId: payload.localId },
+              { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
+            ]
+          });
+          if (conflicting) {
+            if (new Date(conflicting.updatedAt).getTime() <= payloadUpdatedAt.getTime()) {
+              Object.assign(conflicting, record);
+              return conflicting.save();
+            }
+            return conflicting;
+          }
+        }
+        throw error;
+      }
     }
 
-    if (new Date(existing.updatedAt).getTime() > new Date(payload.updatedAt).getTime()) {
+    if (new Date(existing.updatedAt).getTime() > payloadUpdatedAt.getTime()) {
       return existing;
     }
 
-    Object.assign(existing, buildInventoryRecord({ ownerAdminId, ...payload }));
+    Object.assign(existing, record);
     return existing.save();
   }
 }

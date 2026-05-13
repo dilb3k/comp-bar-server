@@ -68,23 +68,71 @@ export function aggregateInventory(items: any[]) {
   );
 }
 
+function getItemProductId(item: any): string | undefined {
+  if (item.product) {
+    return item.product.localId ?? item.product.id;
+  }
+  return item.productId;
+}
+
+function isItemNewerThan(existing: any, item: any): boolean {
+  const existingDate = existing.date;
+  const itemDate = item.date;
+
+  if (itemDate && existingDate) {
+    if (itemDate.localeCompare(existingDate) > 0) {
+      return true;
+    }
+    if (itemDate.localeCompare(existingDate) === 0) {
+      const existingCreatedAt = existing.updatedAt ?? existing.createdAt;
+      const itemCreatedAt = item.updatedAt ?? item.createdAt;
+      if (itemCreatedAt && existingCreatedAt) {
+        return new Date(itemCreatedAt).getTime() > new Date(existingCreatedAt).getTime();
+      }
+    }
+    return false;
+  }
+
+  const existingCreatedAt = existing.updatedAt ?? existing.createdAt;
+  const itemCreatedAt = item.updatedAt ?? item.createdAt;
+
+  if (itemCreatedAt && existingCreatedAt) {
+    return new Date(itemCreatedAt).getTime() > new Date(existingCreatedAt).getTime();
+  }
+
+  return false;
+}
+
 export function aggregateInventoryForRange(items: any[]) {
+  const uniqueByProductAndDate = new Map<string, any>();
+
+  for (const item of items) {
+    const productId = getItemProductId(item);
+    if (!productId) continue;
+
+    const date = item.date ?? "unknown";
+    const key = `${productId}|||${date}`;
+
+    const existing = uniqueByProductAndDate.get(key);
+    if (!existing) {
+      uniqueByProductAndDate.set(key, item);
+      continue;
+    }
+
+    if (isItemNewerThan(existing, item)) {
+      uniqueByProductAndDate.set(key, item);
+    }
+  }
+
+  const deduplicatedItems = Array.from(uniqueByProductAndDate.values());
+
   const productLatestEntry = new Map<string, any>();
   const productTotalSold = new Map<string, number>();
   const productTotalRevenue = new Map<string, number>();
   const productTotalProfit = new Map<string, number>();
 
-  for (const item of items) {
-    let productId: string | undefined;
-
-    if (item.product) {
-      productId = item.product.localId ?? item.product.id;
-    }
-
-    if (!productId) {
-      productId = item.productId;
-    }
-
+  for (const item of deduplicatedItems) {
+    const productId = getItemProductId(item);
     if (!productId) continue;
 
     const entrySold = item.sold ?? Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0);
@@ -111,23 +159,8 @@ export function aggregateInventoryForRange(items: any[]) {
       continue;
     }
 
-    const existingDate = existing.date;
-    const itemDate = item.date;
-
-    if (itemDate && existingDate) {
-      if (itemDate.localeCompare(existingDate) > 0) {
-        productLatestEntry.set(productId, item);
-      }
-      continue;
-    }
-
-    const existingCreatedAt = existing.createdAt;
-    const itemCreatedAt = item.createdAt;
-
-    if (itemCreatedAt && existingCreatedAt) {
-      if (new Date(itemCreatedAt).getTime() > new Date(existingCreatedAt).getTime()) {
-        productLatestEntry.set(productId, item);
-      }
+    if (isItemNewerThan(existing, item)) {
+      productLatestEntry.set(productId, item);
     }
   }
 
