@@ -4,4 +4,5 @@ export type AuthUser = {
   userId: string;
   username: string;
   role: UserRole;
+  isPayed: boolean;
 };

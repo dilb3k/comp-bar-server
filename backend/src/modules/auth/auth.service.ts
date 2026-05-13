@@ -8,6 +8,38 @@ import type { AuthUser } from "./auth.types";
 import {signAccessToken } from "./auth.utils";
 
 export class AuthService {
+  async register(payload: { username: string; password: string }) {
+    const existing = await authRepository.findByUsername(payload.username);
+
+    if (existing) {
+      throw new AppError("Username already exists", 409);
+    }
+
+    const superAdmin = await authRepository.findSuperAdmin();
+    const hasSuperAdmin = !!superAdmin;
+
+    const role = hasSuperAdmin ? "admin" : "superAdmin";
+
+    const user = await authRepository.createUser({
+      username: payload.username,
+      password: payload.password,
+      role: role as "admin" | "superAdmin",
+      createdBy: null,
+    });
+
+    const authUser: AuthUser = {
+      userId: user._id.toString(),
+      username: user.username,
+      role: user.role,
+      isPayed: role === "superAdmin" ? true : false
+    };
+
+    return {
+      token: signAccessToken(authUser),
+      user: user.toJSON()
+    };
+  }
+
   async login(username: string, password: string) {
     const user = await authRepository.findByUsername(username);
 
@@ -22,7 +54,8 @@ export class AuthService {
     const authUser: AuthUser = {
       userId: user._id.toString(),
       username: user.username,
-      role: user.role
+      role: user.role,
+      isPayed: user.role === "superAdmin" ? true : (user.isPayed ?? false)
     };
 
     return {
@@ -46,6 +79,7 @@ export class AuthService {
     payload: {
       username: string;
       password: string;
+      isPayed?: boolean;
     }
   ) {
     if (actor.role !== "superAdmin") {
@@ -65,13 +99,17 @@ export class AuthService {
       createdBy: actor.userId,
     });
 
+    if (payload.isPayed !== undefined && payload.isPayed !== (admin as any).isPayed) {
+      await authRepository.updateAdmin(admin._id.toString(), { isPayed: payload.isPayed });
+    }
+
     telegramReportService.reportAdminCreated(actor, {
       username: (admin as any).username,
       role: (admin as any).role,
       createdBy: (admin as any).createdBy ?? actor.userId
     });
 
-    return admin;
+    return authRepository.findById(admin._id.toString());
   }
 
   async listAdmins(actor: AuthUser) {
@@ -85,7 +123,7 @@ export class AuthService {
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; password?: string }
+    payload: { username?: string; password?: string; isPayed?: boolean }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
@@ -96,7 +134,7 @@ export class AuthService {
       throw new AppError("User not found", 404);
     }
 
-    if (existing.role !== "admin") {
+    if (actor.userId !== id && existing.role !== "admin") {
       throw new AppError("Can only update admin users", 400);
     }
 

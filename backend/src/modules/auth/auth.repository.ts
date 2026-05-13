@@ -43,13 +43,14 @@ export class AuthRepository {
 
   async updateAdmin(
     id: string,
-    payload: { username?: string; password?: string },
+    payload: { username?: string; password?: string; isPayed?: boolean },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
     const update: Record<string, any> = {};
-    if (payload.username) update.username = payload.username.trim().toLowerCase();
-    if (payload.password) update.password = payload.password;
+    if (payload.username !== undefined) update.username = payload.username.trim().toLowerCase();
+    if (payload.password !== undefined) update.password = payload.password;
+    if (payload.isPayed !== undefined) update.isPayed = payload.isPayed;
 
     return UserModel.findByIdAndUpdate(id, { $set: update }, { new: true });
   }

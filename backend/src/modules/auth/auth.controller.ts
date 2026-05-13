@@ -13,27 +13,57 @@ function requireAuth(req: Request) {
 }
 
 export const authController = {
+  async register(req: Request, res: Response) {
+    const result = await authService.register({
+      username: req.body.username,
+      password: req.body.password
+    });
+    return sendSuccess(res, result);
+  },
+
   async login(req: Request, res: Response) {
-    return sendSuccess(res, await authService.login(req.body.username, req.body.password));
+    const result = await authService.login(
+      req.body.username,
+      req.body.password
+    );
+    return sendSuccess(res, result);
   },
 
   async me(req: Request, res: Response) {
-    return sendSuccess(res, await authService.getCurrentUser(requireAuth(req).userId));
-  },
-
-  async createAdmin(req: Request, res: Response) {
-    return sendSuccess(res, await authService.createAdmin(requireAuth(req), req.body), 201);
+    const actor = requireAuth(req);
+    const user = await authService.getCurrentUser(actor.userId);
+    return sendSuccess(res, user);
   },
 
   async listAdmins(req: Request, res: Response) {
-    return sendSuccess(res, await authService.listAdmins(requireAuth(req)));
+    const actor = requireAuth(req);
+    const admins = await authService.listAdmins(actor);
+    return sendSuccess(res, admins);
+  },
+
+  async createAdmin(req: Request, res: Response) {
+    const actor = requireAuth(req);
+    const admin = await authService.createAdmin(actor, {
+      username: req.body.username,
+      password: req.body.password,
+      isPayed: req.body.isPayed
+    });
+    return sendSuccess(res, admin);
   },
 
   async updateAdmin(req: Request, res: Response) {
-    return sendSuccess(res, await authService.updateAdmin(requireAuth(req), req.params.id, req.body));
+    const actor = requireAuth(req);
+    const updated = await authService.updateAdmin(actor, req.params.id, {
+      username: req.body.username,
+      password: req.body.password,
+      isPayed: req.body.isPayed
+    });
+    return sendSuccess(res, updated);
   },
 
   async deleteAdmin(req: Request, res: Response) {
-    return sendSuccess(res, await authService.deleteAdmin(requireAuth(req), req.params.id));
+    const actor = requireAuth(req);
+    const deleted = await authService.deleteAdmin(actor, req.params.id);
+    return sendSuccess(res, deleted);
   }
 };

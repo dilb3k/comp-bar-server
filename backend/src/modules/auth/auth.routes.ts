@@ -4,9 +4,15 @@ import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
 import { authController } from "./auth.controller";
 import { authenticate, authorize } from "./auth.middleware";
-import { createAdminSchema, loginSchema } from "./auth.validation";
+import { createAdminSchema, loginSchema, registerSchema, updateAdminSchema } from "./auth.validation";
 
 const router = Router();
+
+router.post(
+  "/register",
+  validateRequest({ body: registerSchema }),
+  asyncHandler(authController.register)
+);
 
 router.post(
   "/login",

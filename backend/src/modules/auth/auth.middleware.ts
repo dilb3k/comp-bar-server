@@ -26,7 +26,8 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
     req.auth = {
       userId: payload.userId,
       username: payload.username,
-      role: payload.role
+      role: payload.role,
+      isPayed: payload.isPayed ?? (payload.role === "superAdmin")
     };
     return next();
   } catch {
@@ -46,4 +47,20 @@ export function authorize(...roles: UserRole[]) {
 
     return next();
   };
+}
+
+export function requirePayment(req: Request, _res: Response, next: NextFunction) {
+  if (!req.auth) {
+    return next(new AppError("Unauthorized", 401));
+  }
+
+  if (req.auth.role === "superAdmin") {
+    return next();
+  }
+
+  if (!req.auth.isPayed) {
+    return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
+  }
+
+  return next();
 }

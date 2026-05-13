@@ -28,6 +28,11 @@ const userSchema = new Schema(
       default: true,
       index: true,
     },
+    isPayed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
