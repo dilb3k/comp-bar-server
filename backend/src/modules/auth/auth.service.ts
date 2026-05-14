@@ -1,4 +1,5 @@
 ﻿import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 import { ProductModel } from "../products/product.model";
 import { telegramReportService } from "../../services/telegram-report.service";
@@ -47,7 +48,22 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    let passwordIsValid = await (user as any).comparePassword(password);
+    const storedPassword = (user as any).password || "";
+    const isBcryptHash = storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$");
+
+    let passwordIsValid = false;
+
+    if (isBcryptHash) {
+      passwordIsValid = await (user as any).comparePassword(password);
+    } else {
+      passwordIsValid = storedPassword === password;
+      if (passwordIsValid) {
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(password, salt);
+        (user as any).password = hash;
+        await (user as any).save();
+      }
+    }
 
     if (!passwordIsValid) {
       throw new AppError("Invalid username or password", 401);
