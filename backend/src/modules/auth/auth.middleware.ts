@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../../utils/app-error";
 import type { UserRole } from "./auth.types";
 import { verifyAccessToken } from "./auth.utils";
+import { authRepository } from "./auth.repository";
 
 function extractBearerToken(req: Request) {
   const header = req.headers.authorization;
@@ -58,9 +59,15 @@ export function requirePayment(req: Request, _res: Response, next: NextFunction)
     return next();
   }
 
-  if (!req.auth.isPayed) {
+  authRepository.findById(req.auth.userId).then((user) => {
+    if (!user || !user.isActive) {
+      return next(new AppError("User not found", 404));
+    }
+    if (!(user as any).isPayed) {
+      return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
+    }
+    return next();
+  }).catch(() => {
     return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
-  }
-
-  return next();
+  });
 }
