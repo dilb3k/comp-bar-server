@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
+import { imageLimiter } from "../../middlewares/rate-limit.middleware";
 import { productImageRepository } from "./product-image.repository";
 import { AppError } from "../../utils/app-error";
 
@@ -7,6 +8,7 @@ const router = Router();
 
 router.get(
   "/image/:hash",
+  imageLimiter,
   asyncHandler(async (req, res) => {
     const hash = String(req.params.hash);
     const image = await productImageRepository.findByHash(hash);

@@ -9,6 +9,7 @@ import { notFoundMiddleware } from "./middlewares/not-found.middleware";
 import { authRoutes } from "./modules/auth/auth.routes";
 import { authenticate } from "./modules/auth/auth.middleware";
 import { healthRoutes } from "./modules/health/health.routes";
+import { debtorRoutes } from "./modules/debtors/debtor.routes";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes";
 import { productRoutes } from "./modules/products/product.routes";
 import { productImageRoutes } from "./modules/products/product-image.routes";
@@ -50,6 +51,7 @@ export function createApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/products", productImageRoutes);
   app.use("/api/products", authenticate, productRoutes);
+  app.use("/api/debtors", authenticate, debtorRoutes);
   app.use("/api/inventory", authenticate, inventoryRoutes);
   app.use("/api/snapshots", authenticate, snapshotRoutes);
   app.use("/api/sync", authenticate, syncRoutes);

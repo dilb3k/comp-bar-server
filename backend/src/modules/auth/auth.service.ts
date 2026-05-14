@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+﻿import mongoose from "mongoose";
 
 import { ProductModel } from "../products/product.model";
 import { telegramReportService } from "../../services/telegram-report.service";
@@ -47,16 +47,12 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    let passwordIsValid = false;
-    if (user.password.startsWith("$2a$") || user.password.startsWith("$2b$")) {
-      passwordIsValid = await (user as any).comparePassword(password);
-    } else {
-      passwordIsValid = user.password === password;
-    }
+    let passwordIsValid = await (user as any).comparePassword(password);
 
     if (!passwordIsValid) {
       throw new AppError("Invalid username or password", 401);
     }
+
 
     const authUser: AuthUser = {
       userId: user._id.toString(),
@@ -182,37 +178,29 @@ export class AuthService {
   }
 
   async migrateLegacyOwnership(defaultOwnerAdminId: string) {
+    // Pre-flight check: skip if no records need migration
+    const orphanFilter = {
+      $or: [
+        { ownerAdminId: { $exists: false } },
+        { ownerAdminId: null },
+        { ownerAdminId: "" }
+      ]
+    };
+
+    const needsMigration = await Promise.all([
+      ProductModel.countDocuments(orphanFilter),
+      mongoose.connection.collection("catalog_items").countDocuments(orphanFilter),
+      mongoose.connection.collection("dailysnapshots").countDocuments(orphanFilter),
+    ]);
+
+    if (!needsMigration.some((count) => count > 0)) {
+      return;
+    }
+
     await Promise.all([
-      ProductModel.updateMany(
-        {
-          $or: [
-            { ownerAdminId: { $exists: false } },
-            { ownerAdminId: null },
-            { ownerAdminId: "" }
-          ]
-        },
-        { $set: { ownerAdminId: defaultOwnerAdminId } }
-      ),
-      mongoose.connection.collection("catalog_items").updateMany(
-        {
-          $or: [
-            { ownerAdminId: { $exists: false } },
-            { ownerAdminId: null },
-            { ownerAdminId: "" }
-          ]
-        },
-        { $set: { ownerAdminId: defaultOwnerAdminId } }
-      ),
-      mongoose.connection.collection("dailysnapshots").updateMany(
-        {
-          $or: [
-            { ownerAdminId: { $exists: false } },
-            { ownerAdminId: null },
-            { ownerAdminId: "" }
-          ]
-        },
-        { $set: { ownerAdminId: defaultOwnerAdminId } }
-      )
+      ProductModel.updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
+      mongoose.connection.collection("catalog_items").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
+      mongoose.connection.collection("dailysnapshots").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
     ]);
   }
 }
