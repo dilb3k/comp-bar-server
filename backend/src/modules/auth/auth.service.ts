@@ -1,5 +1,4 @@
 ﻿import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
 
 import { ProductModel } from "../products/product.model";
 import { telegramReportService } from "../../services/telegram-report.service";
@@ -58,9 +57,7 @@ export class AuthService {
     } else {
       passwordIsValid = storedPassword === password;
       if (passwordIsValid) {
-        const salt = await bcrypt.genSalt(10);
-        const hash = await bcrypt.hash(password, salt);
-        (user as any).password = hash;
+        (user as any).password = password;
         await (user as any).save();
       }
     }

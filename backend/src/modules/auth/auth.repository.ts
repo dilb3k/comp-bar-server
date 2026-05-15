@@ -47,12 +47,14 @@ export class AuthRepository {
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
-    const update: Record<string, any> = {};
-    if (payload.username !== undefined) update.username = payload.username.trim().toLowerCase();
-    if (payload.password !== undefined) update.password = payload.password;
-    if (payload.isPayed !== undefined) update.isPayed = payload.isPayed;
+    const user = await UserModel.findById(id);
+    if (!user) return null;
 
-    return UserModel.findByIdAndUpdate(id, { $set: update }, { new: true });
+    if (payload.username !== undefined) user.username = payload.username.trim().toLowerCase();
+    if (payload.password !== undefined) user.password = payload.password;
+    if (payload.isPayed !== undefined) user.isPayed = payload.isPayed;
+
+    return user.save();
   }
 
   async deleteAdmin(id: string) {
