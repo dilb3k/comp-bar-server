@@ -22,7 +22,7 @@ function buildProductRecord(payload: ProductRecordPayload) {
       quantity: payload.quantity,
       buyPrice: payload.buyPrice,
       sellPrice: payload.sellPrice,
-      displayIndex: payload.displayIndex ?? 1,
+      displayIndex: payload.displayIndex ?? 0,
       ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {})
     }
   };

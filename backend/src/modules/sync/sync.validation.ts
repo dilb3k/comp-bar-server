@@ -10,6 +10,7 @@ const syncedProductSchema = z.object({
   buyPrice: z.number().min(0),
   sellPrice: z.number().min(0),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
+  displayIndex: z.number().int().min(1).optional(),
   isDeleted: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
