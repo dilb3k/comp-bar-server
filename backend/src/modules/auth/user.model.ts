@@ -36,6 +36,10 @@ const userSchema = new Schema(
       default: false,
       index: true,
     },
+    businessDayStartHour: {
+      type: Number,
+      default: 7,
+    },
   },
   {
     timestamps: true,

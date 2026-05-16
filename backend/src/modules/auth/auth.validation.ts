@@ -21,3 +21,7 @@ export const updateAdminSchema = z.object({
   password: z.string().min(6, "password must be at least 6 characters").optional(),
   isPayed: z.boolean().optional()
 });
+
+export const updateMeSchema = z.object({
+  businessDayStartHour: z.number().int().min(0).max(23)
+});

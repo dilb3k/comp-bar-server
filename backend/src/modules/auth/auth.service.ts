@@ -31,7 +31,8 @@ export class AuthService {
       userId: user._id.toString(),
       username: user.username,
       role: user.role,
-      isPayed: role === "superAdmin" ? true : false
+      isPayed: role === "superAdmin" ? true : false,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 7,
     };
 
     return {
@@ -71,7 +72,8 @@ export class AuthService {
       userId: user._id.toString(),
       username: user.username,
       role: user.role,
-      isPayed: user.role === "superAdmin" ? true : (user.isPayed ?? false)
+      isPayed: user.role === "superAdmin" ? true : (user.isPayed ?? false),
+      businessDayStartHour: (user as any).businessDayStartHour ?? 7,
     };
 
     return {
@@ -162,6 +164,17 @@ export class AuthService {
     }
 
     const updated = await authRepository.updateAdmin(id, payload);
+    return updated;
+  }
+
+  async updateMe(
+    actor: AuthUser,
+    payload: { businessDayStartHour: number }
+  ) {
+    const updated = await authRepository.updateMe(actor.userId, payload);
+    if (!updated) {
+      throw new AppError("User not found", 404);
+    }
     return updated;
   }
 

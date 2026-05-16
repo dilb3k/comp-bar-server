@@ -65,5 +65,13 @@ export const authController = {
     const actor = requireAuth(req);
     const deleted = await authService.deleteAdmin(actor, String(req.params.id));
     return sendSuccess(res, deleted);
+  },
+
+  async updateMe(req: Request, res: Response) {
+    const actor = requireAuth(req);
+    const updated = await authService.updateMe(actor, {
+      businessDayStartHour: req.body.businessDayStartHour
+    });
+    return sendSuccess(res, updated);
   }
 };

@@ -43,7 +43,7 @@ export class AuthRepository {
 
   async updateAdmin(
     id: string,
-    payload: { username?: string; password?: string; isPayed?: boolean },
+    payload: { username?: string; password?: string; isPayed?: boolean; businessDayStartHour?: number },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
@@ -53,6 +53,21 @@ export class AuthRepository {
     if (payload.username !== undefined) user.username = payload.username.trim().toLowerCase();
     if (payload.password !== undefined) user.password = payload.password;
     if (payload.isPayed !== undefined) user.isPayed = payload.isPayed;
+    if (payload.businessDayStartHour !== undefined) (user as any).businessDayStartHour = payload.businessDayStartHour;
+
+    return user.save();
+  }
+
+  async updateMe(
+    id: string,
+    payload: { businessDayStartHour: number },
+  ) {
+    if (!Types.ObjectId.isValid(id)) return null;
+
+    const user = await UserModel.findById(id);
+    if (!user) return null;
+
+    (user as any).businessDayStartHour = payload.businessDayStartHour;
 
     return user.save();
   }

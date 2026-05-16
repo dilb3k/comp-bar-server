@@ -5,4 +5,5 @@ export type AuthUser = {
   username: string;
   role: UserRole;
   isPayed: boolean;
+  businessDayStartHour?: number;
 };
