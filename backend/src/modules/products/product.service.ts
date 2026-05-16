@@ -63,7 +63,8 @@ export class ProductService {
       updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
     });
 
-    const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
+    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const today = getCurrentBusinessDate(businessHour);
 
     try {
       await inventoryRepository.upsertByProductAndDate(actor.userId, (product as any).localId, today, {
@@ -142,7 +143,8 @@ export class ProductService {
       updatePayload
     );
 
-    const today = getCurrentBusinessDate(env.BUSINESS_DAY_START_HOUR);
+    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const today = getCurrentBusinessDate(businessHour);
 
     try {
       const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today);
@@ -226,11 +228,13 @@ export class ProductService {
       deletedAt?: Date | string | null;
       isDeleted: boolean;
     },
-    date: string
+    date: string,
+    businessDayStartHour?: number
   ) {
+    const hour = businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
     const createdBusinessDate = getBusinessDateFromTimestamp(
       product.createdAt,
-      env.BUSINESS_DAY_START_HOUR
+      hour
     );
 
     if (createdBusinessDate > date) {
@@ -243,7 +247,7 @@ export class ProductService {
 
     const deletedBusinessDate = getBusinessDateFromTimestamp(
       product.deletedAt,
-      env.BUSINESS_DAY_START_HOUR
+      hour
     );
 
     return deletedBusinessDate > date;

@@ -84,10 +84,9 @@ function buildInventoryResponse(product: any, inventory: any) {
 }
 
 export class InventoryService {
-  private getAllowedDate(date?: string) {
-    const currentBusinessDate = getCurrentBusinessDate(
-      env.BUSINESS_DAY_START_HOUR,
-    );
+  private getAllowedDate(actor: AuthUser, date?: string) {
+    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const currentBusinessDate = getCurrentBusinessDate(businessHour);
     const targetDate = date ?? currentBusinessDate;
 
     assertNotFutureDayKey(
@@ -205,7 +204,7 @@ export class InventoryService {
   }
 
   async startDay(actor: AuthUser, payload: StartDayInput) {
-    const { targetDate } = this.getAllowedDate(payload.date);
+    const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
     const products = await productRepository.findByIdentifiers(
       actor.userId,
@@ -296,7 +295,7 @@ export class InventoryService {
   }
 
   async bulkUpdateCurrent(actor: AuthUser, payload: BulkCurrentInput) {
-    const { targetDate } = this.getAllowedDate(payload.date);
+    const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
     const products = await productRepository.findByIdentifiers(
       actor.userId,

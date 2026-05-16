@@ -29,9 +29,8 @@ type UpsertSnapshotInput = {
 
 export class SnapshotService {
   async getDaily(actor: AuthUser, date: string) {
-    const currentBusinessDate = getCurrentBusinessDate(
-      env.BUSINESS_DAY_START_HOUR,
-    );
+    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const currentBusinessDate = getCurrentBusinessDate(businessHour);
 
     assertNotFutureDayKey(
       date,
@@ -51,9 +50,8 @@ export class SnapshotService {
   }
 
   async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
-    const currentBusinessDate = getCurrentBusinessDate(
-      env.BUSINESS_DAY_START_HOUR,
-    );
+    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const currentBusinessDate = getCurrentBusinessDate(businessHour);
 
     assertNotFutureDayKey(
       payload.date,
@@ -71,7 +69,7 @@ export class SnapshotService {
     ]);
 
     const visibleProducts = products.filter((p) =>
-      productService.isVisibleForBusinessDate(p as any, payload.date),
+      productService.isVisibleForBusinessDate(p as any, payload.date, actor.businessDayStartHour),
     );
 
     const entryMap = new Map(entries.map((e) => [e.productId, e]));
