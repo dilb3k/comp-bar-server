@@ -6,6 +6,7 @@ import {
   compareDayKeys,
   getBusinessDateFromTimestamp,
   getCurrentBusinessDate,
+  getEffectiveHour,
   isPastBusinessDate,
 } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
@@ -85,7 +86,7 @@ function buildInventoryResponse(product: any, inventory: any) {
 
 export class InventoryService {
   private getAllowedDate(actor: AuthUser, date?: string) {
-    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour);
     const targetDate = date ?? currentBusinessDate;
 

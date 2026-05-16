@@ -5,6 +5,7 @@ import {
   assertNotFutureDayKey,
   compareDayKeys,
   getCurrentBusinessDate,
+  getEffectiveHour,
   isPastBusinessDate,
 } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
@@ -29,7 +30,7 @@ type UpsertSnapshotInput = {
 
 export class SnapshotService {
   async getDaily(actor: AuthUser, date: string) {
-    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour);
 
     assertNotFutureDayKey(
@@ -50,7 +51,7 @@ export class SnapshotService {
   }
 
   async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
-    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour);
 
     assertNotFutureDayKey(
@@ -69,7 +70,7 @@ export class SnapshotService {
     ]);
 
     const visibleProducts = products.filter((p) =>
-      productService.isVisibleForBusinessDate(p as any, payload.date, actor.businessDayStartHour),
+      productService.isVisibleForBusinessDate(p as any, payload.date, getEffectiveHour(actor)),
     );
 
     const entryMap = new Map(entries.map((e) => [e.productId, e]));

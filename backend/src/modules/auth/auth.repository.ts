@@ -60,7 +60,7 @@ export class AuthRepository {
 
   async updateMe(
     id: string,
-    payload: { businessDayStartHour: number },
+    payload: { businessDayStartHour: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
@@ -68,6 +68,12 @@ export class AuthRepository {
     if (!user) return null;
 
     (user as any).businessDayStartHour = payload.businessDayStartHour;
+    if (payload.pendingBusinessDayStartHour !== undefined) {
+      (user as any).pendingBusinessDayStartHour = payload.pendingBusinessDayStartHour;
+    }
+    if (payload.businessDayEffectiveFrom !== undefined) {
+      (user as any).businessDayEffectiveFrom = payload.businessDayEffectiveFrom;
+    }
 
     return user.save();
   }

@@ -2,7 +2,7 @@ import { env } from "../../config/env";
 import type { Product } from "../../types/domain";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
-import { getBusinessDateFromTimestamp, getCurrentBusinessDate } from "../../utils/business-day";
+import { getBusinessDateFromTimestamp, getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
 import { telegramReportService } from "../../services/telegram-report.service";
 import type { AuthUser } from "../auth/auth.types";
 import { inventoryRepository } from "../inventory/inventory.repository";
@@ -63,7 +63,7 @@ export class ProductService {
       updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
     });
 
-    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour);
 
     try {
@@ -143,7 +143,7 @@ export class ProductService {
       updatePayload
     );
 
-    const businessHour = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour);
 
     try {

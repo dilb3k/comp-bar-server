@@ -1,3 +1,6 @@
+import type { AuthUser } from "../modules/auth/auth.types";
+import { env } from "../config/env";
+
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function toDate(value?: string | Date) {
@@ -21,6 +24,16 @@ function formatDayKey(date: Date) {
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+export function getEffectiveHour(actor: AuthUser): number {
+  const active = actor.businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+  if (actor.pendingBusinessDayStartHour != null && actor.businessDayEffectiveFrom) {
+    if (new Date() >= new Date(actor.businessDayEffectiveFrom)) {
+      return actor.pendingBusinessDayStartHour;
+    }
+  }
+  return active;
 }
 
 export function isValidDayKey(value: string) {

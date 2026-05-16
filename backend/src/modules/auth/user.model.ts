@@ -40,6 +40,14 @@ const userSchema = new Schema(
       type: Number,
       default: 7,
     },
+    pendingBusinessDayStartHour: {
+      type: Number,
+      default: null,
+    },
+    businessDayEffectiveFrom: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -6,4 +6,6 @@ export type AuthUser = {
   role: UserRole;
   isPayed: boolean;
   businessDayStartHour?: number;
+  pendingBusinessDayStartHour?: number | null;
+  businessDayEffectiveFrom?: string | null;
 };

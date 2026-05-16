@@ -171,11 +171,33 @@ export class AuthService {
     actor: AuthUser,
     payload: { businessDayStartHour: number }
   ) {
-    const updated = await authRepository.updateMe(actor.userId, payload);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
+
+    const updated = await authRepository.updateMe(actor.userId, {
+      businessDayStartHour: actor.businessDayStartHour ?? 7,
+      pendingBusinessDayStartHour: payload.businessDayStartHour,
+      businessDayEffectiveFrom: tomorrow,
+    });
     if (!updated) {
       throw new AppError("User not found", 404);
     }
-    return updated;
+
+    const updatedUser: AuthUser = {
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
+      isPayed: actor.isPayed,
+      businessDayStartHour: actor.businessDayStartHour ?? 7,
+      pendingBusinessDayStartHour: payload.businessDayStartHour,
+      businessDayEffectiveFrom: tomorrow.toISOString(),
+    };
+
+    return {
+      user: updated.toJSON(),
+      token: signAccessToken(updatedUser),
+    };
   }
 
   async deleteAdmin(actor: AuthUser, id: string) {
