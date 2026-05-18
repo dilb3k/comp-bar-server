@@ -18,6 +18,16 @@ const debtorSchema = new Schema(
       min: 0,
       default: 0,
     },
+    phone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     history: [
       {
         amount: { type: Number, required: true },

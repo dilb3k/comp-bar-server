@@ -14,11 +14,16 @@ export const debtorService = {
     return debtor;
   },
 
-  async create(auth: AuthUser, data: { name: string; amount: number }) {
+  async create(
+    auth: AuthUser,
+    data: { name: string; amount: number; phone?: string; notes?: string }
+  ) {
     const debtor = await DebtorModel.create({
       createdBy: auth.userId,
       name: data.name,
       amount: data.amount,
+      phone: data.phone?.trim() || "",
+      notes: data.notes?.trim() || "",
       history: data.amount > 0
         ? [{ amount: data.amount, type: "add" as const, date: new Date().toISOString() }]
         : [],

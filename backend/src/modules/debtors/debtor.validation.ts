@@ -3,6 +3,8 @@ import { z } from "zod";
 export const createDebtorSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   amount: z.number().min(0, "amount must be >= 0").default(0),
+  phone: z.string().trim().max(40).optional().default(""),
+  notes: z.string().trim().max(2000).optional().default(""),
 });
 
 export const updateDebtorSchema = z.object({
