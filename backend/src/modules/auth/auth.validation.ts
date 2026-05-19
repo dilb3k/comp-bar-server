@@ -13,14 +13,14 @@ export const registerSchema = z.object({
 export const createAdminSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters"),
   password: z.string().min(6, "password must be at least 6 characters"),
-  tier: z.enum(["bor", "pro"]).optional(),
+  tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional()
 });
 
 export const updateAdminSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters").optional(),
   password: z.string().min(6, "password must be at least 6 characters").optional(),
-  tier: z.enum(["bor", "pro"]).optional(),
+  tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional()
 });
 

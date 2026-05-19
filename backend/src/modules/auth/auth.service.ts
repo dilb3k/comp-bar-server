@@ -127,7 +127,7 @@ export class AuthService {
     payload: {
       username: string;
       password: string;
-      tier?: "bor" | "pro";
+      tier?: "tekin" | "bor" | "pro";
       isPayed?: boolean;
     }
   ) {
@@ -154,6 +154,8 @@ export class AuthService {
       await subscriptionService.activate(actor, adminId, "pro");
     } else if (payload.tier === "bor") {
       await authRepository.updateAdmin(adminId, { isPayed: true });
+    } else if (payload.tier === "tekin") {
+      await authRepository.updateAdmin(adminId, { isPayed: false });
     } else if (payload.isPayed !== undefined) {
       await authRepository.updateAdmin(adminId, { isPayed: payload.isPayed });
     }
@@ -193,7 +195,7 @@ export class AuthService {
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; password?: string; tier?: "bor" | "pro"; isPayed?: boolean }
+    payload: { username?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
@@ -218,9 +220,12 @@ export class AuthService {
     if (payload.tier !== undefined) {
       if (payload.tier === "pro") {
         await subscriptionService.activate(actor, id, "pro");
-      } else {
+      } else if (payload.tier === "bor") {
         await subscriptionService.deactivate(actor, id);
         await authRepository.updateAdmin(id, { isPayed: true });
+      } else {
+        await subscriptionService.deactivate(actor, id);
+        await authRepository.updateAdmin(id, { isPayed: false });
       }
     }
 

@@ -46,6 +46,7 @@ export const authController = {
     const admin = await authService.createAdmin(actor, {
       username: req.body.username,
       password: req.body.password,
+      tier: req.body.tier,
       isPayed: req.body.isPayed
     });
     return sendSuccess(res, admin);
@@ -56,6 +57,7 @@ export const authController = {
     const updated = await authService.updateAdmin(actor, String(req.params.id), {
       username: req.body.username,
       password: req.body.password,
+      tier: req.body.tier,
       isPayed: req.body.isPayed
     });
     return sendSuccess(res, updated);
