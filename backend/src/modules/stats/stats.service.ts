@@ -41,7 +41,7 @@ export class StatsService {
     const collectionStats: Record<string, { count: number; size: string }> = {};
 
     for (const col of collections) {
-      const colStats = await db.collection(col.name).stats();
+      const colStats = await db.command({ collStats: col.name }) as any;
       collectionStats[col.name] = {
         count: colStats.count ?? 0,
         size: this.formatBytes(colStats.size ?? 0),
