@@ -123,6 +123,14 @@ export class ProductRepository {
     return ProductModel.find(filter).sort({ updatedAt: 1 });
   }
 
+  async countActive(ownerAdminId: string) {
+    return ProductModel.countDocuments({
+      ownerAdminId,
+      recordType: "product",
+      isDeleted: false,
+    });
+  }
+
   async findByIdentifier(ownerAdminId: string, identifier: string) {
     const orConditions: Array<Record<string, unknown>> = [{ localId: identifier }];
 
@@ -153,18 +161,21 @@ export class ProductRepository {
     });
   }
 
-  async create(payload: ProductRecordPayload) {
-    return ProductModel.create({
+  async create(payload: ProductRecordPayload, session?: any) {
+    const options = session ? { session } : {};
+    return ProductModel.create([{
       recordType: "product",
       ...buildProductRecord(payload)
-    });
+    }], options).then((docs) => docs[0]);
   }
 
-  async updateById(ownerAdminId: string, id: string, payload: ProductRecordPayload) {
+  async updateById(ownerAdminId: string, id: string, payload: ProductRecordPayload, session?: any) {
+    const options: Record<string, unknown> = { new: true, runValidators: true };
+    if (session) options.session = session;
     return ProductModel.findOneAndUpdate(
       { _id: id, ownerAdminId, recordType: "product" },
       { $set: buildProductUpdate(payload) },
-      { new: true, runValidators: true }
+      options
     );
   }
 
@@ -182,19 +193,47 @@ export class ProductRepository {
 
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: ProductRecordPayload & { localId: string; updatedAt: Date | string }
+    payload: ProductRecordPayload & { localId: string; updatedAt: Date | string },
+    session?: any
   ) {
     const existing = await ProductModel.findOne({
       ownerAdminId,
       recordType: "product",
       localId: payload.localId
-    });
+    }).session(session ?? null);
 
     if (!existing) {
-      return ProductModel.create({
-        recordType: "product",
-        ...buildProductRecord({ ownerAdminId, ...payload })
-      });
+      const options = session ? { session } : {};
+      try {
+        return await ProductModel.create([{
+          recordType: "product",
+          ...buildProductRecord({ ownerAdminId, ...payload })
+        }], options).then((docs) => docs[0]);
+      } catch (error: any) {
+        if (error?.code === 11000) {
+          const conflicting = await ProductModel.findOne({
+            ownerAdminId,
+            recordType: "product",
+            localId: payload.localId
+          }).session(session ?? null);
+          if (conflicting) {
+            const same = new Date(conflicting.updatedAt).getTime() <= new Date(payload.updatedAt).getTime();
+            if (same) {
+              Object.assign(
+                conflicting,
+                buildProductRecord({
+                  ownerAdminId,
+                  ...payload,
+                  ...(hasOwn(payload, "image") ? {} : { image: (conflicting as any).product?.image ?? "" })
+                })
+              );
+              return conflicting.save({ session });
+            }
+            return conflicting;
+          }
+        }
+        throw error;
+      }
     }
 
     if (new Date(existing.updatedAt).getTime() > new Date(payload.updatedAt).getTime()) {
@@ -209,7 +248,7 @@ export class ProductRepository {
         ...(hasOwn(payload, "image") ? {} : { image: (existing as any).product?.image ?? "" })
       })
     );
-    return existing.save();
+    return existing.save({ session });
   }
 }
 

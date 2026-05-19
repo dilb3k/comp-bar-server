@@ -12,7 +12,9 @@ async function bootstrap() {
     await authService.migrateLegacyOwnership(superAdmin._id.toString());
   }
 
-  await migrateLegacyProductRecords();
+  if (env.MIGRATION_ENABLED) {
+    await migrateLegacyProductRecords();
+  }
 
   const app = createApp();
 

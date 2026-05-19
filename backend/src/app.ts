@@ -4,6 +4,8 @@ import helmet from "helmet";
 import morgan from "morgan";
 
 import { env } from "./config/env";
+import { subscriptionRoutes } from "./modules/subscriptions/subscription.routes";
+import { apiLimiter } from "./middlewares/rate-limit.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFoundMiddleware } from "./middlewares/not-found.middleware";
 import { authRoutes } from "./modules/auth/auth.routes";
@@ -35,6 +37,7 @@ export function createApp() {
   app.use(helmet());
   app.use(express.json({ limit: "20mb" }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
+  app.use("/api", apiLimiter);
 
   app.get("/", (_req, res) => {
     res.json({
@@ -55,6 +58,7 @@ export function createApp() {
   app.use("/api/inventory", authenticate, inventoryRoutes);
   app.use("/api/snapshots", authenticate, snapshotRoutes);
   app.use("/api/sync", authenticate, syncRoutes);
+  app.use("/api/subscriptions", authenticate, subscriptionRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);

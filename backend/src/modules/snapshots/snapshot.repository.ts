@@ -67,12 +67,15 @@ export class SnapshotRepository {
     date: string,
     deviceId: string,
     payload: SnapshotRecordPayload,
+    session?: any,
   ) {
-    const existing = await DailySnapshotModel.findOne({
+    let query = DailySnapshotModel.findOne({
       ownerAdminId,
       recordType: "daily",
       "daily.date": date,
     });
+    if (session) query = query.session(session);
+    const existing = await query;
 
     const updateRecord = buildSnapshotRecord(ownerAdminId, {
       ...payload,
@@ -82,10 +85,11 @@ export class SnapshotRepository {
 
     if (existing) {
       Object.assign(existing, updateRecord);
-      return existing.save();
+      return existing.save({ session });
     }
 
-    return DailySnapshotModel.create(updateRecord);
+    const createOptions = session ? { session } : {};
+    return DailySnapshotModel.create([updateRecord], createOptions).then((docs) => docs[0]);
   }
 
   async upsertLastWriteWins(
@@ -94,12 +98,15 @@ export class SnapshotRepository {
       localId: string;
       updatedAt: Date | string;
     },
+    session?: any,
   ) {
-    const existing = await DailySnapshotModel.findOne({
+    let query = DailySnapshotModel.findOne({
       ownerAdminId,
       recordType: "daily",
       "daily.date": payload.date,
     });
+    if (session) query = query.session(session);
+    const existing = await query;
 
     if (
       existing &&
@@ -113,10 +120,11 @@ export class SnapshotRepository {
 
     if (existing) {
       Object.assign(existing, record);
-      return existing.save();
+      return existing.save({ session });
     }
 
-    return DailySnapshotModel.create(record);
+    const createOptions = session ? { session } : {};
+    return DailySnapshotModel.create([record], createOptions).then((docs) => docs[0]);
   }
 }
 

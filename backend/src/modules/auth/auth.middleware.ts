@@ -24,11 +24,17 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
   try {
     const payload = verifyAccessToken(token);
+    const isSuperAdmin = payload.role === "superAdmin";
     req.auth = {
       userId: payload.userId,
       username: payload.username,
       role: payload.role,
-      isPayed: payload.isPayed ?? (payload.role === "superAdmin")
+      isPayed: payload.isPayed ?? isSuperAdmin,
+      tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
+      subscriptionEndDate: payload.subscriptionEndDate ?? null,
+      businessDayStartHour: payload.businessDayStartHour,
+      pendingBusinessDayStartHour: payload.pendingBusinessDayStartHour,
+      businessDayEffectiveFrom: payload.businessDayEffectiveFrom
     };
     return next();
   } catch {
@@ -55,19 +61,9 @@ export function requirePayment(req: Request, _res: Response, next: NextFunction)
     return next(new AppError("Unauthorized", 401));
   }
 
-  if (req.auth.role === "superAdmin") {
+  if (req.auth.tier !== "tekin") {
     return next();
   }
 
-  authRepository.findById(req.auth.userId).then((user) => {
-    if (!user || !user.isActive) {
-      return next(new AppError("User not found", 404));
-    }
-    if (!(user as any).isPayed) {
-      return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
-    }
-    return next();
-  }).catch(() => {
-    return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
-  });
+  return next(new AppError("Payment required. Please contact admin to activate premium features.", 402));
 }

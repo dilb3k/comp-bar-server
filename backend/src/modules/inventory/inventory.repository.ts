@@ -23,13 +23,15 @@ function buildInventoryRecord(payload: InventoryRecordPayload) {
 }
 
 export class InventoryRepository {
-  async findByDate(ownerAdminId: string, date: string) {
-    return InventoryEntryModel.find({
+  async findByDate(ownerAdminId: string, date: string, session?: any) {
+    let query = InventoryEntryModel.find({
       ownerAdminId,
       recordType: "inventory",
       "inventory.date": date,
       isDeleted: false
     }).sort({ createdAt: 1 });
+    if (session) query = query.session(session);
+    return query;
   }
 
   async findRange(ownerAdminId: string, from: string, to: string) {
@@ -66,13 +68,15 @@ export class InventoryRepository {
     return InventoryEntryModel.find(filter).sort({ updatedAt: 1 });
   }
 
-  async findByProductAndDate(ownerAdminId: string, productId: string, date: string) {
-    return InventoryEntryModel.findOne({
+  async findByProductAndDate(ownerAdminId: string, productId: string, date: string, session?: any) {
+    let query = InventoryEntryModel.findOne({
       ownerAdminId,
       recordType: "inventory",
       "inventory.productId": productId,
       "inventory.date": date
     });
+    if (session) query = query.session(session);
+    return query;
   }
 
   async upsertByProductAndDate(
@@ -98,14 +102,42 @@ export class InventoryRepository {
     );
   }
 
+  async upsertByProductAndDateWithSession(
+    ownerAdminId: string,
+    productId: string,
+    date: string,
+    payload: InventoryRecordPayload,
+    session?: any
+  ) {
+    const record = buildInventoryRecord({ ownerAdminId, ...payload });
+    const options: Record<string, unknown> = {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      runValidators: true
+    };
+    if (session) options.session = session;
+    return InventoryEntryModel.findOneAndUpdate(
+      {
+        ownerAdminId,
+        recordType: "inventory",
+        "inventory.productId": productId,
+        "inventory.date": date
+      },
+      { $set: record },
+      options
+    );
+  }
+
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: InventoryRecordPayload & { localId: string; updatedAt: Date | string }
+    payload: InventoryRecordPayload & { localId: string; updatedAt: Date | string },
+    session?: any
   ) {
     const record = buildInventoryRecord({ ownerAdminId, ...payload });
     const payloadUpdatedAt = new Date(payload.updatedAt);
 
-    const existing = await InventoryEntryModel.findOne({
+    let query = InventoryEntryModel.findOne({
       ownerAdminId,
       recordType: "inventory",
       $or: [
@@ -113,16 +145,19 @@ export class InventoryRepository {
         { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
       ]
     });
+    if (session) query = query.session(session);
+    const existing = await query;
 
     if (!existing) {
+      const createOptions = session ? { session } : {};
       try {
-        return await InventoryEntryModel.create({
+        return await InventoryEntryModel.create([{
           recordType: "inventory",
           ...record
-        });
+        }], createOptions).then((docs) => docs[0]);
       } catch (error: any) {
-        if (error.code === 11000) {
-          const conflicting = await InventoryEntryModel.findOne({
+        if (error?.code === 11000) {
+          let retryQuery = InventoryEntryModel.findOne({
             ownerAdminId,
             recordType: "inventory",
             $or: [
@@ -130,10 +165,12 @@ export class InventoryRepository {
               { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
             ]
           });
+          if (session) retryQuery = retryQuery.session(session);
+          const conflicting = await retryQuery;
           if (conflicting) {
             if (new Date(conflicting.updatedAt).getTime() <= payloadUpdatedAt.getTime()) {
               Object.assign(conflicting, record);
-              return conflicting.save();
+              return conflicting.save({ session });
             }
             return conflicting;
           }
@@ -147,7 +184,7 @@ export class InventoryRepository {
     }
 
     Object.assign(existing, record);
-    return existing.save();
+    return existing.save({ session });
   }
 }
 

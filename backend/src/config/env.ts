@@ -13,7 +13,9 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
   BOT_TOKEN: z.string().trim().min(1).optional(),
-  TELEGRAM_CHAT_ID: z.string().trim().min(1).optional()
+  TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
+  MIGRATION_ENABLED: z.coerce.boolean().default(false),
+  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(true)
 });
 
 const parsed = envSchema.safeParse(process.env);

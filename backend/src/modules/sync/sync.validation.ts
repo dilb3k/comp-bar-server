@@ -14,6 +14,14 @@ const syncedProductSchema = z.object({
   isDeleted: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
+}).superRefine((value, ctx) => {
+  if (value.sellPrice < value.buyPrice) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sellPrice"],
+      message: "sellPrice must be greater than or equal to buyPrice"
+    });
+  }
 });
 
 const syncedInventorySchema = z.object({
@@ -27,6 +35,14 @@ const syncedInventorySchema = z.object({
   isDeleted: z.boolean().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
+}).superRefine((value, ctx) => {
+  if (value.currentQuantity > value.startQuantity) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["currentQuantity"],
+      message: "currentQuantity cannot be greater than startQuantity"
+    });
+  }
 });
 
 const syncedSnapshotSchema = z.object({

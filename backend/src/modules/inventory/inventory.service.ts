@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import { env } from "../../config/env";
 import { AppError } from "../../utils/app-error";
 import { telegramReportService } from "../../services/telegram-report.service";
@@ -11,6 +13,7 @@ import {
 } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
+import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "./inventory.repository";
 import {
   calculateInventoryMetrics,
@@ -218,81 +221,101 @@ export class InventoryService {
       productMap.set(product._id.toString(), product);
     }
 
-    const results = await Promise.all(
-      payload.items.map(async (item) => {
-        const product = productMap.get(item.productId);
+    const session = await mongoose.startSession();
+    try {
+      const results = await session.withTransaction(async () => {
+        const items = await Promise.all(
+          payload.items.map(async (item) => {
+            const product = productMap.get(item.productId);
 
-        if (!product || product.isDeleted) {
-          throw new AppError(
-            `Active product not found for productId=${item.productId}`,
-            404,
-          );
-        }
+            if (!product || product.isDeleted) {
+              throw new AppError(
+                `Active product not found for productId=${item.productId}`,
+                404,
+              );
+            }
 
-        const startQuantity = item.startQuantity;
-        const currentQuantity = item.currentQuantity ?? item.startQuantity;
+            const startQuantity = item.startQuantity;
+            const currentQuantity = item.currentQuantity ?? item.startQuantity;
 
-        if (currentQuantity > startQuantity) {
-          throw new AppError(
-            "currentQuantity cannot be greater than startQuantity",
-            422,
-          );
-        }
+            if (currentQuantity > startQuantity) {
+              throw new AppError(
+                "currentQuantity cannot be greater than startQuantity",
+                422,
+              );
+            }
 
-        const entry = await inventoryRepository.upsertByProductAndDate(
-          actor.userId,
-          (product as any).localId,
-          targetDate,
-          {
-            localId:
-              item.localId ??
-              `${targetDate}-${product.localId}`,
-            deviceId: payload.deviceId,
-            productId: (product as any).localId,
-            date: targetDate,
-            startQuantity,
-            currentQuantity,
-            buyPrice: Number(product.buyPrice || 0),
-            sellPrice: Number(product.sellPrice || 0),
-            note: item.note ?? "",
-            isDeleted: false,
-            createdAt: item.createdAt ? new Date(item.createdAt) : now,
-            updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
-          },
+            const entry = await inventoryRepository.upsertByProductAndDateWithSession(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              {
+                localId:
+                  item.localId ??
+                  `${targetDate}-${product.localId}`,
+                deviceId: payload.deviceId,
+                productId: (product as any).localId,
+                date: targetDate,
+                startQuantity,
+                currentQuantity,
+                buyPrice: Number(product.buyPrice || 0),
+                sellPrice: Number(product.sellPrice || 0),
+                note: item.note ?? "",
+                isDeleted: false,
+                createdAt: item.createdAt ? new Date(item.createdAt) : now,
+                updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
+              },
+              session,
+            );
+
+            await productRepository.updateById(
+              actor.userId,
+              (product as any)._id.toString(),
+              {
+                quantity: currentQuantity,
+                updatedAt: now,
+              },
+              session,
+            );
+
+            await auditService.log({
+              ownerAdminId: actor.userId,
+              action: "START_DAY",
+              entityType: "inventory",
+              entityId: item.productId,
+              after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity },
+              source: "rest",
+              createdBy: actor.userId,
+            });
+
+            return buildInventoryResponse(
+              {
+                ...product.toJSON(),
+                quantity: currentQuantity,
+                updatedAt: now.toISOString(),
+              },
+              entry,
+            );
+          }),
         );
+        return items;
+      });
 
-        await productRepository.updateById(
-          actor.userId,
-          (product as any)._id.toString(),
-          {
-            quantity: currentQuantity,
-            updatedAt: now,
-          },
-        );
+      telegramReportService.reportInventoryStarted(actor, {
+        date: targetDate,
+        deviceId: payload.deviceId,
+        items: results.map((entry) => ({
+          productName: entry.product?.name,
+          startQuantity: Number(entry.startQuantity),
+          currentQuantity: Number(entry.currentQuantity),
+          sold: Number(entry.sold),
+        })),
+      });
 
-        return buildInventoryResponse(
-          {
-            ...product.toJSON(),
-            quantity: currentQuantity,
-            updatedAt: now.toISOString(),
-          },
-          entry,
-        );
-      }),
-    );
-
-    telegramReportService.reportInventoryStarted(actor, {
-      date: targetDate,
-      deviceId: payload.deviceId,
-      items: results.map((entry) => ({
-        productName: entry.product?.name,
-        startQuantity: Number(entry.startQuantity),
-        currentQuantity: Number(entry.currentQuantity),
-        sold: Number(entry.sold),
-      })),
-    });
-
-    return results;
+      return results;
+    } finally {
+      await session.endSession();
+    }
   }
 
   async bulkUpdateCurrent(actor: AuthUser, payload: BulkCurrentInput) {
@@ -309,89 +332,111 @@ export class InventoryService {
       productMap.set(product._id.toString(), product);
     }
 
-    const results = await Promise.all(
-      payload.items.map(async (item) => {
-        const product = productMap.get(item.productId);
+    const session = await mongoose.startSession();
+    try {
+      const results = await session.withTransaction(async () => {
+        const items = await Promise.all(
+          payload.items.map(async (item) => {
+            const product = productMap.get(item.productId);
 
-        if (!product || product.isDeleted) {
-          throw new AppError(
-            `Active product not found for productId=${item.productId}`,
-            404,
-          );
-        }
+            if (!product || product.isDeleted) {
+              throw new AppError(
+                `Active product not found for productId=${item.productId}`,
+                404,
+              );
+            }
 
-        const existing = await inventoryRepository.findByProductAndDate(
-          actor.userId,
-          (product as any).localId,
-          targetDate,
+            const existing = await inventoryRepository.findByProductAndDate(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              session,
+            );
+
+            if (!existing) {
+              throw new AppError(
+                `Inventory start entry not found for productId=${item.productId} and date=${targetDate}`,
+                404,
+              );
+            }
+
+            if (item.currentQuantity > existing.startQuantity) {
+              throw new AppError(
+                "currentQuantity cannot be greater than startQuantity",
+                422,
+              );
+            }
+
+            const updated = await inventoryRepository.upsertByProductAndDateWithSession(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              {
+                localId: (existing as any).localId,
+                deviceId: payload.deviceId,
+                productId: (product as any).localId,
+                date: targetDate,
+                startQuantity: Number((existing as any).startQuantity),
+                currentQuantity: item.currentQuantity,
+                buyPrice: Number((existing as any).buyPrice ?? product.buyPrice ?? 0),
+                sellPrice: Number((existing as any).sellPrice ?? product.sellPrice ?? 0),
+                note: item.note ?? (existing as any).note ?? "",
+                isDeleted: false,
+                createdAt: (existing as any).createdAt,
+                updatedAt: now,
+              },
+              session,
+            );
+
+            await productRepository.updateById(
+              actor.userId,
+              (product as any)._id.toString(),
+              {
+                quantity: item.currentQuantity,
+                updatedAt: now,
+              },
+              session,
+            );
+
+            await auditService.log({
+              ownerAdminId: actor.userId,
+              action: "UPDATE",
+              entityType: "inventory",
+              entityId: item.productId,
+              before: { currentQuantity: (existing as any).currentQuantity },
+              after: { currentQuantity: item.currentQuantity },
+              source: "rest",
+              createdBy: actor.userId,
+            });
+
+            return buildInventoryResponse(
+              {
+                ...product.toJSON(),
+                quantity: item.currentQuantity,
+                updatedAt: now.toISOString(),
+              },
+              updated,
+            );
+          }),
         );
+        return items;
+      });
 
-        if (!existing) {
-          throw new AppError(
-            `Inventory start entry not found for productId=${item.productId} and date=${targetDate}`,
-            404,
-          );
-        }
+      telegramReportService.reportInventoryUpdated(actor, {
+        date: targetDate,
+        deviceId: payload.deviceId,
+        items: results.map((entry) => ({
+          productName: entry.product?.name,
+          startQuantity: Number(entry.startQuantity),
+          currentQuantity: Number(entry.currentQuantity),
+          sold: Number(entry.sold),
+        })),
+      });
 
-        if (item.currentQuantity > existing.startQuantity) {
-          throw new AppError(
-            "currentQuantity cannot be greater than startQuantity",
-            422,
-          );
-        }
-
-        const updated = await inventoryRepository.upsertByProductAndDate(
-          actor.userId,
-          (product as any).localId,
-          targetDate,
-          {
-            localId: (existing as any).localId,
-            deviceId: payload.deviceId,
-            productId: (product as any).localId,
-            date: targetDate,
-            startQuantity: Number((existing as any).startQuantity),
-            currentQuantity: item.currentQuantity,
-            buyPrice: Number((existing as any).buyPrice ?? product.buyPrice ?? 0),
-            sellPrice: Number((existing as any).sellPrice ?? product.sellPrice ?? 0),
-            note: item.note ?? (existing as any).note ?? "",
-            isDeleted: false,
-            createdAt: (existing as any).createdAt,
-            updatedAt: now,
-          },
-        );
-
-        await productRepository.updateById(
-          actor.userId,
-          (product as any)._id.toString(),
-          {
-            quantity: item.currentQuantity,
-            updatedAt: now,
-          },
-        );
-
-        return buildInventoryResponse(
-          {
-            ...product.toJSON(),
-            quantity: item.currentQuantity,
-            updatedAt: now.toISOString(),
-          },
-          updated,
-        );
-      }),
-    );
-
-    telegramReportService.reportInventoryUpdated(actor, {
-      date: targetDate,
-      deviceId: payload.deviceId,
-      items: results.map((entry) => ({
-        productName: entry.product?.name,
-        startQuantity: Number(entry.startQuantity),
-        currentQuantity: Number(entry.currentQuantity),
-        sold: Number(entry.sold),
-      })),
-    });
-
-    return results;
+      return results;
+    } finally {
+      await session.endSession();
+    }
   }
 }
 

@@ -3,6 +3,8 @@
 import { ProductModel } from "../products/product.model";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
+import { subscriptionService } from "../subscriptions/subscription.service";
+import { computeTier } from "../subscriptions/subscription.model";
 import { authRepository } from "./auth.repository";
 import type { AuthUser } from "./auth.types";
 import {signAccessToken } from "./auth.utils";
@@ -27,12 +29,20 @@ export class AuthService {
       createdBy: null,
     });
 
+    const isPayed = role === "superAdmin" ? true : false;
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(role, isPayed, activeSub);
+
     const authUser: AuthUser = {
       userId: user._id.toString(),
       username: user.username,
       role: user.role,
-      isPayed: role === "superAdmin" ? true : false,
+      isPayed,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: (user as any).businessDayStartHour ?? 7,
+      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
 
     return {
@@ -68,12 +78,22 @@ export class AuthService {
     }
 
 
+    await subscriptionService.refreshExpiredSubscriptions();
+
+    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(user.role, isPayed, activeSub);
+
     const authUser: AuthUser = {
       userId: user._id.toString(),
       username: user.username,
       role: user.role,
-      isPayed: user.role === "superAdmin" ? true : (user.isPayed ?? false),
+      isPayed,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: (user as any).businessDayStartHour ?? 7,
+      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
 
     return {
@@ -89,7 +109,17 @@ export class AuthService {
       throw new AppError("User not found", 404);
     }
 
-    return user;
+    await subscriptionService.refreshExpiredSubscriptions();
+
+    const activeSub = await subscriptionService.getActiveSubscription(userId);
+    const tier = computeTier(user.role, user.isPayed ?? false, activeSub);
+
+    const userJson = user.toJSON();
+    return {
+      ...userJson,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+    };
   }
 
   async createAdmin(
@@ -184,11 +214,16 @@ export class AuthService {
       throw new AppError("User not found", 404);
     }
 
+    const activeSub = await subscriptionService.getActiveSubscription(actor.userId);
+    const tier = computeTier(actor.role, actor.isPayed, activeSub);
+
     const updatedUser: AuthUser = {
       userId: actor.userId,
       username: actor.username,
       role: actor.role,
       isPayed: actor.isPayed,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: actor.businessDayStartHour ?? 7,
       pendingBusinessDayStartHour: payload.businessDayStartHour,
       businessDayEffectiveFrom: tomorrow.toISOString(),
