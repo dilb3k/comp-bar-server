@@ -1,6 +1,4 @@
 ﻿import mongoose from "mongoose";
-
-import { ProductModel } from "../products/product.model";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
 import { subscriptionService } from "../subscriptions/subscription.service";
@@ -40,7 +38,7 @@ export class AuthService {
       isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 7,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 12,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
       businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
@@ -91,7 +89,7 @@ export class AuthService {
       isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 7,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 12,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
       businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
@@ -252,7 +250,7 @@ export class AuthService {
     tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
 
     const updated = await authRepository.updateMe(actor.userId, {
-      businessDayStartHour: actor.businessDayStartHour ?? 7,
+      businessDayStartHour: actor.businessDayStartHour ?? 12,
       pendingBusinessDayStartHour: payload.businessDayStartHour,
       businessDayEffectiveFrom: tomorrow,
     });
@@ -270,7 +268,7 @@ export class AuthService {
       isPayed: actor.isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: actor.businessDayStartHour ?? 7,
+      businessDayStartHour: actor.businessDayStartHour ?? 12,
       pendingBusinessDayStartHour: payload.businessDayStartHour,
       businessDayEffectiveFrom: tomorrow.toISOString(),
     };
@@ -307,7 +305,6 @@ export class AuthService {
   }
 
   async migrateLegacyOwnership(defaultOwnerAdminId: string) {
-    // Pre-flight check: skip if no records need migration
     const orphanFilter = {
       $or: [
         { ownerAdminId: { $exists: false } },
@@ -317,9 +314,9 @@ export class AuthService {
     };
 
     const needsMigration = await Promise.all([
-      ProductModel.countDocuments(orphanFilter),
-      mongoose.connection.collection("catalog_items").countDocuments(orphanFilter),
-      mongoose.connection.collection("dailysnapshots").countDocuments(orphanFilter),
+      mongoose.connection.collection("products").countDocuments(orphanFilter),
+      mongoose.connection.collection("inventory_entries").countDocuments(orphanFilter).catch(() => 0),
+      mongoose.connection.collection("daily_snapshots").countDocuments(orphanFilter).catch(() => 0),
     ]);
 
     if (!needsMigration.some((count) => count > 0)) {
@@ -327,9 +324,9 @@ export class AuthService {
     }
 
     await Promise.all([
-      ProductModel.updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
-      mongoose.connection.collection("catalog_items").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
-      mongoose.connection.collection("dailysnapshots").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
+      mongoose.connection.collection("products").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
+      mongoose.connection.collection("inventory_entries").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
+      mongoose.connection.collection("daily_snapshots").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
     ]);
   }
 }

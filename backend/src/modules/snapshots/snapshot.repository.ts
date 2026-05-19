@@ -1,6 +1,6 @@
 import { DailySnapshotModel } from "./snapshot.model";
 
-export type SnapshotRecordPayload = {
+export type SnapshotPayload = {
   localId: string;
   deviceId: string;
   date: string;
@@ -15,23 +15,20 @@ export type SnapshotRecordPayload = {
 
 function buildSnapshotRecord(
   ownerAdminId: string,
-  payload: SnapshotRecordPayload,
+  payload: SnapshotPayload,
 ) {
   return {
-    recordType: "daily",
     ownerAdminId,
     localId: payload.localId,
     deviceId: payload.deviceId,
+    date: payload.date,
+    totalRevenue: payload.totalRevenue,
+    totalProfit: payload.totalProfit,
+    totalSoldItems: payload.totalSoldItems,
+    items: payload.items ?? [],
     isDeleted: payload.isDeleted ?? false,
     createdAt: payload.createdAt,
-    updatedAt: payload.updatedAt,
-    daily: {
-      date: payload.date,
-      totalRevenue: payload.totalRevenue,
-      totalProfit: payload.totalProfit,
-      totalSoldItems: payload.totalSoldItems,
-      items: payload.items ?? [],
-    },
+    updatedAt: payload.updatedAt
   };
 }
 
@@ -39,8 +36,7 @@ export class SnapshotRepository {
   async findDaily(ownerAdminId: string, date: string) {
     return DailySnapshotModel.findOne({
       ownerAdminId,
-      recordType: "daily",
-      "daily.date": date,
+      date,
       isDeleted: false,
     }).sort({ updatedAt: -1 });
   }
@@ -48,16 +44,15 @@ export class SnapshotRepository {
   async findRange(ownerAdminId: string, from: string, to: string) {
     return DailySnapshotModel.find({
       ownerAdminId,
-      recordType: "daily",
-      "daily.date": { $gte: from, $lte: to },
+      date: { $gte: from, $lte: to },
       isDeleted: false,
-    }).sort({ "daily.date": 1, updatedAt: 1 });
+    }).sort({ date: 1, updatedAt: 1 });
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, recordType: "daily", updatedAt: { $gt: new Date(lastSyncAt) } }
-      : { ownerAdminId, recordType: "daily" };
+      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      : { ownerAdminId };
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
   }
@@ -66,13 +61,12 @@ export class SnapshotRepository {
     ownerAdminId: string,
     date: string,
     deviceId: string,
-    payload: SnapshotRecordPayload,
+    payload: SnapshotPayload,
     session?: any,
   ) {
     let query = DailySnapshotModel.findOne({
       ownerAdminId,
-      recordType: "daily",
-      "daily.date": date,
+      date,
     });
     if (session) query = query.session(session);
     const existing = await query;
@@ -94,7 +88,7 @@ export class SnapshotRepository {
 
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: SnapshotRecordPayload & {
+    payload: SnapshotPayload & {
       localId: string;
       updatedAt: Date | string;
     },
@@ -102,8 +96,7 @@ export class SnapshotRepository {
   ) {
     let query = DailySnapshotModel.findOne({
       ownerAdminId,
-      recordType: "daily",
-      "daily.date": payload.date,
+      date: payload.date,
     });
     if (session) query = query.session(session);
     const existing = await query;

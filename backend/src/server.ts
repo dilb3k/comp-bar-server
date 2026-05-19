@@ -3,6 +3,7 @@ import { connectDatabase } from "./lib/mongoose";
 import { authService } from "./modules/auth/auth.service";
 import { createApp } from "./app";
 import { migrateLegacyProductRecords } from "./modules/products/product.migration";
+import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 
 async function bootstrap() {
   await connectDatabase();
@@ -13,6 +14,7 @@ async function bootstrap() {
   }
 
   if (env.MIGRATION_ENABLED) {
+    await migrateSplitCollections();
     await migrateLegacyProductRecords();
   }
 

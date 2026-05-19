@@ -38,7 +38,7 @@ const userSchema = new Schema(
     },
     businessDayStartHour: {
       type: Number,
-      default: 7,
+      default: 12,
     },
     pendingBusinessDayStartHour: {
       type: Number,

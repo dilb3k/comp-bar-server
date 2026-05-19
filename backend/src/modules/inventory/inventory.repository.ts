@@ -1,24 +1,22 @@
 import { InventoryEntryModel } from "./inventory.model";
 
-type InventoryRecordPayload = Record<string, unknown>;
+type InventoryPayload = Record<string, unknown>;
 
-function buildInventoryRecord(payload: InventoryRecordPayload) {
+function buildInventoryRecord(payload: InventoryPayload) {
   return {
     ownerAdminId: payload.ownerAdminId,
     localId: payload.localId,
     deviceId: payload.deviceId,
+    productId: payload.productId,
+    date: payload.date,
+    startQuantity: payload.startQuantity,
+    currentQuantity: payload.currentQuantity,
+    buyPrice: payload.buyPrice ?? 0,
+    sellPrice: payload.sellPrice ?? 0,
+    note: payload.note ?? "",
     isDeleted: payload.isDeleted ?? false,
     createdAt: payload.createdAt,
-    updatedAt: payload.updatedAt,
-    inventory: {
-      productId: payload.productId,
-      date: payload.date,
-      startQuantity: payload.startQuantity,
-      currentQuantity: payload.currentQuantity,
-      buyPrice: payload.buyPrice ?? 0,
-      sellPrice: payload.sellPrice ?? 0,
-      note: payload.note ?? ""
-    }
+    updatedAt: payload.updatedAt
   };
 }
 
@@ -26,8 +24,7 @@ export class InventoryRepository {
   async findByDate(ownerAdminId: string, date: string, session?: any) {
     let query = InventoryEntryModel.find({
       ownerAdminId,
-      recordType: "inventory",
-      "inventory.date": date,
+      date,
       isDeleted: false
     }).sort({ createdAt: 1 });
     if (session) query = query.session(session);
@@ -37,16 +34,14 @@ export class InventoryRepository {
   async findRange(ownerAdminId: string, from: string, to: string) {
     return InventoryEntryModel.find({
       ownerAdminId,
-      recordType: "inventory",
-      "inventory.date": { $gte: from, $lte: to },
+      date: { $gte: from, $lte: to },
       isDeleted: false
-    }).sort({ "inventory.date": 1, createdAt: 1 });
+    }).sort({ date: 1, createdAt: 1 });
   }
 
   async findByDateRange(ownerAdminId: string, from?: string, to?: string) {
     const filter: Record<string, unknown> = {
       ownerAdminId,
-      recordType: "inventory",
       isDeleted: false,
     };
 
@@ -54,16 +49,16 @@ export class InventoryRepository {
       const dateFilter: Record<string, string> = {};
       if (from) dateFilter.$gte = from;
       if (to) dateFilter.$lte = to;
-      filter["inventory.date"] = dateFilter;
+      filter.date = dateFilter;
     }
 
-    return InventoryEntryModel.find(filter).sort({ "inventory.date": 1, createdAt: 1 });
+    return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 });
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, recordType: "inventory", updatedAt: { $gt: new Date(lastSyncAt) } }
-      : { ownerAdminId, recordType: "inventory" };
+      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      : { ownerAdminId };
 
     return InventoryEntryModel.find(filter).sort({ updatedAt: 1 });
   }
@@ -71,9 +66,8 @@ export class InventoryRepository {
   async findByProductAndDate(ownerAdminId: string, productId: string, date: string, session?: any) {
     let query = InventoryEntryModel.findOne({
       ownerAdminId,
-      recordType: "inventory",
-      "inventory.productId": productId,
-      "inventory.date": date
+      productId,
+      date
     });
     if (session) query = query.session(session);
     return query;
@@ -83,22 +77,13 @@ export class InventoryRepository {
     ownerAdminId: string,
     productId: string,
     date: string,
-    payload: InventoryRecordPayload
+    payload: InventoryPayload
   ) {
+    const record = buildInventoryRecord({ ownerAdminId, ...payload });
     return InventoryEntryModel.findOneAndUpdate(
-      {
-        ownerAdminId,
-        recordType: "inventory",
-        "inventory.productId": productId,
-        "inventory.date": date
-      },
-      { $set: buildInventoryRecord({ ownerAdminId, ...payload }) },
-      {
-        new: true,
-        upsert: true,
-        setDefaultsOnInsert: true,
-        runValidators: true
-      }
+      { ownerAdminId, productId, date },
+      { $set: record },
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
     );
   }
 
@@ -106,7 +91,7 @@ export class InventoryRepository {
     ownerAdminId: string,
     productId: string,
     date: string,
-    payload: InventoryRecordPayload,
+    payload: InventoryPayload,
     session?: any
   ) {
     const record = buildInventoryRecord({ ownerAdminId, ...payload });
@@ -118,12 +103,7 @@ export class InventoryRepository {
     };
     if (session) options.session = session;
     return InventoryEntryModel.findOneAndUpdate(
-      {
-        ownerAdminId,
-        recordType: "inventory",
-        "inventory.productId": productId,
-        "inventory.date": date
-      },
+      { ownerAdminId, productId, date },
       { $set: record },
       options
     );
@@ -131,7 +111,7 @@ export class InventoryRepository {
 
   async upsertLastWriteWins(
     ownerAdminId: string,
-    payload: InventoryRecordPayload & { localId: string; updatedAt: Date | string },
+    payload: InventoryPayload & { localId: string; updatedAt: Date | string },
     session?: any
   ) {
     const record = buildInventoryRecord({ ownerAdminId, ...payload });
@@ -139,10 +119,9 @@ export class InventoryRepository {
 
     let query = InventoryEntryModel.findOne({
       ownerAdminId,
-      recordType: "inventory",
       $or: [
         { localId: payload.localId },
-        { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
+        { productId: record.productId, date: record.date }
       ]
     });
     if (session) query = query.session(session);
@@ -151,18 +130,14 @@ export class InventoryRepository {
     if (!existing) {
       const createOptions = session ? { session } : {};
       try {
-        return await InventoryEntryModel.create([{
-          recordType: "inventory",
-          ...record
-        }], createOptions).then((docs) => docs[0]);
+        return await InventoryEntryModel.create([record], createOptions).then((docs) => docs[0]);
       } catch (error: any) {
         if (error?.code === 11000) {
           let retryQuery = InventoryEntryModel.findOne({
             ownerAdminId,
-            recordType: "inventory",
             $or: [
               { localId: payload.localId },
-              { "inventory.productId": record.inventory?.productId, "inventory.date": record.inventory?.date }
+              { productId: record.productId, date: record.date }
             ]
           });
           if (session) retryQuery = retryQuery.session(session);

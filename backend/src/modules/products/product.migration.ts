@@ -1,7 +1,5 @@
 import mongoose from "mongoose";
 
-import { ProductModel } from "./product.model";
-
 type LegacyCatalogDoc = {
   ownerAdminId?: string | null;
   localId?: string | null;
@@ -54,44 +52,43 @@ function normalizeLegacyCatalogDoc(doc: LegacyCatalogDoc) {
 
   if (doc.entityType === "product") {
     return {
-      filter: { ownerAdminId, recordType: "product", localId: doc.localId },
+      collection: "products" as const,
+      filter: { ownerAdminId, localId: doc.localId },
       replacement: {
         ownerAdminId,
-        recordType: "product",
         localId: doc.localId,
         deviceId: doc.deviceId,
+        name: doc.name ?? "",
+        quantity: doc.quantity ?? 0,
+        buyPrice: doc.buyPrice ?? 0,
+        sellPrice: doc.sellPrice ?? 0,
+        image: doc.image ?? "",
+        displayIndex: 0,
         isDeleted: doc.isDeleted ?? false,
         deletedAt: doc.deletedAt ?? null,
         createdAt: asDate(doc.createdAt),
         updatedAt: asDate(doc.updatedAt),
-        product: {
-          name: doc.name ?? "",
-          quantity: doc.quantity ?? 0,
-          buyPrice: doc.buyPrice ?? 0,
-          sellPrice: doc.sellPrice ?? 0,
-          image: doc.image ?? ""
-        }
       }
     };
   }
 
   return {
-    filter: { ownerAdminId, recordType: "inventory", localId: doc.localId },
+    collection: "inventory_entries" as const,
+    filter: { ownerAdminId, localId: doc.localId },
     replacement: {
       ownerAdminId,
-      recordType: "inventory",
       localId: doc.localId,
       deviceId: doc.deviceId,
+      productId: doc.productId ?? "",
+      date: doc.date ?? "",
+      startQuantity: doc.startQuantity ?? 0,
+      currentQuantity: doc.currentQuantity ?? 0,
+      buyPrice: 0,
+      sellPrice: 0,
+      note: doc.note ?? "",
       isDeleted: doc.isDeleted ?? false,
       createdAt: asDate(doc.createdAt),
       updatedAt: asDate(doc.updatedAt),
-      inventory: {
-        productId: doc.productId ?? "",
-        date: doc.date ?? "",
-        startQuantity: doc.startQuantity ?? 0,
-        currentQuantity: doc.currentQuantity ?? 0,
-        note: doc.note ?? ""
-      }
     }
   };
 }
@@ -104,22 +101,20 @@ function normalizeLegacySnapshotDoc(doc: LegacySnapshotDoc) {
   }
 
   return {
-    filter: { ownerAdminId, recordType: "daily", localId: doc.localId },
+    collection: "daily_snapshots" as const,
+    filter: { ownerAdminId, localId: doc.localId },
     replacement: {
       ownerAdminId,
-      recordType: "daily",
       localId: doc.localId,
       deviceId: doc.deviceId,
+      date: doc.date,
+      totalRevenue: doc.totalRevenue ?? 0,
+      totalProfit: doc.totalProfit ?? 0,
+      totalSoldItems: doc.totalSoldItems ?? 0,
+      items: doc.items ?? [],
       isDeleted: doc.isDeleted ?? false,
       createdAt: asDate(doc.createdAt),
       updatedAt: asDate(doc.updatedAt),
-      daily: {
-        date: doc.date,
-        totalRevenue: doc.totalRevenue ?? 0,
-        totalProfit: doc.totalProfit ?? 0,
-        totalSoldItems: doc.totalSoldItems ?? 0,
-        items: doc.items ?? []
-      }
     }
   };
 }
@@ -134,36 +129,39 @@ export async function migrateLegacyProductRecords() {
   }
 
   const [legacyCatalogDocs, legacySnapshotDocs] = await Promise.all([
-    mongoose.connection.collection("catalog_items").find({}).toArray(),
-    mongoose.connection.collection("dailysnapshots").find({}).toArray()
+    mongoose.connection.collection("catalog_items").find({}).toArray().catch(() => []),
+    mongoose.connection.collection("dailysnapshots").find({}).toArray().catch(() => [])
   ]);
 
-  const operations = [
+  const normalized = [
     ...legacyCatalogDocs
       .map((doc) => normalizeLegacyCatalogDoc(doc as LegacyCatalogDoc))
-      .filter(isDefined)
-      .map((entry) => ({
-        replaceOne: {
-          filter: entry.filter,
-          replacement: entry.replacement,
-          upsert: true
-        }
-      })),
+      .filter(isDefined),
     ...legacySnapshotDocs
       .map((doc) => normalizeLegacySnapshotDoc(doc as LegacySnapshotDoc))
       .filter(isDefined)
-      .map((entry) => ({
-        replaceOne: {
-          filter: entry.filter,
-          replacement: entry.replacement,
-          upsert: true
-        }
-      }))
   ];
 
-  if (operations.length === 0) {
+  if (normalized.length === 0) {
     return;
   }
 
-  await ProductModel.bulkWrite(operations, { ordered: false });
+  const grouped = new Map<string, { filter: Record<string, unknown>; replacement: Record<string, unknown> }[]>();
+  for (const entry of normalized) {
+    const list = grouped.get(entry.collection) ?? [];
+    list.push({ filter: entry.filter, replacement: entry.replacement });
+    grouped.set(entry.collection, list);
+  }
+
+  for (const [collectionName, ops] of grouped) {
+    const bulkOps = ops.map((op) => ({
+      replaceOne: {
+        filter: op.filter,
+        replacement: op.replacement,
+        upsert: true,
+      },
+    }));
+
+    await mongoose.connection.collection(collectionName).bulkWrite(bulkOps, { ordered: false });
+  }
 }

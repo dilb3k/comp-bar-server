@@ -5,7 +5,6 @@ import { InventoryEntryModel } from "../inventory/inventory.model";
 import { DailySnapshotModel } from "../snapshots/snapshot.model";
 import { DebtorModel } from "../debtors/debtor.model";
 import { SubscriptionModel } from "../subscriptions/subscription.model";
-import { CatalogItemModel } from "../catalog/catalog-item.model";
 
 export class StatsService {
   async getDatabaseStats() {
@@ -17,7 +16,6 @@ export class StatsService {
       totalDebtors,
       totalSubscriptions,
       totalActiveSubscriptions,
-      totalCatalogItems,
     ] = await Promise.all([
       UserModel.countDocuments({ role: "admin" }),
       ProductModel.countDocuments({ isDeleted: false }),
@@ -26,7 +24,6 @@ export class StatsService {
       DebtorModel.countDocuments(),
       SubscriptionModel.countDocuments(),
       SubscriptionModel.countDocuments({ isActive: true }),
-      CatalogItemModel.countDocuments({ isDeleted: false }),
     ]);
 
     let dbSize = "N/A";
@@ -59,15 +56,13 @@ export class StatsService {
         totalDebtors,
         totalSubscriptions,
         totalActiveSubscriptions,
-        totalCatalogItems,
         totalRecords:
           totalAdmins +
           totalProducts +
           totalInventory +
           totalSnapshots +
           totalDebtors +
-          totalSubscriptions +
-          totalCatalogItems,
+          totalSubscriptions,
       },
     };
   }
