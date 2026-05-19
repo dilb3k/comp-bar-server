@@ -153,7 +153,7 @@ export class AuthService {
     if (payload.tier === "pro") {
       await subscriptionService.activate(actor, adminId, "pro");
     } else if (payload.tier === "bor") {
-      await authRepository.updateAdmin(adminId, { isPayed: true });
+      await subscriptionService.activate(actor, adminId, "bor");
     } else if (payload.tier === "tekin") {
       await authRepository.updateAdmin(adminId, { isPayed: false });
     } else if (payload.isPayed !== undefined) {
@@ -220,8 +220,7 @@ export class AuthService {
       if (payload.tier === "pro") {
         await subscriptionService.activate(actor, id, "pro");
       } else if (payload.tier === "bor") {
-        await subscriptionService.deactivate(actor, id);
-        await authRepository.updateAdmin(id, { isPayed: true });
+        await subscriptionService.activate(actor, id, "bor");
       } else {
         await subscriptionService.deactivate(actor, id);
         await authRepository.updateAdmin(id, { isPayed: false });
