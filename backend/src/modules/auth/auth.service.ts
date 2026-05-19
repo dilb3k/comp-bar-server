@@ -47,7 +47,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser),
-      user: user.toJSON()
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
 
@@ -98,7 +98,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser),
-      user: user.toJSON()
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
 
