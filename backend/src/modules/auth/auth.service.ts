@@ -127,6 +127,7 @@ export class AuthService {
     payload: {
       username: string;
       password: string;
+      tier?: "bor" | "pro";
       isPayed?: boolean;
     }
   ) {
@@ -147,8 +148,14 @@ export class AuthService {
       createdBy: actor.userId,
     });
 
-    if (payload.isPayed !== undefined && payload.isPayed !== (admin as any).isPayed) {
-      await authRepository.updateAdmin(admin._id.toString(), { isPayed: payload.isPayed });
+    const adminId = admin._id.toString();
+
+    if (payload.tier === "pro") {
+      await subscriptionService.activate(actor, adminId, "pro");
+    } else if (payload.tier === "bor") {
+      await authRepository.updateAdmin(adminId, { isPayed: true });
+    } else if (payload.isPayed !== undefined) {
+      await authRepository.updateAdmin(adminId, { isPayed: payload.isPayed });
     }
 
     telegramReportService.reportAdminCreated(actor, {
@@ -157,7 +164,7 @@ export class AuthService {
       createdBy: (admin as any).createdBy ?? actor.userId
     });
 
-    return authRepository.findById(admin._id.toString());
+    return authRepository.findById(adminId);
   }
 
   async listAdmins(actor: AuthUser) {
@@ -165,13 +172,28 @@ export class AuthService {
       throw new AppError("Only superAdmin can view admins", 403);
     }
 
-    return authRepository.listAdmins();
+    const admins = await authRepository.listAdmins();
+    const results = [];
+
+    for (const admin of admins) {
+      const adminId = admin._id.toString();
+      const activeSub = await subscriptionService.getActiveSubscription(adminId);
+      const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
+      const json = admin.toJSON();
+      results.push({
+        ...json,
+        tier,
+        subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+      });
+    }
+
+    return results;
   }
 
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; password?: string; isPayed?: boolean }
+    payload: { username?: string; password?: string; tier?: "bor" | "pro"; isPayed?: boolean }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
@@ -193,8 +215,28 @@ export class AuthService {
       }
     }
 
-    const updated = await authRepository.updateAdmin(id, payload);
-    return updated;
+    if (payload.tier !== undefined) {
+      if (payload.tier === "pro") {
+        await subscriptionService.activate(actor, id, "pro");
+      } else {
+        await subscriptionService.deactivate(actor, id);
+        await authRepository.updateAdmin(id, { isPayed: true });
+      }
+    }
+
+    if (payload.isPayed !== undefined) {
+      await authRepository.updateAdmin(id, { isPayed: payload.isPayed });
+    }
+
+    const updated = await authRepository.updateAdmin(id, {
+      username: payload.username,
+      password: payload.password,
+    });
+
+    const activeSub = await subscriptionService.getActiveSubscription(id);
+    const tier = computeTier(existing.role, existing.isPayed ?? false, activeSub);
+    const json = updated?.toJSON() ?? {};
+    return { ...json, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null };
   }
 
   async updateMe(
