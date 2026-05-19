@@ -9,13 +9,6 @@ import { CatalogItemModel } from "../catalog/catalog-item.model";
 
 export class StatsService {
   async getDatabaseStats() {
-    const db = mongoose.connection.db;
-    if (!db) {
-      throw new Error("Database not connected");
-    }
-
-    const dbStats = await db.stats();
-
     const [
       totalAdmins,
       totalProducts,
@@ -36,28 +29,27 @@ export class StatsService {
       CatalogItemModel.countDocuments({ isDeleted: false }),
     ]);
 
-    // Get per-collection storage stats
-    const collections = await db.listCollections().toArray();
-    const collectionStats: Record<string, { count: number; size: string }> = {};
-
-    for (const col of collections) {
-      const colStats = await db.command({ collStats: col.name }) as any;
-      collectionStats[col.name] = {
-        count: colStats.count ?? 0,
-        size: this.formatBytes(colStats.size ?? 0),
-      };
+    let dbSize = "N/A";
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        const dbStats = await db.stats();
+        dbSize = this.formatBytes((dbStats as any).dataSize ?? 0);
+      }
+    } catch {
+      // db.stats() may timeout on free tier, skip silently
     }
 
     return {
       database: {
-        name: db.databaseName,
-        size: this.formatBytes(dbStats.dataSize),
-        storageSize: this.formatBytes(dbStats.storageSize),
-        indexSize: this.formatBytes(dbStats.indexSize),
-        totalSize: this.formatBytes(dbStats.dataSize + dbStats.indexSize),
-        collections: dbStats.collections,
-        objects: dbStats.objects,
-        avgObjectSize: this.formatBytes(dbStats.avgObjSize),
+        name: mongoose.connection.db?.databaseName ?? "unknown",
+        size: dbSize,
+        storageSize: dbSize,
+        indexSize: dbSize,
+        totalSize: dbSize,
+        collections: 0,
+        objects: 0,
+        avgObjectSize: "0 B",
       },
       records: {
         totalAdmins,
@@ -77,7 +69,6 @@ export class StatsService {
           totalSubscriptions +
           totalCatalogItems,
       },
-      collections: collectionStats,
     };
   }
 

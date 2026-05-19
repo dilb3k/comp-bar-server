@@ -175,21 +175,20 @@ export class AuthService {
     }
 
     const admins = await authRepository.listAdmins();
-    const results = [];
+    const userIds = admins.map((a) => a._id.toString());
+    const subMap = await subscriptionService.getActiveSubscriptions(userIds);
 
-    for (const admin of admins) {
+    return admins.map((admin) => {
       const adminId = admin._id.toString();
-      const activeSub = await subscriptionService.getActiveSubscription(adminId);
+      const activeSub = subMap.get(adminId) ?? null;
       const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
       const json = admin.toJSON();
-      results.push({
+      return {
         ...json,
         tier,
         subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      });
-    }
-
-    return results;
+      };
+    });
   }
 
   async updateAdmin(
@@ -239,7 +238,8 @@ export class AuthService {
     });
 
     const activeSub = await subscriptionService.getActiveSubscription(id);
-    const tier = computeTier(existing.role, existing.isPayed ?? false, activeSub);
+    const currentIsPayed = (updated as any)?.isPayed ?? existing.isPayed ?? false;
+    const tier = computeTier(existing.role, currentIsPayed, activeSub);
     const json = updated?.toJSON() ?? {};
     return { ...json, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null };
   }

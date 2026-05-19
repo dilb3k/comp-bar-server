@@ -85,6 +85,23 @@ export class SubscriptionService {
     return sub;
   }
 
+  async getActiveSubscriptions(userIds: string[]): Promise<Map<string, ISubscription>> {
+    const subs = await SubscriptionModel.find({
+      userId: { $in: userIds },
+      isActive: true,
+      endDate: { $gte: new Date() },
+    }).sort({ createdAt: -1 });
+
+    const map = new Map<string, ISubscription>();
+    for (const sub of subs) {
+      const uid = sub.userId.toString();
+      if (!map.has(uid)) {
+        map.set(uid, sub);
+      }
+    }
+    return map;
+  }
+
   async refreshExpiredSubscriptions(): Promise<number> {
     const now = new Date();
     const expired = await SubscriptionModel.find({
