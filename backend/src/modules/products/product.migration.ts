@@ -63,7 +63,7 @@ function normalizeLegacyCatalogDoc(doc: LegacyCatalogDoc) {
         buyPrice: doc.buyPrice ?? 0,
         sellPrice: doc.sellPrice ?? 0,
         image: doc.image ?? "",
-        displayIndex: 0,
+        displayIndex: 1,
         isDeleted: doc.isDeleted ?? false,
         deletedAt: doc.deletedAt ?? null,
         createdAt: asDate(doc.createdAt),

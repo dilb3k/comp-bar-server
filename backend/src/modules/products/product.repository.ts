@@ -17,7 +17,7 @@ function buildProductRecord(payload: ProductPayload) {
     quantity: payload.quantity ?? 0,
     buyPrice: payload.buyPrice ?? 0,
     sellPrice: payload.sellPrice ?? 0,
-    displayIndex: payload.displayIndex ?? 0,
+    displayIndex: payload.displayIndex ?? 1,
     isDeleted: payload.isDeleted ?? false,
     deletedAt: payload.deletedAt ?? null,
     ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {}),
@@ -54,7 +54,7 @@ export class ProductRepository {
     if (maxProduct && maxProduct.displayIndex !== undefined) {
       return maxProduct.displayIndex + 1;
     }
-    return 0;
+    return 1;
   }
 
   async findActive(ownerAdminId: string, search?: string) {
