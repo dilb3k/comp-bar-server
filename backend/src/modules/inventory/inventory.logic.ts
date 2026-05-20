@@ -234,7 +234,6 @@ export function deriveMissingInventoryEntry(product: any, date: string) {
     startQuantity: product.quantity,
     currentQuantity: product.quantity,
     note: "",
-    isDeleted: false,
     updatedAt: now,
     createdAt: now,
   };

@@ -8,7 +8,6 @@ export type SnapshotPayload = {
   totalProfit?: number;
   totalSoldItems?: number;
   items?: any[];
-  isDeleted?: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 };
@@ -26,7 +25,6 @@ function buildSnapshotRecord(
     totalProfit: payload.totalProfit,
     totalSoldItems: payload.totalSoldItems,
     items: payload.items ?? [],
-    isDeleted: payload.isDeleted ?? false,
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt
   };
@@ -37,7 +35,6 @@ export class SnapshotRepository {
     return DailySnapshotModel.findOne({
       ownerAdminId,
       date,
-      isDeleted: false,
     }).sort({ updatedAt: -1 });
   }
 
@@ -45,7 +42,6 @@ export class SnapshotRepository {
     return DailySnapshotModel.find({
       ownerAdminId,
       date: { $gte: from, $lte: to },
-      isDeleted: false,
     }).sort({ date: 1, updatedAt: 1 });
   }
 

@@ -18,9 +18,9 @@ export class StatsService {
       totalActiveSubscriptions,
     ] = await Promise.all([
       UserModel.countDocuments({ role: "admin" }),
-      ProductModel.countDocuments({ isDeleted: false }),
-      InventoryEntryModel.countDocuments({ isDeleted: false }),
-      DailySnapshotModel.countDocuments({ isDeleted: false }),
+      ProductModel.countDocuments({}),
+      InventoryEntryModel.countDocuments({}),
+      DailySnapshotModel.countDocuments({}),
       DebtorModel.countDocuments(),
       SubscriptionModel.countDocuments(),
       SubscriptionModel.countDocuments({ isActive: true }),

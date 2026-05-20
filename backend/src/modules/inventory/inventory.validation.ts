@@ -24,7 +24,6 @@ const inventoryItemSchema = z.object({
   startQuantity: z.number().int().min(0),
   currentQuantity: z.number().int().min(0).optional(),
   note: z.string().optional().default(""),
-  isDeleted: z.boolean().optional(),
   createdAt: isoDateTime,
   updatedAt: isoDateTime
 }).superRefine((value, ctx) => {

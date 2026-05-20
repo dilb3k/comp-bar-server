@@ -16,7 +16,6 @@ export interface IInventoryEntry {
   buyPrice: number;
   sellPrice: number;
   note: string;
-  isDeleted: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -71,11 +70,6 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
     note: {
       type: String,
       default: ""
-    },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true
     }
   },
   {
@@ -106,7 +100,7 @@ inventoryEntrySchema.index(
 );
 
 inventoryEntrySchema.index(
-  { ownerAdminId: 1, isDeleted: 1, date: 1, createdAt: 1 },
+  { ownerAdminId: 1, date: 1, createdAt: 1 },
   { name: "idx_range_date", background: true }
 );
 

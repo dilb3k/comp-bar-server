@@ -14,7 +14,6 @@ function buildInventoryRecord(payload: InventoryPayload) {
     buyPrice: payload.buyPrice ?? 0,
     sellPrice: payload.sellPrice ?? 0,
     note: payload.note ?? "",
-    isDeleted: payload.isDeleted ?? false,
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt
   };
@@ -25,7 +24,6 @@ export class InventoryRepository {
     let query = InventoryEntryModel.find({
       ownerAdminId,
       date,
-      isDeleted: false
     }).sort({ createdAt: 1 });
     if (session) query = query.session(session);
     return query;
@@ -35,14 +33,12 @@ export class InventoryRepository {
     return InventoryEntryModel.find({
       ownerAdminId,
       date: { $gte: from, $lte: to },
-      isDeleted: false
     }).sort({ date: 1, createdAt: 1 });
   }
 
   async findByDateRange(ownerAdminId: string, from?: string, to?: string) {
     const filter: Record<string, unknown> = {
       ownerAdminId,
-      isDeleted: false,
     };
 
     if (from || to) {

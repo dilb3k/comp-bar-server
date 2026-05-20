@@ -32,7 +32,6 @@ export const upsertSnapshotSchema = z.object({
   totalProfit: z.number().optional(),
   totalSoldItems: z.number().int().min(0).optional(),
   items: z.array(snapshotItemSchema).optional(),
-  isDeleted: z.boolean().optional(),
   createdAt: isoDateTime,
   updatedAt: isoDateTime
 });

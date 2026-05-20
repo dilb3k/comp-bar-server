@@ -52,7 +52,6 @@ export interface IDailySnapshot {
   totalProfit: number;
   totalSoldItems: number;
   items: Array<Record<string, unknown>>;
-  isDeleted: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -97,11 +96,6 @@ const dailySnapshotSchema = new Schema<IDailySnapshot>(
       type: [snapshotItemSchema],
       default: []
     },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true
-    }
   },
   {
     collection: "daily_snapshots",

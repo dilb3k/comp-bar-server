@@ -15,8 +15,6 @@ export interface IProduct {
   sellPrice: number;
   image: string;
   displayIndex: number;
-  isDeleted: boolean;
-  deletedAt?: Date | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -67,15 +65,6 @@ const productSchema = new Schema<IProduct>(
       type: Number,
       min: 0,
       default: 0
-    },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    deletedAt: {
-      type: Date,
-      default: null
     }
   },
   {
@@ -87,7 +76,6 @@ const productSchema = new Schema<IProduct>(
         ret.id = ret._id.toString();
         delete ret._id;
         delete ret.ownerAdminId;
-        delete ret.deletedAt;
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
         return ret;
@@ -102,7 +90,7 @@ productSchema.index(
 );
 
 productSchema.index(
-  { ownerAdminId: 1, isDeleted: 1, displayIndex: 1 },
+  { ownerAdminId: 1, displayIndex: 1 },
   { name: "idx_product_list_active_sorted", background: true }
 );
 
@@ -110,8 +98,7 @@ productSchema.index(
   { ownerAdminId: 1, displayIndex: 1 },
   {
     unique: true,
-    partialFilterExpression: { isDeleted: false },
-    name: "idx_unique_displayindex_active",
+    name: "idx_unique_displayindex",
     background: true
   }
 );
@@ -127,7 +114,7 @@ productSchema.index(
 );
 
 productSchema.index(
-  { ownerAdminId: 1, isDeleted: 1, name: 1 },
+  { ownerAdminId: 1, name: 1 },
   {
     name: "idx_name_regex",
     collation: { locale: "en", strength: 2 },

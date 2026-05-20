@@ -25,7 +25,6 @@ import {
 function isProductVisibleOnDate(product: any, date: string): boolean {
   if (!product) return false;
   const p = typeof product.toJSON === "function" ? product.toJSON() : product;
-  if (p.isDeleted) return false;
   if (p.createdAt) {
     const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, env.BUSINESS_DAY_START_HOUR);
     if (createdBusinessDate > date) return false;
@@ -120,14 +119,18 @@ export class InventoryService {
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
+        const storedBuyPrice = Number(entry.buyPrice ?? 0);
+        const storedSellPrice = Number(entry.sellPrice ?? 0);
         return {
           ...entry.toJSON(),
           ...calculateInventoryMetrics({
             startQuantity: Number(entry.startQuantity),
             currentQuantity: Number(entry.currentQuantity),
-            buyPrice: 0,
-            sellPrice: 0,
+            buyPrice: storedBuyPrice,
+            sellPrice: storedSellPrice,
           }),
+          buyPrice: storedBuyPrice,
+          sellPrice: storedSellPrice,
           image: "",
           product: null,
         };
@@ -173,14 +176,18 @@ export class InventoryService {
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
+        const storedBuyPrice = Number(entry.buyPrice ?? 0);
+        const storedSellPrice = Number(entry.sellPrice ?? 0);
         return {
           ...entry.toJSON(),
           ...calculateInventoryMetrics({
             startQuantity: Number(entry.startQuantity),
             currentQuantity: Number(entry.currentQuantity),
-            buyPrice: 0,
-            sellPrice: 0,
+            buyPrice: storedBuyPrice,
+            sellPrice: storedSellPrice,
           }),
+          buyPrice: storedBuyPrice,
+          sellPrice: storedSellPrice,
           image: "",
           product: null,
         };
@@ -230,7 +237,7 @@ export class InventoryService {
           payload.items.map(async (item) => {
             const product = productMap.get(item.productId);
 
-            if (!product || product.isDeleted) {
+            if (!product) {
               throw new AppError(
                 `Active product not found for productId=${item.productId}`,
                 404,
@@ -263,7 +270,6 @@ export class InventoryService {
                 buyPrice: Number(product.buyPrice || 0),
                 sellPrice: Number(product.sellPrice || 0),
                 note: item.note ?? "",
-                isDeleted: false,
                 createdAt: item.createdAt ? new Date(item.createdAt) : now,
                 updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
               },
@@ -343,7 +349,7 @@ export class InventoryService {
           payload.items.map(async (item) => {
             const product = productMap.get(item.productId);
 
-            if (!product || product.isDeleted) {
+            if (!product) {
               throw new AppError(
                 `Active product not found for productId=${item.productId}`,
                 404,
@@ -385,7 +391,6 @@ export class InventoryService {
                 buyPrice: Number((existing as any).buyPrice ?? product.buyPrice ?? 0),
                 sellPrice: Number((existing as any).sellPrice ?? product.sellPrice ?? 0),
                 note: item.note ?? (existing as any).note ?? "",
-                isDeleted: false,
                 createdAt: (existing as any).createdAt,
                 updatedAt: now,
               },

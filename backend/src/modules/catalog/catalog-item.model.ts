@@ -15,8 +15,6 @@ export interface ICatalogItem {
   sellPrice: number;
   image: string;
   displayIndex: number;
-  isDeleted: boolean;
-  deletedAt?: Date | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -67,15 +65,6 @@ const catalogItemSchema = new Schema<ICatalogItem>(
       type: Number,
       min: 0,
       default: 0
-    },
-    isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true
-    },
-    deletedAt: {
-      type: Date,
-      default: null
     }
   },
   {
@@ -87,7 +76,6 @@ const catalogItemSchema = new Schema<ICatalogItem>(
         ret.id = ret._id.toString();
         delete ret._id;
         delete ret.ownerAdminId;
-        delete ret.deletedAt;
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
         return ret;
@@ -102,7 +90,7 @@ catalogItemSchema.index(
 );
 
 catalogItemSchema.index(
-  { ownerAdminId: 1, isDeleted: 1, displayIndex: 1 },
+  { ownerAdminId: 1, displayIndex: 1 },
   { name: "idx_product_list_active_sorted", background: true }
 );
 
@@ -117,7 +105,7 @@ catalogItemSchema.index(
 );
 
 catalogItemSchema.index(
-  { ownerAdminId: 1, isDeleted: 1, name: 1 },
+  { ownerAdminId: 1, name: 1 },
   {
     name: "idx_name_regex",
     collation: { locale: "en", strength: 2 },

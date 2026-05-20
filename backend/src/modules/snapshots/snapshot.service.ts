@@ -109,7 +109,6 @@ export class SnapshotService {
         totalProfit: totals.totalProfit,
         totalSoldItems: totals.totalSoldItems,
         items,
-        isDeleted: false,
         createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
         updatedAt: now,
       },

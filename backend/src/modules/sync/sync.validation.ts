@@ -11,7 +11,6 @@ const syncedProductSchema = z.object({
   sellPrice: z.number().positive("sellPrice must be > 0"),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
   displayIndex: z.number().int().min(1).optional(),
-  isDeleted: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).superRefine((value, ctx) => {
@@ -32,7 +31,6 @@ const syncedInventorySchema = z.object({
   startQuantity: z.number().int().min(0),
   currentQuantity: z.number().int().min(0),
   note: z.string().optional().default(""),
-  isDeleted: z.boolean().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).superRefine((value, ctx) => {
@@ -73,7 +71,6 @@ const syncedSnapshotSchema = z.object({
       }
     }
   }),
-  isDeleted: z.boolean().optional().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });

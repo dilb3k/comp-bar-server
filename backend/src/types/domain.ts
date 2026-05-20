@@ -1,30 +1,32 @@
 export interface Product {
-  id?: string;
+  id: string;
+  ownerAdminId: string;
   localId: string;
   deviceId: string;
   name: string;
   quantity: number;
   buyPrice: number;
   sellPrice: number;
-  image?: string;
-  displayIndex?: number;
-  isDeleted: boolean;
-  updatedAt: string;
-  createdAt: string;
+  image: string;
+  displayIndex: number;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 export interface InventoryEntry {
   id?: string;
+  ownerAdminId?: string;
   localId: string;
   deviceId: string;
   productId: string;
   date: string;
   startQuantity: number;
   currentQuantity: number;
+  buyPrice?: number;
+  sellPrice?: number;
   note?: string;
-  isDeleted: boolean;
-  updatedAt: string;
-  createdAt: string;
+  updatedAt: Date | string;
+  createdAt: Date | string;
 }
 
 export interface DailySnapshotItem {
@@ -39,6 +41,7 @@ export interface DailySnapshotItem {
 
 export interface DailySnapshot {
   id?: string;
+  ownerAdminId?: string;
   localId: string;
   deviceId: string;
   date: string;
@@ -46,9 +49,8 @@ export interface DailySnapshot {
   totalProfit: number;
   totalSoldItems: number;
   items: DailySnapshotItem[];
-  isDeleted: boolean;
-  updatedAt: string;
-  createdAt: string;
+  updatedAt: Date | string;
+  createdAt: Date | string;
 }
 
 export interface SyncPayload {

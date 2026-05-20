@@ -18,8 +18,6 @@ function buildProductRecord(payload: ProductPayload) {
     buyPrice: payload.buyPrice ?? 0,
     sellPrice: payload.sellPrice ?? 0,
     displayIndex: payload.displayIndex ?? 1,
-    isDeleted: payload.isDeleted ?? false,
-    deletedAt: payload.deletedAt ?? null,
     ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {}),
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt
@@ -30,8 +28,6 @@ function buildProductUpdate(payload: ProductPayload) {
   const update: Record<string, unknown> = {};
 
   if ("deviceId" in payload) update.deviceId = payload.deviceId;
-  if ("isDeleted" in payload) update.isDeleted = payload.isDeleted;
-  if ("deletedAt" in payload) update.deletedAt = payload.deletedAt;
   if ("createdAt" in payload) update.createdAt = payload.createdAt;
   if ("updatedAt" in payload) update.updatedAt = payload.updatedAt;
   if ("name" in payload) update.name = payload.name;
@@ -47,7 +43,7 @@ function buildProductUpdate(payload: ProductPayload) {
 export class ProductRepository {
   async getNextDisplayIndex(ownerAdminId: string, session?: any): Promise<number> {
     const query = ProductModel.findOne(
-      { ownerAdminId, isDeleted: false },
+      { ownerAdminId },
       { displayIndex: 1, _id: 0 }
     ).sort({ displayIndex: -1 }).limit(1);
     if (session) query.session(session);
@@ -62,7 +58,6 @@ export class ProductRepository {
   async findActive(ownerAdminId: string, search?: string) {
     const filter: FilterQuery<IProduct> = {
       ownerAdminId,
-      isDeleted: false
     };
 
     if (search?.trim()) {
@@ -92,7 +87,6 @@ export class ProductRepository {
   async countActive(ownerAdminId: string, session?: any) {
     let query = ProductModel.countDocuments({
       ownerAdminId,
-      isDeleted: false,
     });
     if (session) query = query.session(session);
     return query;
@@ -142,6 +136,10 @@ export class ProductRepository {
       { $set: buildProductUpdate(payload) },
       options
     );
+  }
+
+  async deleteById(ownerAdminId: string, id: string) {
+    return ProductModel.findOneAndDelete({ _id: id, ownerAdminId });
   }
 
   async updateByLocalId(ownerAdminId: string, localId: string, payload: ProductPayload) {

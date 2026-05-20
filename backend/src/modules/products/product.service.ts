@@ -13,7 +13,7 @@ import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
 import { normalizeProductImage, processAndStoreProductImage } from "./product-image";
 import { productRepository } from "./product.repository";
 
-type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt" | "isDeleted"> & {
+type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt"> & {
   localId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -80,7 +80,6 @@ export class ProductService {
               sellPrice: payload.sellPrice,
               displayIndex,
               image: storedImage ?? "",
-              isDeleted: false,
               createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
               updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
             }, session);
@@ -105,7 +104,6 @@ export class ProductService {
             buyPrice: Number(payload.buyPrice || 0),
             sellPrice: Number(payload.sellPrice || 0),
             note: "",
-            isDeleted: false,
             createdAt: timestamp,
             updatedAt: timestamp
           }, session);
@@ -141,10 +139,6 @@ export class ProductService {
 
   async update(actor: AuthUser, identifier: string, payload: UpdateProductInput) {
     const product = await this.getByIdentifier(actor, identifier);
-
-    if (product.isDeleted) {
-      throw new AppError("Deleted product cannot be updated", 409);
-    }
 
     const updatedAt = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
     const nextQuantity = payload.quantity ?? (product as any).quantity;
@@ -209,7 +203,6 @@ export class ProductService {
             startQuantity: adjusted.startQuantity,
             currentQuantity: adjusted.currentQuantity,
             note: (inventoryEntry as any).note ?? "",
-            isDeleted: false,
             createdAt: (inventoryEntry as any).createdAt,
             updatedAt
           }, session);
@@ -224,8 +217,7 @@ export class ProductService {
             buyPrice: Number(nextBuyPrice || 0),
             sellPrice: Number(nextSellPrice || 0),
             note: "",
-            isDeleted: false,
-            createdAt: updatedAt,
+              createdAt: updatedAt,
             updatedAt
           }, session);
         }
@@ -263,29 +255,20 @@ export class ProductService {
 
   async remove(actor: AuthUser, identifier: string) {
     const product = await this.getByIdentifier(actor, identifier);
-    const now = new Date();
 
-    const deletedProduct = await productRepository.updateById(actor.userId, (product as any)._id.toString(), {
-      isDeleted: true,
-      deletedAt: now,
-      updatedAt: now
+    await productRepository.deleteById(actor.userId, product._id?.toString() || (product as any).id);
+
+    telegramReportService.reportProductDeleted(actor, {
+      localId: (product as any).localId,
+      name: (product as any).name
     });
 
-    if (deletedProduct) {
-      telegramReportService.reportProductDeleted(actor, {
-        localId: (deletedProduct as any).localId,
-        name: (deletedProduct as any).name
-      });
-    }
-
-    return deletedProduct;
+    return product;
   }
 
   isVisibleForBusinessDate(
     product: {
       createdAt: Date | string;
-      deletedAt?: Date | string | null;
-      isDeleted: boolean;
     },
     date: string,
     businessDayStartHour?: number
@@ -296,20 +279,7 @@ export class ProductService {
       hour
     );
 
-    if (createdBusinessDate > date) {
-      return false;
-    }
-
-    if (!product.isDeleted || !product.deletedAt) {
-      return true;
-    }
-
-    const deletedBusinessDate = getBusinessDateFromTimestamp(
-      product.deletedAt,
-      hour
-    );
-
-    return deletedBusinessDate > date;
+    return createdBusinessDate <= date;
   }
 }
 

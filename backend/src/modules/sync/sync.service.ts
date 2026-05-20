@@ -47,8 +47,7 @@ export class SyncService {
           ...item,
           image: storedImage ?? (item.image as string | undefined),
           createdAt: new Date(item.createdAt),
-          updatedAt: new Date(item.updatedAt),
-          deletedAt: item.isDeleted ? new Date(item.updatedAt) : null
+          updatedAt: new Date(item.updatedAt)
         };
       })
     );
