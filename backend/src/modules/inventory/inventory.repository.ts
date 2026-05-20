@@ -57,7 +57,7 @@ export class InventoryRepository {
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
     return InventoryEntryModel.find(filter).sort({ updatedAt: 1 });

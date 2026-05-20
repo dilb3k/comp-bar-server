@@ -127,6 +127,7 @@ export function aggregateInventoryForRange(items: any[]) {
   const deduplicatedItems = Array.from(uniqueByProductAndDate.values());
 
   const productLatestEntry = new Map<string, any>();
+  const productFirstStart = new Map<string, number>();
   const productTotalSold = new Map<string, number>();
   const productTotalRevenue = new Map<string, number>();
   const productTotalProfit = new Map<string, number>();
@@ -156,6 +157,7 @@ export function aggregateInventoryForRange(items: any[]) {
 
     if (!existing) {
       productLatestEntry.set(productId, item);
+      productFirstStart.set(productId, item.startQuantity ?? 0);
       continue;
     }
 
@@ -178,11 +180,13 @@ export function aggregateInventoryForRange(items: any[]) {
     const latestStockSell = latestEntry.stockSellValue ?? 0;
     const latestStockBuy = latestEntry.stockBuyValue ?? 0;
     const latestStockProfit = latestEntry.potentialProfit ?? 0;
+    const firstStart = productFirstStart.get(productId) ?? 0;
 
     const sold = productTotalSold.get(productId) ?? 0;
     const revenue = productTotalRevenue.get(productId) ?? 0;
     const profit = productTotalProfit.get(productId) ?? 0;
 
+    totalStart += firstStart;
     totalCurrent += latestRemaining;
     totalStockSellValue += latestStockSell;
     totalStockBuyValue += latestStockBuy;
@@ -191,8 +195,6 @@ export function aggregateInventoryForRange(items: any[]) {
     totalRevenue += revenue;
     totalProfit += profit;
   }
-
-  totalStart = totalCurrent + totalSold;
 
   return {
     totalStart,

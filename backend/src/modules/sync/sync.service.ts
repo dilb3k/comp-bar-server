@@ -56,7 +56,11 @@ export class SyncService {
     const validInventory: Array<Record<string, unknown>> = [];
     for (const item of inventory) {
       const invDate = item.date as string | undefined;
-      if (invDate && isPastBusinessDate(invDate, currentBusinessDate)) {
+      if (!invDate) {
+        rejected.push({ entity: "inventory", localId: item.localId, reason: "MISSING_DATE" });
+        continue;
+      }
+      if (isPastBusinessDate(invDate, currentBusinessDate)) {
         rejected.push({ entity: "inventory", localId: item.localId, reason: "PAST_DAY_LOCKED" });
         continue;
       }
@@ -103,7 +107,7 @@ export class SyncService {
           if (itemDate && itemDate.length > 0) {
             const [entries, products] = await Promise.all([
               inventoryRepository.findByDate(actor.userId, itemDate, session),
-              productRepository.findAllByOwner(actor.userId)
+              productRepository.findAllByOwner(actor.userId, session)
             ]);
 
             const productMap = new Map(products.map((p: any) => [p.localId, p]));

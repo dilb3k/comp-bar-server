@@ -90,8 +90,8 @@ export class SnapshotService {
       });
     });
 
-    const items = payload.items ?? derivedItems;
-    const totals = aggregateSnapshot(items);
+    const items = derivedItems;
+    const totals = aggregateSnapshot(derivedItems);
 
     const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
 
@@ -105,9 +105,9 @@ export class SnapshotService {
           `snapshot-${payload.date}-${payload.deviceId ?? "server"}`,
         deviceId: payload.deviceId ?? "server",
         date: payload.date,
-        totalRevenue: payload.totalRevenue ?? totals.totalRevenue,
-        totalProfit: payload.totalProfit ?? totals.totalProfit,
-        totalSoldItems: payload.totalSoldItems ?? totals.totalSoldItems,
+        totalRevenue: totals.totalRevenue,
+        totalProfit: totals.totalProfit,
+        totalSoldItems: totals.totalSoldItems,
         items,
         isDeleted: false,
         createdAt: payload.createdAt ? new Date(payload.createdAt) : now,

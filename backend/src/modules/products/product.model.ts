@@ -107,6 +107,16 @@ productSchema.index(
 );
 
 productSchema.index(
+  { ownerAdminId: 1, displayIndex: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isDeleted: false },
+    name: "idx_unique_displayindex_active",
+    background: true
+  }
+);
+
+productSchema.index(
   { ownerAdminId: 1, updatedAt: 1 },
   { name: "idx_owner_updatedat", background: true }
 );

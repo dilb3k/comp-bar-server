@@ -7,8 +7,8 @@ const syncedProductSchema = z.object({
   deviceId: z.string().trim().min(1),
   name: z.string().trim().min(1),
   quantity: z.number().int().min(0),
-  buyPrice: z.number().min(0),
-  sellPrice: z.number().min(0),
+  buyPrice: z.number().positive("buyPrice must be > 0"),
+  sellPrice: z.number().positive("sellPrice must be > 0"),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
   displayIndex: z.number().int().min(1).optional(),
   isDeleted: z.boolean().optional(),
@@ -50,19 +50,29 @@ const syncedSnapshotSchema = z.object({
   deviceId: z.string().trim().min(1),
   date: z.string(),
   totalRevenue: z.number().min(0),
-  totalProfit: z.number(),
+  totalProfit: z.number().min(0),
   totalSoldItems: z.number().int().min(0),
   items: z.array(
     z.object({
       productId: z.string().trim().min(1),
       productName: z.string().trim().min(1),
       sold: z.number().int().min(0),
-      buyPrice: z.number().min(0).optional(),
-      sellPrice: z.number().min(0).optional(),
+      buyPrice: z.number().positive().optional(),
+      sellPrice: z.number().positive().optional(),
       revenue: z.number().min(0),
       profit: z.number()
     })
-  ),
+  ).superRefine((items, ctx) => {
+    for (const item of items) {
+      if (item.sellPrice !== undefined && item.buyPrice !== undefined && item.sellPrice < item.buyPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [String(items.indexOf(item)), "sellPrice"],
+          message: "sellPrice must be greater than or equal to buyPrice"
+        });
+      }
+    }
+  }),
   isDeleted: z.boolean().optional().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()

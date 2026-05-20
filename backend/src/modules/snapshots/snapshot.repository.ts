@@ -51,7 +51,7 @@ export class SnapshotRepository {
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
     return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
@@ -83,7 +83,23 @@ export class SnapshotRepository {
     }
 
     const createOptions = session ? { session } : {};
-    return DailySnapshotModel.create([updateRecord], createOptions).then((docs) => docs[0]);
+    try {
+      return await DailySnapshotModel.create([updateRecord], createOptions).then((docs) => docs[0]);
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        let retryQuery = DailySnapshotModel.findOne({
+          ownerAdminId,
+          date,
+        });
+        if (session) retryQuery = retryQuery.session(session);
+        const conflicting = await retryQuery;
+        if (conflicting) {
+          Object.assign(conflicting, updateRecord);
+          return conflicting.save({ session });
+        }
+      }
+      throw error;
+    }
   }
 
   async upsertLastWriteWins(
@@ -117,7 +133,29 @@ export class SnapshotRepository {
     }
 
     const createOptions = session ? { session } : {};
-    return DailySnapshotModel.create([record], createOptions).then((docs) => docs[0]);
+    try {
+      return await DailySnapshotModel.create([record], createOptions).then((docs) => docs[0]);
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        let retryQuery = DailySnapshotModel.findOne({
+          ownerAdminId,
+          date: payload.date,
+        });
+        if (session) retryQuery = retryQuery.session(session);
+        const conflicting = await retryQuery;
+        if (conflicting) {
+          if (
+            new Date(conflicting.updatedAt).getTime() >
+              new Date(payload.updatedAt).getTime()
+          ) {
+            return conflicting;
+          }
+          Object.assign(conflicting, record);
+          return conflicting.save({ session });
+        }
+      }
+      throw error;
+    }
   }
 }
 

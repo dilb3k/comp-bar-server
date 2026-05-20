@@ -210,20 +210,22 @@ export class InventoryService {
   async startDay(actor: AuthUser, payload: StartDayInput) {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
-    const products = await productRepository.findByIdentifiers(
-      actor.userId,
-      payload.items.map((item) => item.productId),
-    );
-    const productMap = new Map<string, any>();
-
-    for (const product of products) {
-      productMap.set(product.localId, product);
-      productMap.set(product._id.toString(), product);
-    }
 
     const session = await mongoose.startSession();
     try {
       const results = await session.withTransaction(async () => {
+        const products = await productRepository.findByIdentifiers(
+          actor.userId,
+          payload.items.map((item) => item.productId),
+          session,
+        );
+        const productMap = new Map<string, any>();
+
+        for (const product of products) {
+          productMap.set(product.localId, product);
+          productMap.set(product._id.toString(), product);
+        }
+
         const items = await Promise.all(
           payload.items.map(async (item) => {
             const product = productMap.get(item.productId);
@@ -321,20 +323,22 @@ export class InventoryService {
   async bulkUpdateCurrent(actor: AuthUser, payload: BulkCurrentInput) {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
-    const products = await productRepository.findByIdentifiers(
-      actor.userId,
-      payload.items.map((item) => item.productId),
-    );
-    const productMap = new Map<string, any>();
-
-    for (const product of products) {
-      productMap.set(product.localId, product);
-      productMap.set(product._id.toString(), product);
-    }
 
     const session = await mongoose.startSession();
     try {
       const results = await session.withTransaction(async () => {
+        const products = await productRepository.findByIdentifiers(
+          actor.userId,
+          payload.items.map((item) => item.productId),
+          session,
+        );
+        const productMap = new Map<string, any>();
+
+        for (const product of products) {
+          productMap.set(product.localId, product);
+          productMap.set(product._id.toString(), product);
+        }
+
         const items = await Promise.all(
           payload.items.map(async (item) => {
             const product = productMap.get(item.productId);

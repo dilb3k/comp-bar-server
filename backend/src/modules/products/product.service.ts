@@ -46,41 +46,53 @@ export class ProductService {
       storedImage = normalizedImage;
     }
 
-    if (actor.tier === "bor") {
-      const activeCount = await productRepository.countActive(actor.userId);
-      if (activeCount >= 100) {
-        throw new AppError(
-          "Bor tarifida maksimal 100 ta mahsulot yaratish mumkin. Pro tarifiga o'tish uchun administrator bilan bog'laning.",
-          403
-        );
-      }
-    }
-
     let displayIndex = payload.displayIndex;
-    if (displayIndex === undefined || displayIndex === null) {
-      displayIndex = await productRepository.getNextDisplayIndex(actor.userId);
-    }
-
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour);
 
     const session = await mongoose.startSession();
     try {
       const product = await session.withTransaction(async () => {
-        const p = await productRepository.create({
-          ownerAdminId: actor.userId,
-          localId: payload.localId ?? createLocalId("prd", payload.deviceId),
-          deviceId: payload.deviceId,
-          name: payload.name,
-          quantity: payload.quantity,
-          buyPrice: payload.buyPrice,
-          sellPrice: payload.sellPrice,
-          displayIndex,
-          image: storedImage ?? "",
-          isDeleted: false,
-          createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
-          updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
-        }, session);
+        if (actor.tier === "bor") {
+          const activeCount = await productRepository.countActive(actor.userId, session);
+          if (activeCount >= 100) {
+            throw new AppError(
+              "Bor tarifida maksimal 100 ta mahsulot yaratish mumkin. Pro tarifiga o'tish uchun administrator bilan bog'laning.",
+              403
+            );
+          }
+        }
+
+        if (displayIndex === undefined || displayIndex === null) {
+          displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
+        }
+
+        let p: any;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            p = await productRepository.create({
+              ownerAdminId: actor.userId,
+              localId: payload.localId ?? createLocalId("prd", payload.deviceId),
+              deviceId: payload.deviceId,
+              name: payload.name,
+              quantity: payload.quantity,
+              buyPrice: payload.buyPrice,
+              sellPrice: payload.sellPrice,
+              displayIndex,
+              image: storedImage ?? "",
+              isDeleted: false,
+              createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
+              updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
+            }, session);
+            break;
+          } catch (err: any) {
+            if (err?.code === 11000 && attempt < 2) {
+              displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
+              continue;
+            }
+            throw err;
+          }
+        }
 
         if ((p as any).localId) {
           await inventoryRepository.upsertByProductAndDateWithSession(actor.userId, (p as any).localId, today, {

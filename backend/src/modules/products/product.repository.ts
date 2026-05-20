@@ -45,11 +45,13 @@ function buildProductUpdate(payload: ProductPayload) {
 }
 
 export class ProductRepository {
-  async getNextDisplayIndex(ownerAdminId: string): Promise<number> {
-    const maxProduct = await ProductModel.findOne(
+  async getNextDisplayIndex(ownerAdminId: string, session?: any): Promise<number> {
+    const query = ProductModel.findOne(
       { ownerAdminId, isDeleted: false },
       { displayIndex: 1, _id: 0 }
     ).sort({ displayIndex: -1 }).limit(1);
+    if (session) query.session(session);
+    const maxProduct = await query;
 
     if (maxProduct && maxProduct.displayIndex !== undefined) {
       return maxProduct.displayIndex + 1;
@@ -73,23 +75,27 @@ export class ProductRepository {
     });
   }
 
-  async findAllByOwner(ownerAdminId: string) {
-    return ProductModel.find({ ownerAdminId }).sort({ updatedAt: 1 });
+  async findAllByOwner(ownerAdminId: string, session?: any) {
+    const query = ProductModel.find({ ownerAdminId }).sort({ updatedAt: 1 });
+    if (session) query.session(session);
+    return query;
   }
 
   async findAllUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
     const filter = lastSyncAt
-      ? { ownerAdminId, updatedAt: { $gt: new Date(lastSyncAt) } }
+      ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
     return ProductModel.find(filter).sort({ updatedAt: 1 });
   }
 
-  async countActive(ownerAdminId: string) {
-    return ProductModel.countDocuments({
+  async countActive(ownerAdminId: string, session?: any) {
+    let query = ProductModel.countDocuments({
       ownerAdminId,
       isDeleted: false,
     });
+    if (session) query = query.session(session);
+    return query;
   }
 
   async findByIdentifier(ownerAdminId: string, identifier: string) {
@@ -106,7 +112,7 @@ export class ProductRepository {
     return ProductModel.find({ ownerAdminId, localId: { $in: localIds } });
   }
 
-  async findByIdentifiers(ownerAdminId: string, identifiers: string[]) {
+  async findByIdentifiers(ownerAdminId: string, identifiers: string[], session?: any) {
     const normalized = Array.from(new Set(identifiers.filter(Boolean)));
     const objectIds = normalized.filter((identifier) => Types.ObjectId.isValid(identifier));
     const orFilters: Array<Record<string, unknown>> = [{ localId: { $in: normalized } }];
@@ -115,10 +121,12 @@ export class ProductRepository {
       orFilters.push({ _id: { $in: objectIds } });
     }
 
-    return ProductModel.find({
+    const query = ProductModel.find({
       ownerAdminId,
       $or: orFilters
     });
+    if (session) query.session(session);
+    return query;
   }
 
   async create(payload: ProductPayload, session?: any) {
