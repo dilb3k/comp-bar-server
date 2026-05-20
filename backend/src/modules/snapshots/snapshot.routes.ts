@@ -14,20 +14,19 @@ const router = Router();
 
 router.get(
   "/daily",
-  requirePayment,
   validateRequest({ query: snapshotDateQuerySchema }),
   asyncHandler(snapshotController.getDaily)
 );
 
 router.post(
   "/daily",
+  requirePayment,
   validateRequest({ body: upsertSnapshotSchema }),
   asyncHandler(snapshotController.upsert)
 );
 
 router.get(
   "/range",
-  requirePayment,
   validateRequest({ query: snapshotRangeQuerySchema }),
   asyncHandler(snapshotController.getRange)
 );
