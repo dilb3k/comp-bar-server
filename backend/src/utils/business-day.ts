@@ -42,7 +42,7 @@ export function isValidDayKey(value: string) {
 
 export function getBusinessDate(
   value?: string | Date,
-  businessDayStartHour = 12
+  businessDayStartHour = 0
 ) {
   const date = toDate(value);
   const shifted = new Date(date);
@@ -78,7 +78,7 @@ export function isPastBusinessDate(date: string, currentBusinessDate: string) {
 
 export function getBusinessDateFromTimestamp(
   value: Date | string,
-  businessDayStartHour = 12
+  businessDayStartHour = 0
 ) {
   return getBusinessDate(value, businessDayStartHour);
 }

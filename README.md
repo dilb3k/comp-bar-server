@@ -9,7 +9,7 @@ Expo React Native kassir app uchun production-ready Express + MongoDB backend.
 - MongoDB + Mongoose schema va indexlar
 - `auth` dan tashqari barcha data bitta `products` collection ichida `recordType + product/inventory/daily` ko'rinishida saqlanadi
 - Zod validation, consistent error responses
-- 07:00 business day logikasi
+- 00:00 business day logikasi
 - Soft delete, daily snapshot derivation, offline sync
 - Rootdan `npm run dev`, `npm run build`, `npm test`
 
@@ -33,7 +33,7 @@ PORT=4000
 NODE_ENV=development
 MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net/bar
 CLIENT_URL=http://localhost:8081,http://10.0.2.2:8081
-BUSINESS_DAY_START_HOUR=7
+BUSINESS_DAY_START_HOUR=0
 ```
 
 Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulanishi kerak bo‘ladi. Android emulator uchun ko‘p holatda `10.0.2.2` ishlatiladi.
@@ -42,7 +42,7 @@ Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulani
 
 ## Asosiy biznes qoidalar
 
-- Business day `07:00` da boshlanadi
+- Business day `00:00` da boshlanadi
 - O‘tgan business day uchun inventory va snapshot edit taqiqlangan
 - Kelajak sana uchun inventory/snapshot yozilmaydi
 - Product yaratishda bugungi inventory avtomatik yaratiladi
@@ -173,7 +173,7 @@ backend/
 
 Hozir critical business rule lar uchun unit testlar qo‘shilgan:
 
-- 07:00 business date
+- 00:00 business date
 - product quantity update consistency
 - snapshot revenue/profit derivation
 

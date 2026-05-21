@@ -38,7 +38,7 @@ export class AuthService {
       isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 12,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
       businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
@@ -89,7 +89,7 @@ export class AuthService {
       isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 12,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
       businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
     };
@@ -250,7 +250,7 @@ export class AuthService {
     tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
 
     const updated = await authRepository.updateMe(actor.userId, {
-      businessDayStartHour: actor.businessDayStartHour ?? 12,
+      businessDayStartHour: actor.businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: payload.businessDayStartHour,
       businessDayEffectiveFrom: tomorrow,
     });
@@ -268,7 +268,7 @@ export class AuthService {
       isPayed: actor.isPayed,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: actor.businessDayStartHour ?? 12,
+      businessDayStartHour: actor.businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: payload.businessDayStartHour,
       businessDayEffectiveFrom: tomorrow.toISOString(),
     };
