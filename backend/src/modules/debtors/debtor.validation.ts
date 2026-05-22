@@ -9,6 +9,8 @@ export const createDebtorSchema = z.object({
 
 export const updateDebtorSchema = z.object({
   name: z.string().trim().min(1).optional(),
+  phone: z.string().trim().max(40).optional(),
+  notes: z.string().trim().max(2000).optional(),
 });
 
 export const adjustDebtSchema = z.object({

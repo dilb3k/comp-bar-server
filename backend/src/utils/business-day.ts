@@ -54,7 +54,7 @@ export function getBusinessDate(
   return formatDayKey(shifted);
 }
 
-export function getCurrentBusinessDate(businessDayStartHour = 12) {
+export function getCurrentBusinessDate(businessDayStartHour = 6) {
   return getBusinessDate(new Date(), businessDayStartHour);
 }
 

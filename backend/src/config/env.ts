@@ -9,7 +9,7 @@ const envSchema = z.object({
   MONGODB_URL: z.string().min(1, "MONGODB_URL is required"),
   MONGODB_FALLBACK_URL: z.string().optional(),
   CLIENT_URL: z.string().default("*"),
-  BUSINESS_DAY_START_HOUR: z.coerce.number().int().min(0).max(23).default(0),
+  BUSINESS_DAY_START_HOUR: z.coerce.number().int().min(0).max(23).default(6),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
   BOT_TOKEN: z.string().trim().min(1).optional(),

@@ -31,11 +31,13 @@ export const debtorService = {
     return debtor;
   },
 
-  async update(auth: AuthUser, id: string, data: { name?: string; amount?: never }) {
+  async update(auth: AuthUser, id: string, data: { name?: string; phone?: string; notes?: string }) {
     const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId });
     if (!debtor) throw new AppError("Debtor not found", 404);
 
     if (data.name !== undefined) debtor.name = data.name;
+    if (data.phone !== undefined) debtor.phone = data.phone;
+    if (data.notes !== undefined) debtor.notes = data.notes;
     await debtor.save();
     return debtor;
   },
