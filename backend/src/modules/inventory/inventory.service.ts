@@ -363,14 +363,11 @@ export class InventoryService {
               session,
             );
 
-            if (!existing) {
-              throw new AppError(
-                `Inventory start entry not found for productId=${item.productId} and date=${targetDate}`,
-                404,
-              );
-            }
+            const startQuantity = existing
+              ? Number((existing as any).startQuantity)
+              : item.currentQuantity;
 
-            if (item.currentQuantity > existing.startQuantity) {
+            if (existing && item.currentQuantity > startQuantity) {
               throw new AppError(
                 "currentQuantity cannot be greater than startQuantity",
                 422,
@@ -382,16 +379,18 @@ export class InventoryService {
               (product as any).localId,
               targetDate,
               {
-                localId: (existing as any).localId,
+                localId:
+                  (existing as any)?.localId ??
+                  `${targetDate}-${(product as any).localId}`,
                 deviceId: payload.deviceId,
                 productId: (product as any).localId,
                 date: targetDate,
-                startQuantity: Number((existing as any).startQuantity),
+                startQuantity,
                 currentQuantity: item.currentQuantity,
-                buyPrice: Number((existing as any).buyPrice ?? product.buyPrice ?? 0),
-                sellPrice: Number((existing as any).sellPrice ?? product.sellPrice ?? 0),
-                note: item.note ?? (existing as any).note ?? "",
-                createdAt: (existing as any).createdAt,
+                buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
+                sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                note: item.note ?? (existing as any)?.note ?? "",
+                createdAt: (existing as any)?.createdAt ?? now,
                 updatedAt: now,
               },
               session,
@@ -407,13 +406,16 @@ export class InventoryService {
               session,
             );
 
+            const action = existing ? "UPDATE" : "START_DAY";
             await auditService.log({
               ownerAdminId: actor.userId,
-              action: "UPDATE",
+              action,
               entityType: "inventory",
               entityId: item.productId,
-              before: { currentQuantity: (existing as any).currentQuantity },
-              after: { currentQuantity: item.currentQuantity },
+              before: existing
+                ? { currentQuantity: (existing as any).currentQuantity }
+                : undefined,
+              after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity: item.currentQuantity },
               source: "rest",
               createdBy: actor.userId,
             });
