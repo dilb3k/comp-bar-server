@@ -26,7 +26,7 @@ function isProductVisibleOnDate(product: any, date: string): boolean {
   if (!product) return false;
   const p = typeof product.toJSON === "function" ? product.toJSON() : product;
   if (p.createdAt) {
-    const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, env.BUSINESS_DAY_START_HOUR);
+    const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, env.BUSINESS_DAY_START_HOUR, env.TIMEZONE_OFFSET);
     if (createdBusinessDate > date) return false;
   }
   return true;
@@ -89,7 +89,7 @@ function buildInventoryResponse(product: any, inventory: any) {
 export class InventoryService {
   private getAllowedDate(actor: AuthUser, date?: string) {
     const businessHour = getEffectiveHour(actor);
-    const currentBusinessDate = getCurrentBusinessDate(businessHour);
+    const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
     const targetDate = date ?? currentBusinessDate;
 
     assertNotFutureDayKey(

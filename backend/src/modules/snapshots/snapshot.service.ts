@@ -31,7 +31,7 @@ type UpsertSnapshotInput = {
 export class SnapshotService {
   async getDaily(actor: AuthUser, date: string) {
     const businessHour = getEffectiveHour(actor);
-    const currentBusinessDate = getCurrentBusinessDate(businessHour);
+    const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
     assertNotFutureDayKey(
       date,
@@ -52,7 +52,7 @@ export class SnapshotService {
 
   async createOrUpdate(actor: AuthUser, payload: UpsertSnapshotInput) {
     const businessHour = getEffectiveHour(actor);
-    const currentBusinessDate = getCurrentBusinessDate(businessHour);
+    const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
     assertNotFutureDayKey(
       payload.date,

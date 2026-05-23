@@ -14,16 +14,16 @@ function toDate(value?: string | Date) {
   }
 
   if (ISO_DATE_REGEX.test(value)) {
-    return new Date(`${value}T00:00:00`);
+    return new Date(`${value}T00:00:00.000Z`);
   }
 
   return new Date(value);
 }
 
 function formatDayKey(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -43,20 +43,22 @@ export function isValidDayKey(value: string) {
 
 export function getBusinessDate(
   value?: string | Date,
-  businessDayStartHour = 0
+  businessDayStartHour = 0,
+  timezoneOffsetMinutes = 0
 ) {
   const date = toDate(value);
-  const shifted = new Date(date);
+  const localMs = date.getTime() + timezoneOffsetMinutes * 60 * 1000;
+  const shifted = new Date(localMs);
 
-  if (shifted.getHours() < businessDayStartHour) {
-    shifted.setDate(shifted.getDate() - 1);
+  if (shifted.getUTCHours() < businessDayStartHour) {
+    shifted.setUTCDate(shifted.getUTCDate() - 1);
   }
 
   return formatDayKey(shifted);
 }
 
-export function getCurrentBusinessDate(businessDayStartHour = 6) {
-  return getBusinessDate(new Date(), businessDayStartHour);
+export function getCurrentBusinessDate(businessDayStartHour = 6, timezoneOffsetMinutes = 0) {
+  return getBusinessDate(new Date(), businessDayStartHour, timezoneOffsetMinutes);
 }
 
 export function compareDayKeys(left: string, right: string) {
@@ -79,7 +81,8 @@ export function isPastBusinessDate(date: string, currentBusinessDate: string) {
 
 export function getBusinessDateFromTimestamp(
   value: Date | string,
-  businessDayStartHour = 0
+  businessDayStartHour = 0,
+  timezoneOffsetMinutes = 0
 ) {
-  return getBusinessDate(value, businessDayStartHour);
+  return getBusinessDate(value, businessDayStartHour, timezoneOffsetMinutes);
 }
