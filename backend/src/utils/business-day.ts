@@ -1,5 +1,6 @@
 import type { AuthUser } from "../modules/auth/auth.types";
 import { env } from "../config/env";
+import { AppError } from "./app-error";
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -68,7 +69,7 @@ export function assertNotFutureDayKey(
   message = "Future dates are not allowed"
 ) {
   if (compareDayKeys(date, currentBusinessDate) > 0) {
-    throw new Error(message);
+    throw new AppError(message, 409);
   }
 }
 
