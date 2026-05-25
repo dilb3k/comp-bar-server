@@ -80,6 +80,7 @@ export class ProductService {
               sellPrice: payload.sellPrice,
               displayIndex,
               image: storedImage ?? "",
+              barcode: payload.barcode,
               createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
               updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
             }, session);
@@ -171,6 +172,10 @@ export class ProductService {
 
     if (payload.displayIndex !== undefined) {
       updatePayload.displayIndex = payload.displayIndex;
+    }
+
+    if (payload.barcode !== undefined) {
+      updatePayload.barcode = payload.barcode;
     }
 
     const businessHour = getEffectiveHour(actor);
