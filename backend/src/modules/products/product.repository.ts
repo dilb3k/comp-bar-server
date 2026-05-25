@@ -37,7 +37,7 @@ function buildProductUpdate(payload: ProductPayload) {
   if ("sellPrice" in payload) update.sellPrice = payload.sellPrice;
   if ("displayIndex" in payload) update.displayIndex = payload.displayIndex;
   if (hasOwn(payload, "image")) update.image = payload.image;
-  if (hasOwn(payload, "barcode")) update.barcode = payload.barcode || undefined;
+  if (hasOwn(payload, "barcode")) update.barcode = payload.barcode;
 
   return update;
 }
