@@ -94,6 +94,10 @@ export class ProductRepository {
     return query;
   }
 
+  async findByBarcode(ownerAdminId: string, barcode: string) {
+    return ProductModel.findOne({ ownerAdminId, barcode });
+  }
+
   async findByIdentifier(ownerAdminId: string, identifier: string) {
     const orConditions: Array<Record<string, unknown>> = [{ localId: identifier }];
 

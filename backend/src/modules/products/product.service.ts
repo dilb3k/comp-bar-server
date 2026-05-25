@@ -67,6 +67,16 @@ export class ProductService {
           displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
         }
 
+        if (payload.barcode) {
+          const existingBarcode = await productRepository.findByBarcode(actor.userId, payload.barcode);
+          if (existingBarcode) {
+            throw new AppError(
+              `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
+              409,
+            );
+          }
+        }
+
         let p: any;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
@@ -155,6 +165,16 @@ export class ProductService {
 
     if (nextSellPrice < nextBuyPrice) {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
+    }
+
+    if (payload.barcode) {
+      const existingBarcode = await productRepository.findByBarcode(actor.userId, payload.barcode);
+      if (existingBarcode && existingBarcode.localId !== (product as any).localId) {
+        throw new AppError(
+          `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
+          409,
+        );
+      }
     }
 
     const updatePayload: Record<string, unknown> = {
