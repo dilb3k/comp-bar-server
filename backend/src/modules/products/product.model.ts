@@ -15,7 +15,7 @@ export interface IProduct {
   sellPrice: number;
   image: string;
   displayIndex: number;
-  barcode?: string;
+  barcodes?: string[];
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -67,9 +67,8 @@ const productSchema = new Schema<IProduct>(
       min: 0,
       default: 0
     },
-    barcode: {
-      type: String,
-      trim: true,
+    barcodes: {
+      type: [String],
       default: undefined
     }
   },
@@ -129,9 +128,9 @@ productSchema.index(
 );
 
 productSchema.index(
-  { ownerAdminId: 1, barcode: 1 },
+  { ownerAdminId: 1, barcodes: 1 },
   {
-    name: "idx_barcode",
+    name: "idx_barcodes",
     background: true,
     sparse: true
   }

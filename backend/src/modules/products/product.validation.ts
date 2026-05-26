@@ -10,7 +10,7 @@ const productBaseSchema = z.object({
   buyPrice: z.number().positive("buyPrice must be > 0"),
   sellPrice: z.number().positive("sellPrice must be > 0"),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
-  barcode: z.string().trim().optional(),
+  barcodes: z.array(z.string().trim()).optional(),
   displayIndex: z.number().int().min(1).optional(),
   createdAt: isoDateTime,
   updatedAt: isoDateTime

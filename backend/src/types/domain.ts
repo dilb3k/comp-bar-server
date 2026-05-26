@@ -9,7 +9,7 @@ export interface Product {
   sellPrice: number;
   image: string;
   displayIndex: number;
-  barcode?: string;
+  barcodes?: string[];
   createdAt: Date | string;
   updatedAt: Date | string;
 }

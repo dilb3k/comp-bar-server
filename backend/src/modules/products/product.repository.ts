@@ -19,7 +19,7 @@ function buildProductRecord(payload: ProductPayload) {
     sellPrice: payload.sellPrice ?? 0,
     displayIndex: payload.displayIndex ?? 1,
     ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {}),
-    ...(hasOwn(payload, "barcode") ? { barcode: payload.barcode || undefined } : {}),
+    ...(hasOwn(payload, "barcodes") ? { barcodes: Array.isArray(payload.barcodes) ? payload.barcodes.filter(Boolean) : undefined } : {}),
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt
   };
@@ -37,7 +37,7 @@ function buildProductUpdate(payload: ProductPayload) {
   if ("sellPrice" in payload) update.sellPrice = payload.sellPrice;
   if ("displayIndex" in payload) update.displayIndex = payload.displayIndex;
   if (hasOwn(payload, "image")) update.image = payload.image;
-  if (hasOwn(payload, "barcode")) update.barcode = payload.barcode;
+  if (hasOwn(payload, "barcodes")) update.barcodes = Array.isArray(payload.barcodes) ? payload.barcodes.filter(Boolean) : [];
 
   return update;
 }
@@ -95,7 +95,7 @@ export class ProductRepository {
   }
 
   async findByBarcode(ownerAdminId: string, barcode: string) {
-    return ProductModel.findOne({ ownerAdminId, barcode });
+    return ProductModel.findOne({ ownerAdminId, barcodes: barcode });
   }
 
   async findByIdentifier(ownerAdminId: string, identifier: string) {

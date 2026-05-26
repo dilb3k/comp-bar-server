@@ -67,13 +67,16 @@ export class ProductService {
           displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
         }
 
-        if (payload.barcode) {
-          const existingBarcode = await productRepository.findByBarcode(actor.userId, payload.barcode);
-          if (existingBarcode) {
-            throw new AppError(
-              `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
-              409,
-            );
+        if (payload.barcodes?.length) {
+          for (const code of payload.barcodes) {
+            if (!code) continue;
+            const existingBarcode = await productRepository.findByBarcode(actor.userId, code);
+            if (existingBarcode) {
+              throw new AppError(
+                `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
+                409,
+              );
+            }
           }
         }
 
@@ -90,7 +93,7 @@ export class ProductService {
               sellPrice: payload.sellPrice,
               displayIndex,
               image: storedImage ?? "",
-              barcode: payload.barcode,
+              barcodes: payload.barcodes,
               createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
               updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
             }, session);
@@ -167,13 +170,16 @@ export class ProductService {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
     }
 
-    if (payload.barcode) {
-      const existingBarcode = await productRepository.findByBarcode(actor.userId, payload.barcode);
-      if (existingBarcode && existingBarcode.localId !== (product as any).localId) {
-        throw new AppError(
-          `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
-          409,
-        );
+    if (payload.barcodes?.length) {
+      for (const code of payload.barcodes) {
+        if (!code) continue;
+        const existingBarcode = await productRepository.findByBarcode(actor.userId, code);
+        if (existingBarcode && existingBarcode.localId !== (product as any).localId) {
+          throw new AppError(
+            `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
+            409,
+          );
+        }
       }
     }
 
@@ -194,8 +200,8 @@ export class ProductService {
       updatePayload.displayIndex = payload.displayIndex;
     }
 
-    if (payload.barcode !== undefined) {
-      updatePayload.barcode = payload.barcode;
+    if (payload.barcodes !== undefined) {
+      updatePayload.barcodes = payload.barcodes;
     }
 
     const businessHour = getEffectiveHour(actor);
