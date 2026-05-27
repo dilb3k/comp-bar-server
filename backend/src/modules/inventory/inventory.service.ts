@@ -14,6 +14,7 @@ import {
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { auditService } from "../audit/audit.service";
+import { snapshotService } from "../snapshots/snapshot.service";
 import { inventoryRepository } from "./inventory.repository";
 import {
   calculateInventoryMetrics,
@@ -457,6 +458,158 @@ export class InventoryService {
     } finally {
       await session.endSession();
     }
+  }
+
+  async sales(actor: AuthUser, payload: {
+    date?: string;
+    deviceId: string;
+    lines: Array<{ productId: string; quantity: number }>;
+  }) {
+    const { targetDate } = this.getAllowedDate(actor, payload.date);
+    const now = new Date();
+
+    const session = await mongoose.startSession();
+    try {
+      const items = await session.withTransaction(async () => {
+        const productIds = payload.lines.map((l) => l.productId);
+        const products = await productRepository.findByIdentifiers(
+          actor.userId,
+          productIds,
+          session,
+        );
+        const productMap = new Map<string, any>();
+        for (const p of products) {
+          productMap.set(p.localId, p);
+          productMap.set(p._id.toString(), p);
+        }
+
+        const results = await Promise.all(
+          payload.lines.map(async (line) => {
+            const product = productMap.get(line.productId);
+            if (!product) {
+              throw new AppError(`Product not found: ${line.productId}`, 404);
+            }
+
+            const existing = await inventoryRepository.findByProductAndDate(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              session,
+            );
+
+            const productQty = Number((product as any).quantity ?? 0);
+            const startQty = existing
+              ? Number((existing as any).startQuantity)
+              : productQty;
+            const currentQty = existing
+              ? Number((existing as any).currentQuantity)
+              : productQty;
+
+            if (line.quantity > currentQty) {
+              throw new AppError(
+                `Sotilgan miqdor (${line.quantity}) qoldiqdan (${currentQty}) ko'p bo'lishi mumkin emas`,
+                422,
+              );
+            }
+
+            const newCurrent = currentQty - line.quantity;
+
+            const updated = await inventoryRepository.upsertByProductAndDateWithSession(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              {
+                localId:
+                  (existing as any)?.localId ??
+                  `${targetDate}-${(product as any).localId}`,
+                deviceId: payload.deviceId,
+                productId: (product as any).localId,
+                date: targetDate,
+                startQuantity: startQty,
+                currentQuantity: newCurrent,
+                buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
+                sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                note: (existing as any)?.note ?? "",
+                createdAt: (existing as any)?.createdAt ?? now,
+                updatedAt: now,
+              },
+              session,
+            );
+
+            await productRepository.updateById(
+              actor.userId,
+              (product as any)._id.toString(),
+              { quantity: newCurrent, updatedAt: now },
+              session,
+            );
+
+            await auditService.log({
+              ownerAdminId: actor.userId,
+              action: "UPDATE",
+              entityType: "inventory",
+              entityId: line.productId,
+              before: existing
+                ? { currentQuantity: (existing as any).currentQuantity }
+                : undefined,
+              after: { productId: line.productId, date: targetDate, currentQuantity: newCurrent, sold: line.quantity },
+              source: "rest",
+              createdBy: actor.userId,
+            });
+
+            return buildInventoryResponse(
+              {
+                ...product.toJSON(),
+                quantity: newCurrent,
+                updatedAt: now.toISOString(),
+              },
+              updated,
+            );
+          }),
+        );
+
+        return results;
+      });
+
+      await snapshotService.createOrUpdate(actor, {
+        date: targetDate,
+        deviceId: payload.deviceId,
+      });
+
+      const snapshot = await snapshotService.getDaily(actor, targetDate);
+
+      telegramReportService.reportInventoryUpdated(actor, {
+        date: targetDate,
+        deviceId: payload.deviceId,
+        items: items.map((entry) => ({
+          productName: entry.product?.name,
+          startQuantity: Number(entry.startQuantity),
+          currentQuantity: Number(entry.currentQuantity),
+          sold: Number(entry.sold),
+        })),
+      });
+
+      return { items, snapshot };
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async getDashboard(actor: AuthUser) {
+    const businessHour = getEffectiveHour(actor);
+    const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
+
+    const [products, inventoryResult, snapshot] = await Promise.all([
+      productRepository.findAllByOwner(actor.userId),
+      this.getByDate(actor, today, today),
+      snapshotService.getDaily(actor, today),
+    ]);
+
+    return {
+      products,
+      inventory: inventoryResult.items,
+      inventorySummary: inventoryResult.summary,
+      snapshot,
+    };
   }
 }
 

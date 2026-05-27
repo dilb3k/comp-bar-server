@@ -56,3 +56,14 @@ export const inventoryBulkCurrentSchema = z.object({
   deviceId: z.string().trim().min(1),
   items: z.array(bulkCurrentItemSchema).min(1)
 });
+
+const salesLineItemSchema = z.object({
+  productId: z.string().trim().min(1),
+  quantity: z.number().int().min(1),
+});
+
+export const inventorySalesSchema = z.object({
+  date: dayKeySchema.optional(),
+  deviceId: z.string().trim().min(1),
+  lines: z.array(salesLineItemSchema).min(1),
+});

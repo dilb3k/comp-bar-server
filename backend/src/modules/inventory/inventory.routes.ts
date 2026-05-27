@@ -7,6 +7,7 @@ import {
   inventoryBulkCurrentSchema,
   inventoryDateQuerySchema,
   inventoryRangeQuerySchema,
+  inventorySalesSchema,
   inventoryStartDaySchema
 } from "./inventory.validation";
 
@@ -24,6 +25,11 @@ router.get(
   asyncHandler(inventoryController.getRange)
 );
 
+router.get(
+  "/dashboard",
+  asyncHandler(inventoryController.dashboard)
+);
+
 router.post(
   "/start-day",
   validateRequest({ body: inventoryStartDaySchema }),
@@ -34,6 +40,12 @@ router.put(
   "/bulk-current",
   validateRequest({ body: inventoryBulkCurrentSchema }),
   asyncHandler(inventoryController.bulkCurrent)
+);
+
+router.post(
+  "/sales",
+  validateRequest({ body: inventorySalesSchema }),
+  asyncHandler(inventoryController.sales)
 );
 
 export const inventoryRoutes = router;

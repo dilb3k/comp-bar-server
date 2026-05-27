@@ -45,5 +45,13 @@ export const inventoryController = {
 
   async bulkCurrent(req: Request, res: Response) {
     return sendSuccess(res, await inventoryService.bulkUpdateCurrent(requireAuth(req), req.body));
-  }
+  },
+
+  async sales(req: Request, res: Response) {
+    return sendSuccess(res, await inventoryService.sales(requireAuth(req), req.body));
+  },
+
+  async dashboard(req: Request, res: Response) {
+    return sendSuccess(res, await inventoryService.getDashboard(requireAuth(req)));
+  },
 };
