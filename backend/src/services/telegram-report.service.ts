@@ -50,7 +50,7 @@ class TelegramReportService {
   private buildMessage(payload: TelegramReportPayload) {
     const lines = [
       `<b>${escapeHtml(payload.title)}</b>`,
-      payload.actor?.username ? `Admin: ${escapeHtml(payload.actor.username)}` : undefined,
+      payload.actor?.phone_number ? `Admin: ${escapeHtml(payload.actor.phone_number)}` : undefined,
       payload.actor?.role ? `Role: ${escapeHtml(payload.actor.role)}` : undefined,
       payload.actor?.userId ? `Admin ID: <code>${escapeHtml(payload.actor.userId)}</code>` : undefined,
       ...(
@@ -232,7 +232,7 @@ class TelegramReportService {
   reportAdminCreated(
     actor: TelegramReportPayload["actor"],
     admin: {
-      username?: string;
+      phone_number?: string;
       role?: string;
       createdBy?: string | null;
     }
@@ -241,7 +241,7 @@ class TelegramReportService {
       title: "Yangi admin yaratildi",
       actor,
       lines: [
-        `Username: ${formatValue(admin.username)}`,
+        `Telefon: ${formatValue(admin.phone_number)}`,
         `Role: ${formatValue(admin.role)}`,
         `Created by: ${formatValue(admin.createdBy)}`
       ]

@@ -1,10 +1,10 @@
 const translations: Record<string, Record<string, string>> = {
   uz: {
     // Auth
-    "Invalid username or password": "Login yoki parol noto'g'ri",
+    "Invalid phone number or password": "Telefon raqam yoki parol noto'g'ri",
     "User not found": "Foydalanuvchi topilmadi",
     "Only superAdmin can create admins": "Faqat superAdmin admin yarata oladi",
-    "Username already exists": "Bunday login allaqachon mavjud",
+    "Phone number already exists": "Bunday telefon raqam allaqachon mavjud",
     "Only superAdmin can view admins": "Faqat superAdmin adminlarni ko'ra oladi",
     "Only superAdmin can update admins": "Faqat superAdmin adminlarni tahrirlay oladi",
     "Can only update admin users": "Faqat adminlarni tahrirlash mumkin",
@@ -40,10 +40,10 @@ const translations: Record<string, Record<string, string>> = {
 
   ru: {
     // Auth
-    "Invalid username or password": "Неверный логин или пароль",
+    "Invalid phone number or password": "Неверный номер телефона или пароль",
     "User not found": "Пользователь не найден",
     "Only superAdmin can create admins": "Только супер-админ может создавать админов",
-    "Username already exists": "Такой логин уже существует",
+    "Phone number already exists": "Такой номер телефона уже существует",
     "Only superAdmin can view admins": "Только супер-админ может просматривать админов",
     "Only superAdmin can update admins": "Только супер-админ может редактировать админов",
     "Can only update admin users": "Можно редактировать только админов",

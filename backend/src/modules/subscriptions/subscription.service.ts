@@ -140,7 +140,7 @@ export class SubscriptionService {
   async getAllSubscriptions() {
     return SubscriptionModel.find({ isActive: true })
       .sort({ createdAt: -1 })
-      .populate("userId", "username");
+      .populate("userId", "phone_number");
   }
 }
 

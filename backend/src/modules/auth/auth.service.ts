@@ -8,11 +8,11 @@ import type { AuthUser } from "./auth.types";
 import {signAccessToken } from "./auth.utils";
 
 export class AuthService {
-  async register(payload: { username: string; password: string }) {
-    const existing = await authRepository.findByUsername(payload.username);
+  async register(payload: { phone_number: string; password: string }) {
+    const existing = await authRepository.findByPhoneNumber(payload.phone_number);
 
     if (existing) {
-      throw new AppError("Username already exists", 409);
+      throw new AppError("Phone number already exists", 409);
     }
 
     const superAdmin = await authRepository.findSuperAdmin();
@@ -21,7 +21,7 @@ export class AuthService {
     const role = hasSuperAdmin ? "admin" : "superAdmin";
 
     const user = await authRepository.createUser({
-      username: payload.username,
+      phone_number: payload.phone_number,
       password: payload.password,
       role: role as "admin" | "superAdmin",
       createdBy: null,
@@ -33,7 +33,7 @@ export class AuthService {
 
     const authUser: AuthUser = {
       userId: user._id.toString(),
-      username: user.username,
+      phone_number: user.phone_number,
       role: user.role,
       isPayed,
       tier,
@@ -50,11 +50,11 @@ export class AuthService {
     };
   }
 
-  async login(username: string, password: string) {
-    const user = await authRepository.findByUsername(username);
+  async login(phone_number: string, password: string) {
+    const user = await authRepository.findByPhoneNumber(phone_number);
 
     if (!user || !user.isActive) {
-      throw new AppError("Invalid username or password", 401);
+      throw new AppError("Invalid phone number or password", 401);
     }
 
     const storedPassword = (user as any).password || "";
@@ -73,7 +73,7 @@ export class AuthService {
     }
 
     if (!passwordIsValid) {
-      throw new AppError("Invalid username or password", 401);
+      throw new AppError("Invalid phone number or password", 401);
     }
 
 
@@ -85,7 +85,7 @@ export class AuthService {
 
     const authUser: AuthUser = {
       userId: user._id.toString(),
-      username: user.username,
+      phone_number: user.phone_number,
       role: user.role,
       isPayed,
       tier,
@@ -125,7 +125,7 @@ export class AuthService {
   async createAdmin(
     actor: AuthUser,
     payload: {
-      username: string;
+      phone_number: string;
       password: string;
       tier?: "tekin" | "bor" | "pro";
       isPayed?: boolean;
@@ -135,14 +135,14 @@ export class AuthService {
       throw new AppError("Only superAdmin can create admins", 403);
     }
 
-    const existing = await authRepository.findByUsername(payload.username);
+    const existing = await authRepository.findByPhoneNumber(payload.phone_number);
 
     if (existing) {
-      throw new AppError("Username already exists", 409);
+      throw new AppError("Phone number already exists", 409);
     }
 
     const admin = await authRepository.createUser({
-      username: payload.username,
+      phone_number: payload.phone_number,
       password: payload.password,
       role: "admin",
       createdBy: actor.userId,
@@ -161,7 +161,7 @@ export class AuthService {
     }
 
     telegramReportService.reportAdminCreated(actor, {
-      username: (admin as any).username,
+      phone_number: (admin as any).phone_number,
       role: (admin as any).role,
       createdBy: (admin as any).createdBy ?? actor.userId
     });
@@ -194,7 +194,7 @@ export class AuthService {
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean }
+    payload: { phone_number?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
@@ -209,10 +209,10 @@ export class AuthService {
       throw new AppError("Can only update admin users", 400);
     }
 
-    if (payload.username) {
-      const duplicate = await authRepository.findByUsername(payload.username);
+    if (payload.phone_number) {
+      const duplicate = await authRepository.findByPhoneNumber(payload.phone_number);
       if (duplicate && duplicate._id.toString() !== id) {
-        throw new AppError("Username already exists", 409);
+        throw new AppError("Phone number already exists", 409);
       }
     }
 
@@ -232,7 +232,7 @@ export class AuthService {
     }
 
     const updated = await authRepository.updateAdmin(id, {
-      username: payload.username,
+      phone_number: payload.phone_number,
       password: payload.password,
     });
 
@@ -276,7 +276,7 @@ export class AuthService {
 
     const updatedUser: AuthUser = {
       userId: actor.userId,
-      username: actor.username,
+      phone_number: actor.phone_number,
       role: actor.role,
       isPayed: actor.isPayed,
       tier,

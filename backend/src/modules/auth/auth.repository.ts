@@ -3,8 +3,8 @@ import { Types } from "mongoose";
 import { UserModel } from "./user.model";
 
 export class AuthRepository {
-  async findByUsername(username: string) {
-    return UserModel.findOne({ username: username.trim().toLowerCase() });
+  async findByPhoneNumber(phone_number: string) {
+    return UserModel.findOne({ phone_number: phone_number.trim().toLowerCase() });
   }
 
   async findSuperAdmin() {
@@ -22,13 +22,13 @@ export class AuthRepository {
   }
 
   async createUser(payload: {
-    username: string;
+    phone_number: string;
     password: string;
     role: "admin" | "superAdmin";
     createdBy?: string | null;
   }) {
     return UserModel.create({
-      username: payload.username.trim().toLowerCase(),
+      phone_number: payload.phone_number.trim().toLowerCase(),
       password: payload.password,
       role: payload.role,
       createdBy: payload.createdBy ?? null,
@@ -43,14 +43,14 @@ export class AuthRepository {
 
   async updateAdmin(
     id: string,
-    payload: { username?: string; password?: string; isPayed?: boolean; businessDayStartHour?: number },
+    payload: { phone_number?: string; password?: string; isPayed?: boolean; businessDayStartHour?: number },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
     const user = await UserModel.findById(id);
     if (!user) return null;
 
-    if (payload.username !== undefined) user.username = payload.username.trim().toLowerCase();
+    if (payload.phone_number !== undefined) user.phone_number = payload.phone_number.trim().toLowerCase();
     if (payload.password !== undefined) user.password = payload.password;
     if (payload.isPayed !== undefined) user.isPayed = payload.isPayed;
     if (payload.businessDayStartHour !== undefined) (user as any).businessDayStartHour = payload.businessDayStartHour;

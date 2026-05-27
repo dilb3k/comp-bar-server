@@ -27,7 +27,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
     const isSuperAdmin = payload.role === "superAdmin";
     req.auth = {
       userId: payload.userId,
-      username: payload.username,
+      phone_number: payload.phone_number,
       role: payload.role,
       isPayed: payload.isPayed ?? isSuperAdmin,
       tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
