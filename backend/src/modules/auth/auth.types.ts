@@ -12,4 +12,5 @@ export type AuthUser = {
   businessDayStartHour?: number;
   pendingBusinessDayStartHour?: number | null;
   businessDayEffectiveFrom?: string | null;
+  blockCode?: string | null;
 };

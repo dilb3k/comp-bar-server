@@ -363,16 +363,25 @@ export class InventoryService {
               session,
             );
 
-            const startQuantity = existing
-              ? Number((existing as any).startQuantity)
-              : item.currentQuantity;
+            const productQuantity = Number((product as any).quantity ?? 0);
 
-            if (existing && item.currentQuantity > startQuantity) {
+            if (existing && item.currentQuantity > Number((existing as any).startQuantity)) {
               throw new AppError(
                 "currentQuantity cannot be greater than startQuantity",
                 422,
               );
             }
+
+            if (!existing && item.currentQuantity > productQuantity) {
+              throw new AppError(
+                "currentQuantity cannot be greater than product quantity",
+                422,
+              );
+            }
+
+            const startQuantity = existing
+              ? Number((existing as any).startQuantity)
+              : productQuantity;
 
             const updated = await inventoryRepository.upsertByProductAndDateWithSession(
               actor.userId,

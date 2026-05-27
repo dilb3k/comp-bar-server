@@ -40,7 +40,8 @@ export class AuthService {
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: (user as any).businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
+      blockCode: (user as any).blockCode ?? null
     };
 
     return {
@@ -91,7 +92,8 @@ export class AuthService {
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: (user as any).businessDayStartHour ?? 0,
       pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
+      blockCode: (user as any).blockCode ?? null
     };
 
     return {
@@ -243,17 +245,28 @@ export class AuthService {
 
   async updateMe(
     actor: AuthUser,
-    payload: { businessDayStartHour: number }
+    payload: { businessDayStartHour?: number; blockCode?: string | null }
   ) {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
+    const repoPayload: Record<string, any> = {};
+    const authUserUpdate: Record<string, any> = {};
 
-    const updated = await authRepository.updateMe(actor.userId, {
-      businessDayStartHour: actor.businessDayStartHour ?? 0,
-      pendingBusinessDayStartHour: payload.businessDayStartHour,
-      businessDayEffectiveFrom: tomorrow,
-    });
+    if (payload.businessDayStartHour !== undefined) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
+      repoPayload.businessDayStartHour = actor.businessDayStartHour ?? 0;
+      repoPayload.pendingBusinessDayStartHour = payload.businessDayStartHour;
+      repoPayload.businessDayEffectiveFrom = tomorrow;
+      authUserUpdate.pendingBusinessDayStartHour = payload.businessDayStartHour;
+      authUserUpdate.businessDayEffectiveFrom = tomorrow.toISOString();
+    }
+
+    if (payload.blockCode !== undefined) {
+      repoPayload.blockCode = payload.blockCode;
+      authUserUpdate.blockCode = payload.blockCode;
+    }
+
+    const updated = await authRepository.updateMe(actor.userId, repoPayload);
     if (!updated) {
       throw new AppError("User not found", 404);
     }
@@ -269,8 +282,7 @@ export class AuthService {
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: actor.businessDayStartHour ?? 0,
-      pendingBusinessDayStartHour: payload.businessDayStartHour,
-      businessDayEffectiveFrom: tomorrow.toISOString(),
+      ...authUserUpdate,
     };
 
     return {

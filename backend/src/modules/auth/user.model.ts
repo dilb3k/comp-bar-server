@@ -48,6 +48,10 @@ const userSchema = new Schema(
       type: Date,
       default: null,
     },
+    blockCode: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
