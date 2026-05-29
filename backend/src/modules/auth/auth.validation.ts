@@ -1,25 +1,28 @@
 import { z } from "zod";
 
 export const loginSchema = z.object({
-  phone_number: z.string().trim().min(1, "phone_number is required"),
+  username: z.string().trim().min(1, "username is required"),
   password: z.string().min(1, "password is required")
 });
 
 export const registerSchema = z.object({
-  phone_number: z.string().trim().min(3, "phone_number must be at least 3 characters"),
-  password: z.string().min(6, "password must be at least 6 characters")
+  username: z.string().trim().min(3, "username must be at least 3 characters"),
+  password: z.string().min(6, "password must be at least 6 characters"),
+  phone_number: z.string().trim().optional()
 });
 
 export const createAdminSchema = z.object({
-  phone_number: z.string().trim().min(3, "phone_number must be at least 3 characters"),
+  username: z.string().trim().min(3, "username must be at least 3 characters"),
   password: z.string().min(6, "password must be at least 6 characters"),
+  phone_number: z.string().trim().optional(),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional()
 });
 
 export const updateAdminSchema = z.object({
-  phone_number: z.string().trim().min(3, "phone_number must be at least 3 characters").optional(),
+  username: z.string().trim().min(3, "username must be at least 3 characters").optional(),
   password: z.string().min(6, "password must be at least 6 characters").optional(),
+  phone_number: z.string().trim().optional(),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional()
 });

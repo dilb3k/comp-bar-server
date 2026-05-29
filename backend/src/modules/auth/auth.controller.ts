@@ -15,15 +15,16 @@ function requireAuth(req: Request) {
 export const authController = {
   async register(req: Request, res: Response) {
     const result = await authService.register({
-      phone_number: req.body.phone_number,
-      password: req.body.password
+      username: req.body.username,
+      password: req.body.password,
+      phone_number: req.body.phone_number
     });
     return sendSuccess(res, result);
   },
 
   async login(req: Request, res: Response) {
     const result = await authService.login(
-      req.body.phone_number,
+      req.body.username,
       req.body.password
     );
     return sendSuccess(res, result);
@@ -44,6 +45,7 @@ export const authController = {
   async createAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
     const admin = await authService.createAdmin(actor, {
+      username: req.body.username,
       phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,
@@ -55,6 +57,7 @@ export const authController = {
   async updateAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
     const updated = await authService.updateAdmin(actor, String(req.params.id), {
+      username: req.body.username,
       phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,

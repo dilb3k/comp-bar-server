@@ -48,6 +48,7 @@ run("getEffectiveHour uses pending hour when effective date has passed", () => {
 
   const result = getEffectiveHour({
     userId: "u1",
+    username: "test",
     phone_number: "test",
     role: "admin",
     isPayed: false,
@@ -65,6 +66,7 @@ run("getEffectiveHour falls back to active hour when effective date not passed",
 
   const result = getEffectiveHour({
     userId: "u1",
+    username: "test",
     phone_number: "test",
     role: "admin",
     isPayed: false,

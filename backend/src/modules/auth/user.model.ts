@@ -5,11 +5,16 @@ const SALT_WORK_FACTOR = 10;
 
 const userSchema = new Schema(
   {
-    phone_number: {
+    username: {
       type: String,
       required: true,
       trim: true,
       lowercase: true,
+    },
+    phone_number: {
+      type: String,
+      trim: true,
+      default: "",
     },
     password: {
       type: String,
@@ -86,6 +91,6 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.index({ phone_number: 1 }, { unique: true });
+userSchema.index({ username: 1 }, { unique: true });
 
 export const UserModel = models.User ?? model("User", userSchema);

@@ -9,16 +9,14 @@ import mongoose from "mongoose";
  * reordering. Mongoose's autoIndex never drops stale indexes, so we drop it
  * explicitly here. No-op once the index is gone.
  */
-export async function migrateFixDisplayIndex() {
-  if (mongoose.connection.readyState !== 1) return;
-
+async function dropStaleIndex(collectionName: string, indexName: string) {
   const db = mongoose.connection.db;
   if (!db) return;
 
   const existingCollections = (await db.listCollections().toArray()).map((c) => c.name);
-  if (!existingCollections.includes("products")) return;
+  if (!existingCollections.includes(collectionName)) return;
 
-  const collection = db.collection("products");
+  const collection = db.collection(collectionName);
 
   let indexes: Array<{ name?: string }> = [];
   try {
@@ -27,15 +25,27 @@ export async function migrateFixDisplayIndex() {
     return;
   }
 
-  if (!indexes.some((idx) => idx.name === "idx_unique_displayindex")) return;
+  if (!indexes.some((idx) => idx.name === indexName)) return;
 
   try {
-    await collection.dropIndex("idx_unique_displayindex");
-    console.log("[migrateFixDisplayIndex] Dropped stale unique index idx_unique_displayindex");
+    await collection.dropIndex(indexName);
+    console.log(`[migrateFixDisplayIndex] Dropped stale index ${indexName} on ${collectionName}`);
   } catch (error) {
     console.warn(
-      "[migrateFixDisplayIndex] Could not drop idx_unique_displayindex:",
+      `[migrateFixDisplayIndex] Could not drop ${indexName} on ${collectionName}:`,
       (error as Error).message
     );
   }
+}
+
+export async function migrateFixDisplayIndex() {
+  if (mongoose.connection.readyState !== 1) return;
+
+  // Stale UNIQUE index on products.displayIndex (presentation ordering, not identity).
+  await dropStaleIndex("products", "idx_unique_displayindex");
+
+  // Stale UNIQUE index on users.phone_number: the login identifier moved to
+  // `username`, and phone_number is now a non-unique additional field (default
+  // ""). A leftover unique index would throw E11000 on the second user.
+  await dropStaleIndex("users", "phone_number_1");
 }
