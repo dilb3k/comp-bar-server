@@ -1,6 +1,14 @@
 import mongoose from "mongoose";
-import { ProductModel } from "../products/product.model";
 
+/**
+ * Idempotent, safe-to-run-always healer.
+ *
+ * Older deployments created a UNIQUE index on { ownerAdminId, displayIndex }
+ * (`idx_unique_displayindex`). displayIndex is presentation ordering, not an
+ * identity, so that constraint throws E11000 on product creation, sync, and
+ * reordering. Mongoose's autoIndex never drops stale indexes, so we drop it
+ * explicitly here. No-op once the index is gone.
+ */
 export async function migrateFixDisplayIndex() {
   if (mongoose.connection.readyState !== 1) return;
 
@@ -10,12 +18,24 @@ export async function migrateFixDisplayIndex() {
   const existingCollections = (await db.listCollections().toArray()).map((c) => c.name);
   if (!existingCollections.includes("products")) return;
 
-  const result = await ProductModel.updateMany(
-    { displayIndex: 0, isDeleted: false },
-    { $set: { displayIndex: 1 } }
-  );
+  const collection = db.collection("products");
 
-  if (result.modifiedCount > 0) {
-    console.log(`[migrateFixDisplayIndex] Updated ${result.modifiedCount} products with displayIndex: 0`);
+  let indexes: Array<{ name?: string }> = [];
+  try {
+    indexes = await collection.indexes();
+  } catch {
+    return;
+  }
+
+  if (!indexes.some((idx) => idx.name === "idx_unique_displayindex")) return;
+
+  try {
+    await collection.dropIndex("idx_unique_displayindex");
+    console.log("[migrateFixDisplayIndex] Dropped stale unique index idx_unique_displayindex");
+  } catch (error) {
+    console.warn(
+      "[migrateFixDisplayIndex] Could not drop idx_unique_displayindex:",
+      (error as Error).message
+    );
   }
 }

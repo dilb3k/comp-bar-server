@@ -14,10 +14,13 @@ async function bootstrap() {
     await authService.migrateLegacyOwnership(superAdmin._id.toString());
   }
 
+  // Always heal the stale unique displayIndex index — idempotent, and it
+  // prevents E11000 errors on product create/sync/reorder.
+  await migrateFixDisplayIndex();
+
   if (env.MIGRATION_ENABLED) {
     await migrateSplitCollections();
     await migrateLegacyProductRecords();
-    await migrateFixDisplayIndex();
   }
 
   const app = createApp();

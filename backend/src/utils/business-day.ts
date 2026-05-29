@@ -3,6 +3,8 @@ import { env } from "../config/env";
 import { AppError } from "./app-error";
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+// Matches a trailing timezone designator: "Z", "+05:00", "-0500", etc.
+const TIMEZONE_SUFFIX_REGEX = /(Z|[+-]\d{2}:?\d{2})$/;
 
 function toDate(value?: string | Date) {
   if (!value) {
@@ -15,6 +17,14 @@ function toDate(value?: string | Date) {
 
   if (ISO_DATE_REGEX.test(value)) {
     return new Date(`${value}T00:00:00.000Z`);
+  }
+
+  // Naive datetimes (no timezone) must be interpreted as UTC so that the
+  // business-day boundary is deterministic and never drifts with the server's
+  // local timezone. The timezone shift is applied explicitly via
+  // timezoneOffsetMinutes in the callers.
+  if (!TIMEZONE_SUFFIX_REGEX.test(value)) {
+    return new Date(`${value}Z`);
   }
 
   return new Date(value);

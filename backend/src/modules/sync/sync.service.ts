@@ -9,6 +9,7 @@ import { snapshotRepository } from "../snapshots/snapshot.repository";
 import { aggregateSnapshot } from "../snapshots/snapshot.logic";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
+import { env } from "../../config/env";
 
 type SyncInput = {
   products?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
@@ -33,7 +34,7 @@ export class SyncService {
     const snapshots = payload.daily ?? payload.snapshots ?? [];
     const rejected: RejectedItem[] = [];
     const businessHour = getEffectiveHour(actor);
-    const currentBusinessDate = getCurrentBusinessDate(businessHour);
+    const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
     const processedProducts = await Promise.all(
       products.map(async (item) => {
@@ -112,8 +113,12 @@ export class SyncService {
             const productMap = new Map(products.map((p: any) => [p.localId, p]));
             const derivedItems = entries.map((entry: any) => {
               const product = productMap.get(entry.productId);
-              const buyPrice = Number(entry.buyPrice ?? product?.buyPrice ?? 0);
-              const sellPrice = Number(entry.sellPrice ?? product?.sellPrice ?? 0);
+              // Effective price = entry's locked-in price when > 0, else current
+              // product price. Matches snapshot.service and buildInventoryResponse.
+              const storedBuyPrice = Number(entry.buyPrice ?? 0);
+              const storedSellPrice = Number(entry.sellPrice ?? 0);
+              const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(product?.buyPrice ?? 0);
+              const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number(product?.sellPrice ?? 0);
               const sold = Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0);
               return {
                 productId: entry.productId,

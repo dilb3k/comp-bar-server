@@ -25,6 +25,17 @@ run("getBusinessDate shifts timestamps before 07:00 to previous day", () => {
   assert.equal(getBusinessDate("2026-04-20T07:00:00", 7), "2026-04-20");
 });
 
+run("getBusinessDate is timezone-deterministic and applies the offset", () => {
+  // Naive timestamps must be read as UTC, never the server's local timezone.
+  assert.equal(getBusinessDate("2026-04-20T12:00:00", 0, 0), "2026-04-20");
+  // 01:00 UTC + 5h offset = 06:00 local, business start 6 -> same business day.
+  assert.equal(getBusinessDate("2026-04-20T01:00:00", 6, 300), "2026-04-20");
+  // 00:30 UTC + 5h offset = 05:30 local < 6 -> previous business day.
+  assert.equal(getBusinessDate("2026-04-20T00:30:00", 6, 300), "2026-04-19");
+  // Explicit Z and explicit offset must agree (same instant).
+  assert.equal(getBusinessDate("2026-04-20T01:00:00Z", 6, 300), "2026-04-20");
+});
+
 run("isPastBusinessDate returns true for past dates", () => {
   assert.equal(isPastBusinessDate("2026-04-19", "2026-04-20"), true);
   assert.equal(isPastBusinessDate("2026-04-20", "2026-04-20"), false);

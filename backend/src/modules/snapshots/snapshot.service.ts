@@ -80,13 +80,23 @@ export class SnapshotService {
         entryMap.get((product as any).localId) ??
         deriveMissingInventoryEntry(product.toJSON() as any, payload.date);
 
+      // Value sold units at the price locked into the inventory entry (the
+      // price in effect when the day started), falling back to the current
+      // product price only when the entry has none. This must match the
+      // sync derivation and buildInventoryResponse so a day's revenue/profit
+      // is identical regardless of which code path computes the snapshot.
+      const storedBuyPrice = Number((inventory as any).buyPrice ?? 0);
+      const storedSellPrice = Number((inventory as any).sellPrice ?? 0);
+      const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number((product as any).buyPrice ?? 0);
+      const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number((product as any).sellPrice ?? 0);
+
       return buildSnapshotItem({
         productId: (product as any).localId,
         productName: String((product as any).name),
         startQuantity: Number((inventory as any).startQuantity),
         currentQuantity: Number((inventory as any).currentQuantity),
-        buyPrice: Number((product as any).buyPrice),
-        sellPrice: Number((product as any).sellPrice),
+        buyPrice,
+        sellPrice,
       });
     });
 

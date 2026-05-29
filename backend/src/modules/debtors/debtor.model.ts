@@ -50,4 +50,8 @@ const debtorSchema = new Schema(
   }
 );
 
+// Supports the per-owner debtor list, which always filters by createdBy and
+// sorts by amount descending.
+debtorSchema.index({ createdBy: 1, amount: -1 }, { name: "idx_debtor_owner_amount" });
+
 export const DebtorModel = models.Debtor || model("Debtor", debtorSchema);

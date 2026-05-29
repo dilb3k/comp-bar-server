@@ -15,7 +15,7 @@ function requireAuth(req: Request) {
 export const authController = {
   async register(req: Request, res: Response) {
     const result = await authService.register({
-      username: req.body.phone_number,
+      phone_number: req.body.phone_number,
       password: req.body.password
     });
     return sendSuccess(res, result);
@@ -44,7 +44,7 @@ export const authController = {
   async createAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
     const admin = await authService.createAdmin(actor, {
-      username: req.body.phone_number,
+      phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,
       isPayed: req.body.isPayed
@@ -55,7 +55,7 @@ export const authController = {
   async updateAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
     const updated = await authService.updateAdmin(actor, String(req.params.id), {
-      username: req.body.phone_number,
+      phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,
       isPayed: req.body.isPayed

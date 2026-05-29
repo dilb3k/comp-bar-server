@@ -94,18 +94,14 @@ productSchema.index(
   { unique: true, name: "idx_unique_owner_localid", background: true }
 );
 
+// displayIndex is presentation ordering, NOT an identity. It must never be
+// unique: products are created/synced with a default displayIndex of 1 and
+// reorders temporarily collide, both of which would throw E11000 under a
+// unique index (and the legacy fix-displayIndex migration itself produced
+// duplicate values). A single non-unique index supports the list sort.
 productSchema.index(
   { ownerAdminId: 1, displayIndex: 1 },
   { name: "idx_product_list_active_sorted", background: true }
-);
-
-productSchema.index(
-  { ownerAdminId: 1, displayIndex: 1 },
-  {
-    unique: true,
-    name: "idx_unique_displayindex",
-    background: true
-  }
 );
 
 productSchema.index(

@@ -4,7 +4,7 @@ type TelegramReportPayload = {
   title: string;
   actor?: {
     userId?: string;
-    username?: string;
+    phone_number?: string;
     role?: string;
   } | null;
   lines?: Array<string | number | null | undefined | false>;

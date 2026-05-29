@@ -48,7 +48,7 @@ export class ProductService {
 
     let displayIndex = payload.displayIndex;
     const businessHour = getEffectiveHour(actor);
-    const today = getCurrentBusinessDate(businessHour);
+    const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
     const session = await mongoose.startSession();
     try {
@@ -205,7 +205,7 @@ export class ProductService {
     }
 
     const businessHour = getEffectiveHour(actor);
-    const today = getCurrentBusinessDate(businessHour);
+    const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
     const session = await mongoose.startSession();
     try {
