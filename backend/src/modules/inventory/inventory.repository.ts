@@ -13,6 +13,9 @@ function buildInventoryRecord(payload: InventoryPayload) {
     currentQuantity: payload.currentQuantity,
     buyPrice: payload.buyPrice ?? 0,
     sellPrice: payload.sellPrice ?? 0,
+    lockedRevenue: payload.lockedRevenue ?? 0,
+    lockedProfit: payload.lockedProfit ?? 0,
+    lockedSold: payload.lockedSold ?? 0,
     note: payload.note ?? "",
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt

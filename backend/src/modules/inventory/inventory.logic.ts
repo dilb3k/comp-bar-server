@@ -7,20 +7,27 @@ export function calculateInventoryMetrics({
   currentQuantity,
   buyPrice,
   sellPrice,
+  lockedRevenue = 0,
+  lockedProfit = 0,
+  lockedSold = 0,
 }: {
   startQuantity: number;
   currentQuantity: number;
   buyPrice: number;
   sellPrice: number;
+  lockedRevenue?: number;
+  lockedProfit?: number;
+  lockedSold?: number;
 }) {
   const safeStart = Math.max(startQuantity, 0);
   const safeCurrent = Math.max(currentQuantity, 0);
 
   const remaining = safeCurrent;
-  const sold = Math.max(safeStart - safeCurrent, 0);
+  const newSold = Math.max(safeStart - safeCurrent, 0);
+  const sold = lockedSold + newSold;
 
-  const revenue = sold * sellPrice;
-  const realizedProfit = sold * (sellPrice - buyPrice);
+  const revenue = lockedRevenue + newSold * sellPrice;
+  const realizedProfit = lockedProfit + newSold * (sellPrice - buyPrice);
 
   const stockSellValue = remaining * sellPrice;
   const stockBuyValue = remaining * buyPrice;
@@ -233,6 +240,9 @@ export function deriveMissingInventoryEntry(product: any, date: string) {
     date,
     startQuantity: product.quantity,
     currentQuantity: product.quantity,
+    lockedRevenue: 0,
+    lockedProfit: 0,
+    lockedSold: 0,
     note: "",
     updatedAt: now,
     createdAt: now,

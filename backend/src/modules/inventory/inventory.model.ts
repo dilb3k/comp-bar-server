@@ -15,6 +15,9 @@ export interface IInventoryEntry {
   currentQuantity: number;
   buyPrice: number;
   sellPrice: number;
+  lockedRevenue: number;
+  lockedProfit: number;
+  lockedSold: number;
   note: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -65,6 +68,18 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
     sellPrice: {
       type: Number,
       min: 0,
+      default: 0
+    },
+    lockedRevenue: {
+      type: Number,
+      default: 0
+    },
+    lockedProfit: {
+      type: Number,
+      default: 0
+    },
+    lockedSold: {
+      type: Number,
       default: 0
     },
     note: {

@@ -226,15 +226,38 @@ export class ProductService {
             nextQuantity
           );
 
+          const oldSellPrice = Number((inventoryEntry as any).sellPrice ?? 0);
+          let lockedRev = Number((inventoryEntry as any).lockedRevenue ?? 0);
+          let lockedProf = Number((inventoryEntry as any).lockedProfit ?? 0);
+          let lockedS = Number((inventoryEntry as any).lockedSold ?? 0);
+          let startQ = adjusted.startQuantity;
+          let currentQ = adjusted.currentQuantity;
+          let saveSellPrice = oldSellPrice;
+
+          if (nextSellPrice !== oldSellPrice) {
+            const sold = adjusted.soldSoFar;
+            if (sold > 0) {
+              lockedRev += sold * oldSellPrice;
+              lockedProf += sold * (oldSellPrice - Number((inventoryEntry as any).buyPrice ?? 0));
+              lockedS += sold;
+              startQ = adjusted.currentQuantity;
+              currentQ = adjusted.currentQuantity;
+            }
+            saveSellPrice = nextSellPrice;
+          }
+
           await inventoryRepository.upsertByProductAndDateWithSession(actor.userId, (product as any).localId, today, {
             localId: (inventoryEntry as any).localId,
             deviceId: payload.deviceId ?? (product as any).deviceId,
             productId: (product as any).localId,
             date: today,
-            startQuantity: adjusted.startQuantity,
-            currentQuantity: adjusted.currentQuantity,
+            startQuantity: startQ,
+            currentQuantity: currentQ,
             buyPrice: Number((inventoryEntry as any).buyPrice ?? 0),
-            sellPrice: Number((inventoryEntry as any).sellPrice ?? 0),
+            sellPrice: saveSellPrice,
+            lockedRevenue: lockedRev,
+            lockedProfit: lockedProf,
+            lockedSold: lockedS,
             note: (inventoryEntry as any).note ?? "",
             createdAt: (inventoryEntry as any).createdAt,
             updatedAt

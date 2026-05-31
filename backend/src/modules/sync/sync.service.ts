@@ -119,15 +119,18 @@ export class SyncService {
               const storedSellPrice = Number(entry.sellPrice ?? 0);
               const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(product?.buyPrice ?? 0);
               const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number(product?.sellPrice ?? 0);
-              const sold = Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0);
+              const newSold = Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0);
+              const lockedSold = Number(entry.lockedSold ?? 0);
+              const lockedRevenue = Number(entry.lockedRevenue ?? 0);
+              const lockedProfit = Number(entry.lockedProfit ?? 0);
               return {
                 productId: entry.productId,
                 productName: product?.name ?? "",
-                sold,
+                sold: lockedSold + newSold,
                 buyPrice,
                 sellPrice,
-                revenue: sold * sellPrice,
-                profit: sold * (sellPrice - buyPrice)
+                revenue: lockedRevenue + newSold * sellPrice,
+                profit: lockedProfit + newSold * (sellPrice - buyPrice)
               };
             });
 

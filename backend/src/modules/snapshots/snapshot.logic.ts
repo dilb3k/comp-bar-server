@@ -7,10 +7,14 @@ export function buildSnapshotItem(input: {
   currentQuantity: number;
   buyPrice: number;
   sellPrice: number;
+  lockedRevenue?: number;
+  lockedProfit?: number;
+  lockedSold?: number;
 }): DailySnapshotItem {
-  const sold = Math.max(input.startQuantity - input.currentQuantity, 0);
-  const revenue = sold * input.sellPrice;
-  const profit = sold * (input.sellPrice - input.buyPrice);
+  const newSold = Math.max(input.startQuantity - input.currentQuantity, 0);
+  const sold = (input.lockedSold ?? 0) + newSold;
+  const revenue = (input.lockedRevenue ?? 0) + newSold * input.sellPrice;
+  const profit = (input.lockedProfit ?? 0) + newSold * (input.sellPrice - input.buyPrice);
 
   return {
     productId: input.productId,

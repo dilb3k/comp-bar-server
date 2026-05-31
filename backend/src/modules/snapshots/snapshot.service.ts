@@ -97,6 +97,9 @@ export class SnapshotService {
         currentQuantity: Number((inventory as any).currentQuantity),
         buyPrice,
         sellPrice,
+        lockedRevenue: Number((inventory as any).lockedRevenue ?? 0),
+        lockedProfit: Number((inventory as any).lockedProfit ?? 0),
+        lockedSold: Number((inventory as any).lockedSold ?? 0),
       });
     });
 

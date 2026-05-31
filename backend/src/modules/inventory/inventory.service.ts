@@ -73,6 +73,9 @@ function buildInventoryResponse(product: any, inventory: any) {
     currentQuantity: Number(inventoryJson?.currentQuantity ?? 0),
     buyPrice: effectiveBuyPrice,
     sellPrice: effectiveSellPrice,
+    lockedRevenue: Number(inventoryJson?.lockedRevenue ?? 0),
+    lockedProfit: Number(inventoryJson?.lockedProfit ?? 0),
+    lockedSold: Number(inventoryJson?.lockedSold ?? 0),
   });
 
   return {

@@ -25,6 +25,9 @@ export interface InventoryEntry {
   currentQuantity: number;
   buyPrice?: number;
   sellPrice?: number;
+  lockedRevenue?: number;
+  lockedProfit?: number;
+  lockedSold?: number;
   note?: string;
   updatedAt: Date | string;
   createdAt: Date | string;
