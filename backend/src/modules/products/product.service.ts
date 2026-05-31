@@ -233,6 +233,8 @@ export class ProductService {
             date: today,
             startQuantity: adjusted.startQuantity,
             currentQuantity: adjusted.currentQuantity,
+            buyPrice: Number((inventoryEntry as any).buyPrice ?? 0),
+            sellPrice: Number((inventoryEntry as any).sellPrice ?? 0),
             note: (inventoryEntry as any).note ?? "",
             createdAt: (inventoryEntry as any).createdAt,
             updatedAt
