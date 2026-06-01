@@ -248,7 +248,7 @@ export class ProductService {
 
           await inventoryRepository.upsertByProductAndDateWithSession(actor.userId, (product as any).localId, today, {
             localId: (inventoryEntry as any).localId,
-            deviceId: payload.deviceId ?? (product as any).deviceId,
+            deviceId: payload.deviceId ?? (inventoryEntry as any).deviceId,
             productId: (product as any).localId,
             date: today,
             startQuantity: startQ,
