@@ -32,9 +32,9 @@ const syncedInventorySchema = z.object({
   currentQuantity: z.number().int().min(0),
   buyPrice: z.number().min(0).optional().default(0),
   sellPrice: z.number().min(0).optional().default(0),
-  lockedRevenue: z.number().min(0).optional().default(0),
-  lockedProfit: z.number().optional().default(0),
-  lockedSold: z.number().int().min(0).optional().default(0),
+  lockedRevenue: z.number().min(0).optional(),
+  lockedProfit: z.number().optional(),
+  lockedSold: z.number().int().min(0).optional(),
   note: z.string().optional().default(""),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()

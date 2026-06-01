@@ -143,7 +143,7 @@ export function aggregateInventoryForRange(items: any[]) {
     const productId = getItemProductId(item);
     if (!productId) continue;
 
-    const entrySold = item.sold ?? Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0);
+    const entrySold = item.sold ?? (item.lockedSold ?? 0) + Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0);
     const entryRevenue = item.revenue ?? 0;
     const entryProfit = item.realizedProfit ?? 0;
 

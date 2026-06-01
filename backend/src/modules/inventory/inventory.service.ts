@@ -264,6 +264,13 @@ export class InventoryService {
               );
             }
 
+            const existingEntry = await inventoryRepository.findByProductAndDate(
+              actor.userId,
+              (product as any).localId,
+              targetDate,
+              session,
+            );
+
             const entry = await inventoryRepository.upsertByProductAndDateWithSession(
               actor.userId,
               (product as any).localId,
@@ -279,6 +286,9 @@ export class InventoryService {
                 currentQuantity,
                 buyPrice: Number(product.buyPrice || 0),
                 sellPrice: Number(product.sellPrice || 0),
+                lockedRevenue: Number((existingEntry as any)?.lockedRevenue ?? 0),
+                lockedProfit: Number((existingEntry as any)?.lockedProfit ?? 0),
+                lockedSold: Number((existingEntry as any)?.lockedSold ?? 0),
                 note: item.note ?? "",
                 createdAt: item.createdAt ? new Date(item.createdAt) : now,
                 updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
@@ -408,6 +418,9 @@ export class InventoryService {
                 currentQuantity: item.currentQuantity,
                 buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
                 sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                lockedRevenue: Number((existing as any)?.lockedRevenue ?? 0),
+                lockedProfit: Number((existing as any)?.lockedProfit ?? 0),
+                lockedSold: Number((existing as any)?.lockedSold ?? 0),
                 note: item.note ?? (existing as any)?.note ?? "",
                 createdAt: (existing as any)?.createdAt ?? now,
                 updatedAt: now,
@@ -538,6 +551,9 @@ export class InventoryService {
                 currentQuantity: newCurrent,
                 buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
                 sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                lockedRevenue: Number((existing as any)?.lockedRevenue ?? 0),
+                lockedProfit: Number((existing as any)?.lockedProfit ?? 0),
+                lockedSold: Number((existing as any)?.lockedSold ?? 0),
                 note: (existing as any)?.note ?? "",
                 createdAt: (existing as any)?.createdAt ?? now,
                 updatedAt: now,

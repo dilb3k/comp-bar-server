@@ -143,7 +143,13 @@ export class InventoryRepository {
           const conflicting = await retryQuery;
           if (conflicting) {
             if (new Date(conflicting.updatedAt).getTime() <= payloadUpdatedAt.getTime()) {
-              Object.assign(conflicting, record);
+              const merged = {
+                ...record,
+                lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : conflicting.lockedRevenue,
+                lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : conflicting.lockedProfit,
+                lockedSold: payload.lockedSold !== undefined ? record.lockedSold : conflicting.lockedSold,
+              };
+              Object.assign(conflicting, merged);
               return conflicting.save({ session });
             }
             return conflicting;
@@ -157,7 +163,13 @@ export class InventoryRepository {
       return existing;
     }
 
-    Object.assign(existing, record);
+    const merged = {
+      ...record,
+      lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : existing.lockedRevenue,
+      lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : existing.lockedProfit,
+      lockedSold: payload.lockedSold !== undefined ? record.lockedSold : existing.lockedSold,
+    };
+    Object.assign(existing, merged);
     return existing.save({ session });
   }
 }
