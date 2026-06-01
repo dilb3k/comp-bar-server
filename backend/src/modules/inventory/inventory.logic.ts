@@ -164,7 +164,7 @@ export function aggregateInventoryForRange(items: any[]) {
 
     if (!existing) {
       productLatestEntry.set(productId, item);
-      productFirstStart.set(productId, item.startQuantity ?? 0);
+      productFirstStart.set(productId, (item.startQuantity ?? 0) + (item.lockedSold ?? 0));
       continue;
     }
 
