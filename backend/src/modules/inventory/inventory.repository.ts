@@ -72,20 +72,6 @@ export class InventoryRepository {
     return query;
   }
 
-  async upsertByProductAndDate(
-    ownerAdminId: string,
-    productId: string,
-    date: string,
-    payload: InventoryPayload
-  ) {
-    const record = buildInventoryRecord({ ownerAdminId, ...payload });
-    return InventoryEntryModel.findOneAndUpdate(
-      { ownerAdminId, productId, date },
-      { $set: record },
-      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
-    );
-  }
-
   async upsertByProductAndDateWithSession(
     ownerAdminId: string,
     productId: string,
@@ -145,6 +131,8 @@ export class InventoryRepository {
             if (new Date(conflicting.updatedAt).getTime() <= payloadUpdatedAt.getTime()) {
               const merged = {
                 ...record,
+                buyPrice: payload.buyPrice !== undefined ? record.buyPrice : conflicting.buyPrice,
+                sellPrice: payload.sellPrice !== undefined ? record.sellPrice : conflicting.sellPrice,
                 lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : conflicting.lockedRevenue,
                 lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : conflicting.lockedProfit,
                 lockedSold: payload.lockedSold !== undefined ? record.lockedSold : conflicting.lockedSold,
@@ -165,6 +153,8 @@ export class InventoryRepository {
 
     const merged = {
       ...record,
+      buyPrice: payload.buyPrice !== undefined ? record.buyPrice : existing.buyPrice,
+      sellPrice: payload.sellPrice !== undefined ? record.sellPrice : existing.sellPrice,
       lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : existing.lockedRevenue,
       lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : existing.lockedProfit,
       lockedSold: payload.lockedSold !== undefined ? record.lockedSold : existing.lockedSold,

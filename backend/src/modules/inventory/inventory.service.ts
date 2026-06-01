@@ -476,6 +476,11 @@ export class InventoryService {
         })),
       });
 
+      await snapshotService.createOrUpdate(actor, {
+        date: targetDate,
+        deviceId: payload.deviceId,
+      });
+
       return results;
     } finally {
       await session.endSession();

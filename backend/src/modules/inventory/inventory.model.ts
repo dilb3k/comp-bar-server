@@ -72,14 +72,17 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
     },
     lockedRevenue: {
       type: Number,
+      min: 0,
       default: 0
     },
     lockedProfit: {
       type: Number,
+      min: 0,
       default: 0
     },
     lockedSold: {
       type: Number,
+      min: 0,
       default: 0
     },
     note: {

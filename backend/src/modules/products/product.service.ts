@@ -234,7 +234,8 @@ export class ProductService {
           let currentQ = adjusted.currentQuantity;
           let saveSellPrice = oldSellPrice;
 
-          if (nextSellPrice !== oldSellPrice) {
+          const userChangedSellPrice = payload.sellPrice !== undefined;
+          if (userChangedSellPrice && nextSellPrice !== oldSellPrice) {
             const sold = adjusted.soldSoFar;
             if (sold > 0) {
               lockedRev += sold * oldSellPrice;
