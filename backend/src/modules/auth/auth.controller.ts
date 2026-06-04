@@ -75,7 +75,8 @@ export const authController = {
   async updateMe(req: Request, res: Response) {
     const actor = requireAuth(req);
     const result = await authService.updateMe(actor, {
-      businessDayStartHour: req.body.businessDayStartHour
+      businessDayStartHour: req.body.businessDayStartHour,
+      blockCode: req.body.blockCode,
     });
     return sendSuccess(res, result);
   }
