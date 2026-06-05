@@ -63,13 +63,19 @@ export class AuthRepository {
 
   async updateMe(
     id: string,
-    payload: { businessDayStartHour?: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null; blockCode?: string | null },
+    payload: { username?: string; phone_number?: string; businessDayStartHour?: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null; blockCode?: string | null },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
     const user = await UserModel.findById(id);
     if (!user) return null;
 
+    if (payload.username !== undefined) {
+      (user as any).username = payload.username.trim().toLowerCase();
+    }
+    if (payload.phone_number !== undefined) {
+      user.phone_number = payload.phone_number.trim();
+    }
     if (payload.businessDayStartHour !== undefined) {
       (user as any).businessDayStartHour = payload.businessDayStartHour;
     }

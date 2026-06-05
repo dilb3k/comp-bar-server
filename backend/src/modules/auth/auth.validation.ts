@@ -28,6 +28,8 @@ export const updateAdminSchema = z.object({
 });
 
 export const updateMeSchema = z.object({
+  username: z.string().trim().min(3, "username must be at least 3 characters").optional(),
+  phone_number: z.string().trim().optional(),
   businessDayStartHour: z.number().int().min(0).max(23).optional(),
   blockCode: z.string().regex(/^\d{4}$/).nullable().optional()
 });

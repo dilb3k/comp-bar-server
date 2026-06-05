@@ -130,6 +130,19 @@ export class SubscriptionService {
     return { tier, subscription: activeSubscription };
   }
 
+  async createTrialSubscription(userId: string, tier: "bor" | "pro", startDate: Date, endDate: Date) {
+    const subscription = await SubscriptionModel.create({
+      userId,
+      tier,
+      startDate,
+      endDate,
+      isActive: true,
+      activatedBy: userId,
+    });
+    await authRepository.updateAdmin(userId, { isPayed: true });
+    return subscription;
+  }
+
   private async deactivateExisting(userId: string) {
     await SubscriptionModel.updateMany(
       { userId, isActive: true },

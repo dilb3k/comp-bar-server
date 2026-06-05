@@ -36,8 +36,18 @@ export class AuthService {
       createdBy: null,
     });
 
-    const isPayed = role === "superAdmin" ? true : false;
-    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    let isPayed = role === "superAdmin" ? true : false;
+    let activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+
+    // Give new admin users a 10-minute trial subscription
+    if (role === "admin" && !activeSub) {
+      const now = new Date();
+      const endDate = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
+      const sub = await subscriptionService.createTrialSubscription(user._id.toString(), "bor", now, endDate);
+      isPayed = true;
+      activeSub = sub;
+    }
+
     const tier = computeTier(role, isPayed, activeSub);
 
     const authUser: AuthUser = {
@@ -260,10 +270,24 @@ export class AuthService {
 
   async updateMe(
     actor: AuthUser,
-    payload: { businessDayStartHour?: number; blockCode?: string | null }
+    payload: { username?: string; phone_number?: string; businessDayStartHour?: number; blockCode?: string | null }
   ) {
     const repoPayload: Record<string, any> = {};
     const authUserUpdate: Record<string, any> = {};
+
+    if (payload.username !== undefined) {
+      const duplicate = await authRepository.findByUsername(payload.username);
+      if (duplicate && duplicate._id.toString() !== actor.userId) {
+        throw new AppError("Username already exists", 409);
+      }
+      repoPayload.username = payload.username;
+      authUserUpdate.username = payload.username;
+    }
+
+    if (payload.phone_number !== undefined) {
+      repoPayload.phone_number = payload.phone_number;
+      authUserUpdate.phone_number = payload.phone_number;
+    }
 
     if (payload.businessDayStartHour !== undefined) {
       const tomorrow = new Date();
@@ -291,8 +315,8 @@ export class AuthService {
 
     const updatedUser: AuthUser = {
       userId: actor.userId,
-      username: actor.username,
-      phone_number: actor.phone_number,
+      username: authUserUpdate.username ?? actor.username,
+      phone_number: authUserUpdate.phone_number ?? actor.phone_number,
       role: actor.role,
       isPayed: actor.isPayed,
       tier,
