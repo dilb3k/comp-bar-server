@@ -43,6 +43,13 @@ router.get(
   asyncHandler(authController.listAdmins)
 );
 
+router.get(
+  "/admins/stats",
+  authenticate,
+  authorize("superAdmin"),
+  asyncHandler(authController.adminStats)
+);
+
 router.post(
   "/admins",
   authenticate,

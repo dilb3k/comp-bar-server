@@ -72,6 +72,12 @@ export const authController = {
     return sendSuccess(res, deleted);
   },
 
+  async adminStats(req: Request, res: Response) {
+    const actor = requireAuth(req);
+    const stats = await authService.getAdminStats(actor);
+    return sendSuccess(res, stats);
+  },
+
   async updateMe(req: Request, res: Response) {
     const actor = requireAuth(req);
     const result = await authService.updateMe(actor, {

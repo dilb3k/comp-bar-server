@@ -356,30 +356,108 @@ export class AuthService {
     return authRepository.findSuperAdmin();
   }
 
-  async migrateLegacyOwnership(defaultOwnerAdminId: string) {
-    const orphanFilter = {
-      $or: [
-        { ownerAdminId: { $exists: false } },
-        { ownerAdminId: null },
-        { ownerAdminId: "" }
-      ]
-    };
-
-    const needsMigration = await Promise.all([
-      mongoose.connection.collection("products").countDocuments(orphanFilter),
-      mongoose.connection.collection("inventory_entries").countDocuments(orphanFilter).catch(() => 0),
-      mongoose.connection.collection("daily_snapshots").countDocuments(orphanFilter).catch(() => 0),
-    ]);
-
-    if (!needsMigration.some((count) => count > 0)) {
-      return;
+  async getAdminStats(actor: AuthUser) {
+    if (actor.role !== "superAdmin") {
+      throw new AppError("Only superAdmin can view admin stats", 403);
     }
 
-    await Promise.all([
-      mongoose.connection.collection("products").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
-      mongoose.connection.collection("inventory_entries").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
-      mongoose.connection.collection("daily_snapshots").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
-    ]);
+    const admins = await authRepository.listAdmins();
+    const userIds = admins.map((a) => a._id.toString());
+    const subMap = await subscriptionService.getActiveSubscriptions(userIds);
+
+    const ProductModel = mongoose.connection.collection("products");
+    const InventoryModel = mongoose.connection.collection("inventory_entries");
+    const SnapshotModel = mongoose.connection.collection("daily_snapshots");
+
+    const adminStats = await Promise.all(
+      admins.map(async (admin) => {
+        const adminId = admin._id.toString();
+        const activeSub = subMap.get(adminId) ?? null;
+        const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
+
+        const [productCount, inventoryCount, snapshotAgg, lastActivity] = await Promise.all([
+          ProductModel.countDocuments({ ownerAdminId: adminId }),
+          InventoryModel.countDocuments({ ownerAdminId: adminId }),
+          SnapshotModel.aggregate([
+            { $match: { ownerAdminId: adminId } },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: "$totalRevenue" },
+                totalProfit: { $sum: "$totalProfit" },
+                totalSoldItems: { $sum: "$totalSoldItems" },
+              },
+            },
+          ]),
+          Promise.all([
+            ProductModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
+            InventoryModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
+            SnapshotModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
+          ]).then((results) => {
+            const dates = results
+              .filter(Boolean)
+              .map((r: any) => new Date(r.updatedAt).getTime());
+            return dates.length > 0 ? new Date(Math.max(...dates)).toISOString() : null;
+          }),
+        ]);
+
+        // Top 5 products by sales
+        const topProducts = await SnapshotModel.aggregate([
+          { $match: { ownerAdminId: adminId } },
+          { $unwind: "$items" },
+          {
+            $group: {
+              _id: "$items.productId",
+              productName: { $first: "$items.productName" },
+              totalSold: { $sum: "$items.sold" },
+              totalRevenue: { $sum: "$items.revenue" },
+              totalProfit: { $sum: "$items.profit" },
+            },
+          },
+          { $sort: { totalSold: -1 } },
+          { $limit: 5 },
+        ]);
+
+        const json = admin.toJSON();
+        return {
+          ...json,
+          tier,
+          subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+          daysRemaining: activeSub
+            ? Math.ceil(
+                (new Date(activeSub.endDate).getTime() - Date.now()) /
+                  (1000 * 60 * 60 * 24),
+              )
+            : 0,
+          productCount: productCount ?? 0,
+          inventoryCount: inventoryCount ?? 0,
+          totalRevenue: snapshotAgg[0]?.totalRevenue ?? 0,
+          totalProfit: snapshotAgg[0]?.totalProfit ?? 0,
+          totalSoldItems: snapshotAgg[0]?.totalSoldItems ?? 0,
+          lastActive: lastActivity,
+          topProducts: topProducts.map((p: any) => ({
+            productId: p._id,
+            name: p.productName,
+            totalSold: p.totalSold,
+            totalRevenue: p.totalRevenue,
+            totalProfit: p.totalProfit,
+          })),
+        };
+      }),
+    );
+
+    const totals = adminStats.reduce(
+      (acc, a) => ({
+        totalProducts: acc.totalProducts + a.productCount,
+        totalRevenue: acc.totalRevenue + a.totalRevenue,
+        totalProfit: acc.totalProfit + a.totalProfit,
+        totalSoldItems: acc.totalSoldItems + a.totalSoldItems,
+        activeSubscriptions: acc.activeSubscriptions + (a.daysRemaining > 0 ? 1 : 0),
+      }),
+      { totalProducts: 0, totalRevenue: 0, totalProfit: 0, totalSoldItems: 0, activeSubscriptions: 0 },
+    );
+
+    return { admins: adminStats, totals };
   }
 }
 
