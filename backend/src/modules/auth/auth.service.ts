@@ -388,11 +388,11 @@ export class AuthService {
                 totalSoldItems: { $sum: "$totalSoldItems" },
               },
             },
-          ]),
+          ]).toArray(),
           Promise.all([
-            ProductModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
-            InventoryModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
-            SnapshotModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).project({ updatedAt: 1 }),
+            ProductModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
+            InventoryModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
+            SnapshotModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
           ]).then((results) => {
             const dates = results
               .filter(Boolean)
@@ -458,6 +458,32 @@ export class AuthService {
     );
 
     return { admins: adminStats, totals };
+  }
+
+  async migrateLegacyOwnership(defaultOwnerAdminId: string) {
+    const orphanFilter = {
+      $or: [
+        { ownerAdminId: { $exists: false } },
+        { ownerAdminId: null },
+        { ownerAdminId: "" }
+      ]
+    };
+
+    const needsMigration = await Promise.all([
+      mongoose.connection.collection("products").countDocuments(orphanFilter),
+      mongoose.connection.collection("inventory_entries").countDocuments(orphanFilter).catch(() => 0),
+      mongoose.connection.collection("daily_snapshots").countDocuments(orphanFilter).catch(() => 0),
+    ]);
+
+    if (!needsMigration.some((count) => count > 0)) {
+      return;
+    }
+
+    await Promise.all([
+      mongoose.connection.collection("products").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }),
+      mongoose.connection.collection("inventory_entries").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
+      mongoose.connection.collection("daily_snapshots").updateMany(orphanFilter, { $set: { ownerAdminId: defaultOwnerAdminId } }).catch(() => {}),
+    ]);
   }
 }
 
