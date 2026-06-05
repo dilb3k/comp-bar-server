@@ -61,7 +61,6 @@ export function computeTier(
   isPayed: boolean,
   activeSubscription: ISubscription | null
 ): SubscriptionTier {
-  if (role === "superAdmin") return "pro";
   if (activeSubscription) {
     return activeSubscription.tier === "pro" ? "pro" : "bor";
   }

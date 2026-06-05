@@ -39,8 +39,8 @@ export class AuthService {
     let isPayed = role === "superAdmin" ? true : false;
     let activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
 
-    // Give new admin users a 10-minute trial subscription
-    if (role === "admin" && !activeSub) {
+    // Give all new users a 10-minute trial subscription
+    if (!activeSub) {
       const now = new Date();
       const endDate = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
       const sub = await subscriptionService.createTrialSubscription(user._id.toString(), "bor", now, endDate);
@@ -66,7 +66,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser),
-      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
+      user: { ...user.toJSON(), isPayed, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
 
