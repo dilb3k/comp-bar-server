@@ -3,8 +3,9 @@ import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
 import { subscriptionService } from "../subscriptions/subscription.service";
-import { computeTier } from "../subscriptions/subscription.model";
+import { computeTier, SubscriptionModel } from "../subscriptions/subscription.model";
 import { authRepository } from "./auth.repository";
+import { UserModel } from "./user.model";
 import type { AuthUser } from "./auth.types";
 import {signAccessToken } from "./auth.utils";
 
@@ -365,18 +366,32 @@ export class AuthService {
       throw new AppError("Only superAdmin can view admin stats", 403);
     }
 
-    const admins = await authRepository.listAdmins();
-    const adminsJson = admins.map((a) => a.toJSON());
-    const userIds = adminsJson.map((a: any) => a.id);
-    const subMap = await subscriptionService.getActiveSubscriptions(userIds);
+    const admins = await UserModel.find({ role: "admin", isActive: true })
+      .sort({ createdAt: -1 })
+      .lean();
+    const userIds = admins.map((a) => String(a._id));
+    const subs = await SubscriptionModel.find({
+      userId: { $in: userIds },
+      isActive: true,
+      endDate: { $gte: new Date() },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const subMap = new Map<string, any>();
+    for (const sub of subs) {
+      const uid = String(sub.userId);
+      if (!subMap.has(uid)) {
+        subMap.set(uid, sub);
+      }
+    }
 
     const ProductModel = mongoose.connection.collection("products");
     const InventoryModel = mongoose.connection.collection("inventory_entries");
     const SnapshotModel = mongoose.connection.collection("daily_snapshots");
 
     const adminStats = await Promise.all(
-      adminsJson.map(async (admin: any) => {
-        const adminId = admin.id;
+      admins.map(async (admin: any) => {
+        const adminId = String(admin._id);
         const activeSub = subMap.get(adminId) ?? null;
         const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
 
@@ -406,7 +421,6 @@ export class AuthService {
           }),
         ]);
 
-        // Top 5 products by sales
         const topProducts = await SnapshotModel.aggregate([
           { $match: { ownerAdminId: adminId } },
           { $unwind: "$items" },
@@ -424,9 +438,23 @@ export class AuthService {
         ]);
 
         return {
-          ...admin,
+          id: String(admin._id),
+          username: admin.username,
+          phone_number: admin.phone_number ?? "",
+          role: admin.role,
+          createdBy: admin.createdBy ? String(admin.createdBy) : null,
+          isActive: admin.isActive ?? true,
+          isPayed: admin.isPayed ?? false,
+          businessDayStartHour: admin.businessDayStartHour ?? 0,
+          pendingBusinessDayStartHour: admin.pendingBusinessDayStartHour ?? null,
+          businessDayEffectiveFrom: admin.businessDayEffectiveFrom ?? null,
+          blockCode: admin.blockCode ?? null,
+          createdAt: admin.createdAt ? admin.createdAt.toISOString() : null,
+          updatedAt: admin.updatedAt ? admin.updatedAt.toISOString() : null,
           tier,
-          subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+          subscriptionEndDate: activeSub?.endDate
+            ? new Date(activeSub.endDate).toISOString()
+            : null,
           daysRemaining: activeSub
             ? Math.ceil(
                 (new Date(activeSub.endDate).getTime() - Date.now()) /
