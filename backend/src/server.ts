@@ -10,7 +10,7 @@ async function bootstrap() {
   await connectDatabase();
   const superAdmin = await authService.findSuperAdmin();
 
-  if (superAdmin) {
+  if (superAdmin?._id) {
     await authService.migrateLegacyOwnership(superAdmin._id.toString());
   }
 
