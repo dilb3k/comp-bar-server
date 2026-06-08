@@ -5,7 +5,7 @@ import { auditService } from "../audit/audit.service";
 import { SubscriptionModel, computeTier, type ISubscription, type SubscriptionTier } from "./subscription.model";
 
 export class SubscriptionService {
-  async activate(actor: AuthUser, userId: string, tier: "bor" | "pro") {
+  async activate(actor: AuthUser, userId: string, tier: "bor" | "pro", durationMonths: number = 1) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can manage subscriptions", 403);
     }
@@ -18,9 +18,13 @@ export class SubscriptionService {
       throw new AppError("Cannot manage superAdmin subscription", 400);
     }
 
+    if (![1, 6, 12].includes(durationMonths)) {
+      durationMonths = 1;
+    }
+
     const now = new Date();
     const endDate = new Date(now);
-    endDate.setMonth(endDate.getMonth() + 1);
+    endDate.setMonth(endDate.getMonth() + durationMonths);
 
     await this.deactivateExisting(userId);
 
@@ -40,12 +44,12 @@ export class SubscriptionService {
       action: "UPDATE",
       entityType: "product",
       entityId: `subscription-${userId}`,
-      after: { tier, startDate: now.toISOString(), endDate: endDate.toISOString() },
+      after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString() },
       source: "rest",
       createdBy: actor.userId,
     });
 
-    return subscription;
+    return subscription.toJSON();
   }
 
   async deactivate(actor: AuthUser, userId: string) {
@@ -140,7 +144,7 @@ export class SubscriptionService {
       activatedBy: userId,
     });
     await authRepository.updateAdmin(userId, { isPayed: true });
-    return subscription;
+    return subscription.toJSON();
   }
 
   private async deactivateExisting(userId: string) {
@@ -151,9 +155,14 @@ export class SubscriptionService {
   }
 
   async getAllSubscriptions() {
-    return SubscriptionModel.find({ isActive: true })
+    const subs = await SubscriptionModel.find({ isActive: true })
       .sort({ createdAt: -1 })
-      .populate("userId", "phone_number");
+      .lean();
+    return subs.map((s: any) => ({
+      ...s,
+      id: s._id?.toString(),
+      _id: undefined,
+    }));
   }
 }
 

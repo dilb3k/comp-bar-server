@@ -15,7 +15,8 @@ export const subscriptionController = {
     const result = await subscriptionService.activate(
       actor,
       req.body.userId,
-      req.body.tier
+      req.body.tier,
+      req.body.durationMonths
     );
     return sendSuccess(res, result);
   },

@@ -16,7 +16,8 @@ export const createAdminSchema = z.object({
   password: z.string().min(6, "password must be at least 6 characters"),
   phone_number: z.string().trim().optional(),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
-  isPayed: z.boolean().optional()
+  isPayed: z.boolean().optional(),
+  durationMonths: z.coerce.number().int().min(1).max(12).optional(),
 });
 
 export const updateAdminSchema = z.object({
@@ -24,7 +25,8 @@ export const updateAdminSchema = z.object({
   password: z.string().min(6, "password must be at least 6 characters").optional(),
   phone_number: z.string().trim().optional(),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
-  isPayed: z.boolean().optional()
+  isPayed: z.boolean().optional(),
+  durationMonths: z.coerce.number().int().min(1).max(12).optional(),
 });
 
 export const updateMeSchema = z.object({

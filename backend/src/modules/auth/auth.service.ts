@@ -151,6 +151,7 @@ export class AuthService {
       password: string;
       tier?: "tekin" | "bor" | "pro";
       isPayed?: boolean;
+      durationMonths?: number;
     }
   ) {
     if (actor.role !== "superAdmin") {
@@ -174,9 +175,9 @@ export class AuthService {
     const adminId = admin._id.toString();
 
     if (payload.tier === "pro") {
-      await subscriptionService.activate(actor, adminId, "pro");
+      await subscriptionService.activate(actor, adminId, "pro", payload.durationMonths);
     } else if (payload.tier === "bor") {
-      await subscriptionService.activate(actor, adminId, "bor");
+      await subscriptionService.activate(actor, adminId, "bor", payload.durationMonths);
     } else if (payload.tier === "tekin") {
       await authRepository.updateAdmin(adminId, { isPayed: false });
     } else if (payload.isPayed !== undefined) {
@@ -190,7 +191,8 @@ export class AuthService {
       createdBy: (admin as any).createdBy ?? actor.userId
     });
 
-    return authRepository.findById(adminId);
+    const created = await authRepository.findById(adminId);
+    return created?.toJSON() ?? null;
   }
 
   async listAdmins(actor: AuthUser) {
@@ -218,7 +220,7 @@ export class AuthService {
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; phone_number?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean }
+    payload: { username?: string; phone_number?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean; durationMonths?: number }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
@@ -242,9 +244,9 @@ export class AuthService {
 
     if (payload.tier !== undefined) {
       if (payload.tier === "pro") {
-        await subscriptionService.activate(actor, id, "pro");
+        await subscriptionService.activate(actor, id, "pro", payload.durationMonths);
       } else if (payload.tier === "bor") {
-        await subscriptionService.activate(actor, id, "bor");
+        await subscriptionService.activate(actor, id, "bor", payload.durationMonths);
       } else {
         await subscriptionService.deactivate(actor, id);
         await authRepository.updateAdmin(id, { isPayed: false });
@@ -349,11 +351,13 @@ export class AuthService {
       throw new AppError("Can only delete admin users", 400);
     }
 
-    return authRepository.deleteAdmin(id);
+    const deleted = await authRepository.deleteAdmin(id);
+    return deleted?.toJSON() ?? null;
   }
 
   async findSuperAdmin() {
-    return authRepository.findSuperAdmin();
+    const sa = await authRepository.findSuperAdmin();
+    return sa?.toJSON() ?? null;
   }
 
   async getAdminStats(actor: AuthUser) {
@@ -362,7 +366,8 @@ export class AuthService {
     }
 
     const admins = await authRepository.listAdmins();
-    const userIds = admins.map((a) => a._id.toString());
+    const adminsJson = admins.map((a) => a.toJSON());
+    const userIds = adminsJson.map((a: any) => a.id);
     const subMap = await subscriptionService.getActiveSubscriptions(userIds);
 
     const ProductModel = mongoose.connection.collection("products");
@@ -370,8 +375,8 @@ export class AuthService {
     const SnapshotModel = mongoose.connection.collection("daily_snapshots");
 
     const adminStats = await Promise.all(
-      admins.map(async (admin) => {
-        const adminId = admin._id.toString();
+      adminsJson.map(async (admin: any) => {
+        const adminId = admin.id;
         const activeSub = subMap.get(adminId) ?? null;
         const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
 
@@ -418,9 +423,8 @@ export class AuthService {
           { $limit: 5 },
         ]);
 
-        const json = admin.toJSON();
         return {
-          ...json,
+          ...admin,
           tier,
           subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
           daysRemaining: activeSub

@@ -49,7 +49,8 @@ export const authController = {
       phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,
-      isPayed: req.body.isPayed
+      isPayed: req.body.isPayed,
+      durationMonths: req.body.durationMonths,
     });
     return sendSuccess(res, admin);
   },
@@ -61,7 +62,8 @@ export const authController = {
       phone_number: req.body.phone_number,
       password: req.body.password,
       tier: req.body.tier,
-      isPayed: req.body.isPayed
+      isPayed: req.body.isPayed,
+      durationMonths: req.body.durationMonths,
     });
     return sendSuccess(res, updated);
   },
