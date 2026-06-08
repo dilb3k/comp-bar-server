@@ -43,7 +43,7 @@ export class AuthService {
     // Give all new users a 10-minute trial subscription
     if (!activeSub) {
       const now = new Date();
-      const endDate = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
+      const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
       const sub = await subscriptionService.createTrialSubscription(user._id.toString(), "bor", now, endDate);
       isPayed = true;
       activeSub = sub;
