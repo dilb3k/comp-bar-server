@@ -27,6 +27,7 @@ export class AuthRepository {
     password: string;
     role: "admin" | "superAdmin";
     createdBy?: string | null;
+    businessDayStartHour?: number;
   }) {
     return UserModel.create({
       username: payload.username.trim().toLowerCase(),
@@ -34,6 +35,7 @@ export class AuthRepository {
       password: payload.password,
       role: payload.role,
       createdBy: payload.createdBy ?? null,
+      businessDayStartHour: payload.businessDayStartHour ?? 0,
     });
   }
 

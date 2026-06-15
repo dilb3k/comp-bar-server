@@ -17,7 +17,8 @@ export const authController = {
     const result = await authService.register({
       username: req.body.username,
       password: req.body.password,
-      phone_number: req.body.phone_number
+      phone_number: req.body.phone_number,
+      businessDayStartHour: req.body.businessDayStartHour,
     });
     return sendSuccess(res, result);
   },

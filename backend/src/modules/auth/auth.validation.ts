@@ -8,7 +8,8 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters"),
   password: z.string().min(6, "password must be at least 6 characters"),
-  phone_number: z.string().trim().optional()
+  phone_number: z.string().trim().optional(),
+  businessDayStartHour: z.number().int().min(0).max(23).optional(),
 });
 
 export const createAdminSchema = z.object({

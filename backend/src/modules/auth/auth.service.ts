@@ -10,7 +10,7 @@ import type { AuthUser } from "./auth.types";
 import {signAccessToken } from "./auth.utils";
 
 export class AuthService {
-  async register(payload: { username: string; password: string; phone_number?: string }) {
+  async register(payload: { username: string; password: string; phone_number?: string; businessDayStartHour?: number }) {
     const existing = await authRepository.findByUsername(payload.username);
 
     if (existing) {
@@ -35,6 +35,7 @@ export class AuthService {
       password: payload.password,
       role: role as "admin" | "superAdmin",
       createdBy: null,
+      businessDayStartHour: payload.businessDayStartHour,
     });
 
     let isPayed = role === "superAdmin" ? true : false;
