@@ -7,7 +7,7 @@ import { computeTier, SubscriptionModel } from "../subscriptions/subscription.mo
 import { authRepository } from "./auth.repository";
 import { UserModel } from "./user.model";
 import type { AuthUser } from "./auth.types";
-import {signAccessToken } from "./auth.utils";
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./auth.utils";
 
 export class AuthService {
   async register(payload: { username: string; password: string; phone_number?: string; businessDayStartHour?: number }) {
@@ -68,6 +68,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser),
+      refreshToken: signRefreshToken({ userId: user._id.toString() }),
       user: { ...user.toJSON(), isPayed, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
@@ -121,6 +122,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser),
+      refreshToken: signRefreshToken({ userId: user._id.toString() }),
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
@@ -142,6 +144,46 @@ export class AuthService {
       ...userJson,
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+    };
+  }
+
+  async refresh(token: string) {
+    let decoded: { userId: string };
+    try {
+      decoded = verifyRefreshToken(token);
+    } catch {
+      throw new AppError("Invalid or expired refresh token", 401);
+    }
+
+    const user = await authRepository.findById(decoded.userId);
+    if (!user || !user.isActive) {
+      throw new AppError("User not found", 404);
+    }
+
+    await subscriptionService.refreshExpiredSubscriptions();
+
+    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(user.role, isPayed, activeSub);
+
+    const authUser: AuthUser = {
+      userId: user._id.toString(),
+      username: (user as any).username,
+      phone_number: user.phone_number,
+      role: user.role,
+      isPayed,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
+      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
+      blockCode: (user as any).blockCode ?? null
+    };
+
+    return {
+      token: signAccessToken(authUser),
+      refreshToken: signRefreshToken({ userId: user._id.toString() }),
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
 
@@ -332,6 +374,7 @@ export class AuthService {
     return {
       user: updated.toJSON(),
       token: signAccessToken(updatedUser),
+      refreshToken: signRefreshToken({ userId: actor.userId }),
     };
   }
 

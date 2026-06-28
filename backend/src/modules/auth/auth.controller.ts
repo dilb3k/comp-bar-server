@@ -90,5 +90,10 @@ export const authController = {
       blockCode: req.body.blockCode,
     });
     return sendSuccess(res, result);
-  }
+  },
+
+  async refresh(req: Request, res: Response) {
+    const result = await authService.refresh(req.body.refreshToken);
+    return sendSuccess(res, result);
+  },
 };

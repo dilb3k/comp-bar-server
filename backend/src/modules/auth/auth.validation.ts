@@ -30,6 +30,10 @@ export const updateAdminSchema = z.object({
   durationMonths: z.coerce.number().int().min(1).max(12).optional(),
 });
 
+export const refreshSchema = z.object({
+  refreshToken: z.string().min(1, "refreshToken is required"),
+});
+
 export const updateMeSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters").optional(),
   phone_number: z.string().trim().optional(),

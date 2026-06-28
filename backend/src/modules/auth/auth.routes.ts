@@ -5,7 +5,7 @@ import { validateRequest } from "../../middlewares/validate.middleware";
 import { authLimiter } from "../../middlewares/rate-limit.middleware";
 import { authController } from "./auth.controller";
 import { authenticate, authorize } from "./auth.middleware";
-import { createAdminSchema, loginSchema, registerSchema, updateAdminSchema, updateMeSchema } from "./auth.validation";
+import { createAdminSchema, loginSchema, refreshSchema, registerSchema, updateAdminSchema, updateMeSchema } from "./auth.validation";
 
 const router = Router();
 
@@ -21,6 +21,13 @@ router.post(
   authLimiter,
   validateRequest({ body: loginSchema }),
   asyncHandler(authController.login)
+);
+
+router.post(
+  "/refresh",
+  authLimiter,
+  validateRequest({ body: refreshSchema }),
+  asyncHandler(authController.refresh)
 );
 
 router.get(

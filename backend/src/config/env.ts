@@ -13,6 +13,8 @@ const envSchema = z.object({
   TIMEZONE_OFFSET: z.coerce.number().int().default(300),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_REFRESH_SECRET: z.string().optional(),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default("30d"),
   BOT_TOKEN: z.string().trim().min(1).optional(),
   TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   MIGRATION_ENABLED: z.coerce.boolean().default(false),
@@ -26,4 +28,7 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+export const env = {
+  ...parsed.data,
+  JWT_REFRESH_SECRET: parsed.data.JWT_REFRESH_SECRET || (parsed.data.JWT_SECRET + "_refresh_salt_2024"),
+};
