@@ -54,12 +54,12 @@ export class InventoryRepository {
     return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 });
   }
 
-  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
+  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
     const filter = lastSyncAt
       ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
-    return InventoryEntryModel.find(filter).sort({ updatedAt: 1 });
+    return InventoryEntryModel.find(filter).sort({ updatedAt: 1 }).skip(offset).limit(limit);
   }
 
   async findByProductAndDate(ownerAdminId: string, productId: string, date: string, session?: any) {

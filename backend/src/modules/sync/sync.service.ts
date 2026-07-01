@@ -8,7 +8,7 @@ import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
 import { aggregateSnapshot } from "../snapshots/snapshot.logic";
 import { telegramReportService } from "../../services/telegram-report.service";
-import { getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
+import { compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
 import { env } from "../../config/env";
 
 type SyncInput = {
@@ -17,6 +17,8 @@ type SyncInput = {
   daily?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
   snapshots?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
   lastSyncAt?: string;
+  limit?: number;
+  offset?: number;
 };
 
 type RejectedItem = {
@@ -62,6 +64,10 @@ export class SyncService {
       }
       if (isPastBusinessDate(invDate, currentBusinessDate)) {
         rejected.push({ entity: "inventory", localId: item.localId, reason: "PAST_DAY_LOCKED" });
+        continue;
+      }
+      if (compareDayKeys(invDate, currentBusinessDate) > 0) {
+        rejected.push({ entity: "inventory", localId: item.localId, reason: "FUTURE_DAY_NOT_ALLOWED" });
         continue;
       }
       validInventory.push({
@@ -178,11 +184,24 @@ export class SyncService {
         }
       });
 
+      const limit = payload.limit ?? 1000;
+      const offset = payload.offset ?? 0;
+      const fetchLimit = limit + 1;
+
       const [serverProducts, serverInventory, serverSnapshots] = await Promise.all([
-        productRepository.findAllUpdatedSince(actor.userId, payload.lastSyncAt),
-        inventoryRepository.findUpdatedSince(actor.userId, payload.lastSyncAt),
-        snapshotRepository.findUpdatedSince(actor.userId, payload.lastSyncAt)
+        productRepository.findAllUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset),
+        inventoryRepository.findUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset),
+        snapshotRepository.findUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset)
       ]);
+
+      const hasMore =
+        serverProducts.length > limit ||
+        serverInventory.length > limit ||
+        serverSnapshots.length > limit;
+
+      const trimmedProducts = serverProducts.slice(0, limit);
+      const trimmedInventory = serverInventory.slice(0, limit);
+      const trimmedSnapshots = serverSnapshots.slice(0, limit);
 
       if (processedProducts.length > 0 || validInventory.length > 0 || validSnapshots.length > 0) {
         telegramReportService.reportSync(actor, {
@@ -200,9 +219,10 @@ export class SyncService {
           snapshots: validSnapshots.length
         },
         rejected,
-        products: serverProducts.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-        inventory: serverInventory.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-        daily: serverSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+        products: trimmedProducts.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+        inventory: trimmedInventory.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+        daily: trimmedSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
+        hasMore,
         serverTime: new Date().toISOString()
       };
     } finally {

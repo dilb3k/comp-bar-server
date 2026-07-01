@@ -27,11 +27,24 @@ export class StatsService {
     ]);
 
     let dbSize = "N/A";
+    let storageSize = "N/A";
+    let indexSize = "N/A";
+    let totalSize = "N/A";
+    let collections = 0;
+    let objects = 0;
+    let avgObjectSize = "0 B";
     try {
       const db = mongoose.connection.db;
       if (db) {
         const dbStats = await db.stats();
         dbSize = this.formatBytes((dbStats as any).dataSize ?? 0);
+        storageSize = this.formatBytes((dbStats as any).storageSize ?? 0);
+        indexSize = this.formatBytes((dbStats as any).indexSize ?? 0);
+        totalSize = this.formatBytes((dbStats as any).totalSize ?? (dbStats as any).fileSize ?? 0);
+        collections = (dbStats as any).collections ?? 0;
+        objects = (dbStats as any).objects ?? 0;
+        const avgObjBytes = (dbStats as any).avgObjSize ?? 0;
+        avgObjectSize = this.formatBytes(avgObjBytes);
       }
     } catch {
       // db.stats() may timeout on free tier, skip silently
@@ -41,12 +54,12 @@ export class StatsService {
       database: {
         name: mongoose.connection.db?.databaseName ?? "unknown",
         size: dbSize,
-        storageSize: dbSize,
-        indexSize: dbSize,
-        totalSize: dbSize,
-        collections: 0,
-        objects: 0,
-        avgObjectSize: "0 B",
+        storageSize,
+        indexSize,
+        totalSize,
+        collections,
+        objects,
+        avgObjectSize,
       },
       records: {
         totalAdmins,

@@ -47,23 +47,35 @@ export const debtorService = {
     id: string,
     data: { amount: number; type: "add" | "subtract"; note?: string }
   ) {
-    const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId });
+    const incAmount = data.type === "add" ? data.amount : -data.amount;
+
+    const debtor = await DebtorModel.findOneAndUpdate(
+      { _id: id, createdBy: auth.userId },
+      {
+        $inc: { amount: incAmount },
+        $push: {
+          history: {
+            amount: data.amount,
+            type: data.type,
+            note: data.note || "",
+            date: new Date().toISOString(),
+          },
+        },
+      },
+      { new: true }
+    );
+
     if (!debtor) throw new AppError("Debtor not found", 404);
 
-    if (data.type === "add") {
-      debtor.amount += data.amount;
-    } else {
-      debtor.amount = Math.max(0, debtor.amount - data.amount);
+    if (debtor.amount < 0) {
+      const corrected = await DebtorModel.findOneAndUpdate(
+        { _id: id, amount: { $lt: 0 } },
+        { $set: { amount: 0 } },
+        { new: true }
+      );
+      return corrected ?? debtor;
     }
 
-    debtor.history.push({
-      amount: data.amount,
-      type: data.type,
-      note: data.note || "",
-      date: new Date().toISOString(),
-    });
-
-    await debtor.save();
     return debtor;
   },
 

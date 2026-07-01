@@ -6,6 +6,9 @@ import { subscriptionService } from "../subscriptions/subscription.service";
 import { computeTier, SubscriptionModel } from "../subscriptions/subscription.model";
 import { authRepository } from "./auth.repository";
 import { UserModel } from "./user.model";
+import { ProductModel as ProductMongooseModel } from "../products/product.model";
+import { InventoryEntryModel } from "../inventory/inventory.model";
+import { DailySnapshotModel as SnapshotMongooseModel } from "../snapshots/snapshot.model";
 import type { AuthUser } from "./auth.types";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./auth.utils";
 
@@ -41,10 +44,10 @@ export class AuthService {
     let isPayed = role === "superAdmin" ? true : false;
     let activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
 
-    // Give all new users a 10-minute trial subscription
+    // Give all new users a 7-day trial subscription
     if (!activeSub) {
       const now = new Date();
-      const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
       const sub = await subscriptionService.createTrialSubscription(user._id.toString(), "bor", now, endDate);
       isPayed = true;
       activeSub = sub;
@@ -80,20 +83,7 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    const storedPassword = (user as any).password || "";
-    const isBcryptHash = storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$");
-
-    let passwordIsValid = false;
-
-    if (isBcryptHash) {
-      passwordIsValid = await (user as any).comparePassword(password);
-    } else {
-      passwordIsValid = storedPassword === password;
-      if (passwordIsValid) {
-        (user as any).password = password;
-        await (user as any).save();
-      }
-    }
+    const passwordIsValid = await (user as any).comparePassword(password);
 
     if (!passwordIsValid) {
       throw new AppError("Invalid username or password", 401);
@@ -429,9 +419,9 @@ export class AuthService {
       }
     }
 
-    const ProductModel = mongoose.connection.collection("products");
-    const InventoryModel = mongoose.connection.collection("inventory_entries");
-    const SnapshotModel = mongoose.connection.collection("daily_snapshots");
+    const productModel = ProductMongooseModel;
+    const inventoryModel = InventoryEntryModel;
+    const snapshotModel = SnapshotMongooseModel;
 
     const adminStats = await Promise.all(
       admins.map(async (admin: any) => {
@@ -440,9 +430,9 @@ export class AuthService {
         const tier = computeTier(admin.role, admin.isPayed ?? false, activeSub);
 
         const [productCount, inventoryCount, snapshotAgg, lastActivity] = await Promise.all([
-          ProductModel.countDocuments({ ownerAdminId: adminId }),
-          InventoryModel.countDocuments({ ownerAdminId: adminId }),
-          SnapshotModel.aggregate([
+          productModel.countDocuments({ ownerAdminId: adminId }),
+          inventoryModel.countDocuments({ ownerAdminId: adminId }),
+          (await snapshotModel.aggregate([
             { $match: { ownerAdminId: adminId } },
             {
               $group: {
@@ -452,11 +442,11 @@ export class AuthService {
                 totalSoldItems: { $sum: "$totalSoldItems" },
               },
             },
-          ]).toArray(),
+          ])) as any[],
           Promise.all([
-            ProductModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
-            InventoryModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
-            SnapshotModel.find({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).limit(1).project({ updatedAt: 1 }).next().catch(() => null),
+            productModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).select({ updatedAt: 1 }).lean().catch(() => null),
+            inventoryModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).select({ updatedAt: 1 }).lean().catch(() => null),
+            snapshotModel.findOne({ ownerAdminId: adminId }).sort({ updatedAt: -1 }).select({ updatedAt: 1 }).lean().catch(() => null),
           ]).then((results) => {
             const dates = results
               .filter(Boolean)
@@ -465,7 +455,7 @@ export class AuthService {
           }),
         ]);
 
-        const topProducts = await SnapshotModel.aggregate([
+        const topProducts = await snapshotModel.aggregate([
           { $match: { ownerAdminId: adminId } },
           { $unwind: "$items" },
           {

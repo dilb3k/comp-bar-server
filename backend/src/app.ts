@@ -29,12 +29,11 @@ export function createApp() {
 
   app.set("trust proxy", 1);
 
-  app.use(
-    cors({
-      origin: allowedOrigins,
-      credentials: true
-    })
-  );
+  const corsOptions: Record<string, unknown> = { origin: allowedOrigins };
+  if (env.CLIENT_URL !== "*") {
+    corsOptions.credentials = true;
+  }
+  app.use(cors(corsOptions));
   app.use(helmet());
   app.use(express.json({ limit: "20mb" }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));

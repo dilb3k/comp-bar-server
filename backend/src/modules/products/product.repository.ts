@@ -63,7 +63,7 @@ export class ProductRepository {
     };
 
     if (search?.trim()) {
-      filter.name = { $regex: search.trim(), $options: "i" };
+      filter.name = { $regex: search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
     }
 
     return ProductModel.find(filter).sort({
@@ -78,12 +78,12 @@ export class ProductRepository {
     return query;
   }
 
-  async findAllUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
+  async findAllUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
     const filter = lastSyncAt
       ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
-    return ProductModel.find(filter).sort({ updatedAt: 1 });
+    return ProductModel.find(filter).sort({ updatedAt: 1 }).skip(offset).limit(limit);
   }
 
   async countActive(ownerAdminId: string, session?: any) {

@@ -10,6 +10,7 @@ export interface IInventoryEntry {
   localId: string;
   deviceId: string;
   productId: string;
+  productName: string;
   date: string;
   startQuantity: number;
   currentQuantity: number;
@@ -45,6 +46,10 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
       type: String,
       required: true,
       trim: true
+    },
+    productName: {
+      type: String,
+      default: ""
     },
     date: {
       type: String,

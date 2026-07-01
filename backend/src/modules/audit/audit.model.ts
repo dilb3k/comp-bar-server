@@ -15,7 +15,7 @@ const auditEventSchema = new Schema(
     entityType: {
       type: String,
       required: true,
-      enum: ["product", "inventory", "daily", "debtor", "sync"],
+      enum: ["product", "inventory", "daily", "debtor", "sync", "subscription"],
     },
     entityId: {
       type: String,

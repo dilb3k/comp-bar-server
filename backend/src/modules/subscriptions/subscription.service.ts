@@ -42,7 +42,7 @@ export class SubscriptionService {
     await auditService.log({
       ownerAdminId: userId,
       action: "UPDATE",
-      entityType: "product",
+      entityType: "subscription",
       entityId: `subscription-${userId}`,
       after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString() },
       source: "rest",
@@ -69,7 +69,7 @@ export class SubscriptionService {
     await auditService.log({
       ownerAdminId: userId,
       action: "UPDATE",
-      entityType: "product",
+      entityType: "subscription",
       entityId: `subscription-${userId}`,
       after: { tier: "tekin", active: false },
       source: "rest",

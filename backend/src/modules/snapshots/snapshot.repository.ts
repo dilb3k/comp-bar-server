@@ -45,12 +45,12 @@ export class SnapshotRepository {
     }).sort({ date: 1, updatedAt: 1 });
   }
 
-  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string) {
+  async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
     const filter = lastSyncAt
       ? { ownerAdminId, updatedAt: { $gte: new Date(lastSyncAt) } }
       : { ownerAdminId };
 
-    return DailySnapshotModel.find(filter).sort({ updatedAt: 1 });
+    return DailySnapshotModel.find(filter).sort({ updatedAt: 1 }).skip(offset).limit(limit);
   }
 
   async upsertByDate(

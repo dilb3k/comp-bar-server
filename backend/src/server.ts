@@ -1,3 +1,7 @@
+import http from "node:http";
+
+import mongoose from "mongoose";
+
 import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
 import { authService } from "./modules/auth/auth.service";
@@ -25,9 +29,25 @@ async function bootstrap() {
 
   const app = createApp();
 
-  app.listen(env.PORT, () => {
+  const server = http.createServer(app);
+
+  server.listen(env.PORT, () => {
     console.log(`Backend listening on http://localhost:${env.PORT}`);
   });
+
+  function gracefulShutdown(signal: string) {
+    console.log(`Received ${signal}, shutting down gracefully...`);
+    server.close(() => {
+      console.log("HTTP server closed");
+      mongoose.disconnect().then(() => {
+        console.log("MongoDB disconnected");
+        process.exit(0);
+      });
+    });
+  }
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 }
 
 void bootstrap().catch((error) => {

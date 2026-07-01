@@ -23,6 +23,11 @@ import {
   aggregateInventoryForRange,
 } from "./inventory.logic";
 
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function isProductVisibleOnDate(product: any, date: string): boolean {
   if (!product) return false;
   const p = typeof product.toJSON === "function" ? product.toJSON() : product;
@@ -63,19 +68,19 @@ function buildInventoryResponse(product: any, inventory: any) {
   const inventoryJson =
     typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
 
-  const storedBuyPrice = Number(inventoryJson?.buyPrice ?? 0);
-  const storedSellPrice = Number(inventoryJson?.sellPrice ?? 0);
-  const effectiveBuyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(productJson?.buyPrice || 0);
-  const effectiveSellPrice = storedSellPrice > 0 ? storedSellPrice : Number(productJson?.sellPrice || 0);
+  const storedBuyPrice = toNumber(inventoryJson?.buyPrice ?? 0);
+  const storedSellPrice = toNumber(inventoryJson?.sellPrice ?? 0);
+  const effectiveBuyPrice = storedBuyPrice > 0 ? storedBuyPrice : toNumber(productJson?.buyPrice || 0);
+  const effectiveSellPrice = storedSellPrice > 0 ? storedSellPrice : toNumber(productJson?.sellPrice || 0);
 
   const metrics = calculateInventoryMetrics({
-    startQuantity: Number(inventoryJson?.startQuantity ?? 0),
-    currentQuantity: Number(inventoryJson?.currentQuantity ?? 0),
+    startQuantity: toNumber(inventoryJson?.startQuantity ?? 0),
+    currentQuantity: toNumber(inventoryJson?.currentQuantity ?? 0),
     buyPrice: effectiveBuyPrice,
     sellPrice: effectiveSellPrice,
-    lockedRevenue: Number(inventoryJson?.lockedRevenue ?? 0),
-    lockedProfit: Number(inventoryJson?.lockedProfit ?? 0),
-    lockedSold: Number(inventoryJson?.lockedSold ?? 0),
+    lockedRevenue: toNumber(inventoryJson?.lockedRevenue ?? 0),
+    lockedProfit: toNumber(inventoryJson?.lockedProfit ?? 0),
+    lockedSold: toNumber(inventoryJson?.lockedSold ?? 0),
   });
 
   return {
@@ -123,19 +128,20 @@ export class InventoryService {
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
-        const storedBuyPrice = Number(entry.buyPrice ?? 0);
-        const storedSellPrice = Number(entry.sellPrice ?? 0);
+        const storedBuyPrice = toNumber(entry.buyPrice ?? 0);
+        const storedSellPrice = toNumber(entry.sellPrice ?? 0);
         return {
           ...entry.toJSON(),
           ...calculateInventoryMetrics({
-            startQuantity: Number(entry.startQuantity),
-            currentQuantity: Number(entry.currentQuantity),
+            startQuantity: toNumber(entry.startQuantity),
+            currentQuantity: toNumber(entry.currentQuantity),
             buyPrice: storedBuyPrice,
             sellPrice: storedSellPrice,
-            lockedRevenue: Number(entry.lockedRevenue ?? 0),
-            lockedProfit: Number(entry.lockedProfit ?? 0),
-            lockedSold: Number(entry.lockedSold ?? 0),
+            lockedRevenue: toNumber(entry.lockedRevenue ?? 0),
+            lockedProfit: toNumber(entry.lockedProfit ?? 0),
+            lockedSold: toNumber(entry.lockedSold ?? 0),
           }),
+          name: entry.productName || "O'chirilgan mahsulot",
           buyPrice: storedBuyPrice,
           sellPrice: storedSellPrice,
           image: "",
@@ -183,19 +189,20 @@ export class InventoryService {
       const product = productMap.get(entry.productId) ?? null;
 
       if (!product) {
-        const storedBuyPrice = Number(entry.buyPrice ?? 0);
-        const storedSellPrice = Number(entry.sellPrice ?? 0);
+        const storedBuyPrice = toNumber(entry.buyPrice ?? 0);
+        const storedSellPrice = toNumber(entry.sellPrice ?? 0);
         return {
           ...entry.toJSON(),
           ...calculateInventoryMetrics({
-            startQuantity: Number(entry.startQuantity),
-            currentQuantity: Number(entry.currentQuantity),
+            startQuantity: toNumber(entry.startQuantity),
+            currentQuantity: toNumber(entry.currentQuantity),
             buyPrice: storedBuyPrice,
             sellPrice: storedSellPrice,
-            lockedRevenue: Number(entry.lockedRevenue ?? 0),
-            lockedProfit: Number(entry.lockedProfit ?? 0),
-            lockedSold: Number(entry.lockedSold ?? 0),
+            lockedRevenue: toNumber(entry.lockedRevenue ?? 0),
+            lockedProfit: toNumber(entry.lockedProfit ?? 0),
+            lockedSold: toNumber(entry.lockedSold ?? 0),
           }),
+          name: entry.productName || "O'chirilgan mahsulot",
           buyPrice: storedBuyPrice,
           sellPrice: storedSellPrice,
           image: "",
@@ -243,89 +250,91 @@ export class InventoryService {
           productMap.set(product._id.toString(), product);
         }
 
-        const items = await Promise.all(
-          payload.items.map(async (item) => {
-            const product = productMap.get(item.productId);
+        const items: any[] = [];
+        for (const item of payload.items) {
+          const product = productMap.get(item.productId);
 
-            if (!product) {
-              throw new AppError(
-                `Active product not found for productId=${item.productId}`,
-                404,
-              );
-            }
-
-            const startQuantity = item.startQuantity;
-            const currentQuantity = item.currentQuantity ?? item.startQuantity;
-
-            if (currentQuantity > startQuantity) {
-              throw new AppError(
-                "currentQuantity cannot be greater than startQuantity",
-                422,
-              );
-            }
-
-            const existingEntry = await inventoryRepository.findByProductAndDate(
-              actor.userId,
-              (product as any).localId,
-              targetDate,
-              session,
+          if (!product) {
+            throw new AppError(
+              `Active product not found for productId=${item.productId}`,
+              404,
             );
+          }
 
-            const entry = await inventoryRepository.upsertByProductAndDateWithSession(
-              actor.userId,
-              (product as any).localId,
-              targetDate,
-              {
-                localId:
-                  item.localId ??
-                  `${targetDate}-${product.localId}`,
-                deviceId: payload.deviceId,
-                productId: (product as any).localId,
-                date: targetDate,
-                startQuantity,
-                currentQuantity,
-                buyPrice: Number(product.buyPrice || 0),
-                sellPrice: Number(product.sellPrice || 0),
-                lockedRevenue: Number((existingEntry as any)?.lockedRevenue ?? 0),
-                lockedProfit: Number((existingEntry as any)?.lockedProfit ?? 0),
-                lockedSold: Number((existingEntry as any)?.lockedSold ?? 0),
-                note: item.note ?? "",
-                createdAt: item.createdAt ? new Date(item.createdAt) : now,
-                updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
-              },
-              session,
+          const startQuantity = item.startQuantity;
+          const currentQuantity = item.currentQuantity ?? item.startQuantity;
+
+          if (currentQuantity > startQuantity) {
+            throw new AppError(
+              "currentQuantity cannot be greater than startQuantity",
+              422,
             );
+          }
 
-            await productRepository.updateById(
-              actor.userId,
-              (product as any)._id.toString(),
-              {
-                quantity: currentQuantity,
-                updatedAt: now,
-              },
-              session,
-            );
+          const existingEntry = await inventoryRepository.findByProductAndDate(
+            actor.userId,
+            (product as any).localId,
+            targetDate,
+            session,
+          );
 
-            await auditService.log({
-              ownerAdminId: actor.userId,
-              action: "START_DAY",
-              entityType: "inventory",
-              entityId: item.productId,
-              after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity },
-              source: "rest",
-              createdBy: actor.userId,
-            });
+          const entry = await inventoryRepository.upsertByProductAndDateWithSession(
+            actor.userId,
+            (product as any).localId,
+            targetDate,
+            {
+              localId:
+                item.localId ??
+                `${targetDate}-${product.localId}`,
+              deviceId: payload.deviceId,
+              productId: (product as any).localId,
+              productName: product.name ?? "",
+              date: targetDate,
+              startQuantity,
+              currentQuantity,
+              buyPrice: toNumber(product.buyPrice || 0),
+              sellPrice: toNumber(product.sellPrice || 0),
+              lockedRevenue: toNumber((existingEntry as any)?.lockedRevenue ?? 0),
+              lockedProfit: toNumber((existingEntry as any)?.lockedProfit ?? 0),
+              lockedSold: toNumber((existingEntry as any)?.lockedSold ?? 0),
+              note: item.note ?? "",
+              createdAt: item.createdAt ? new Date(item.createdAt) : now,
+              updatedAt: item.updatedAt ? new Date(item.updatedAt) : now,
+            },
+            session,
+          );
 
-            return buildInventoryResponse(
+          await productRepository.updateById(
+            actor.userId,
+            (product as any)._id.toString(),
+            {
+              quantity: currentQuantity,
+              updatedAt: now,
+            },
+            session,
+          );
+
+          await auditService.log({
+            ownerAdminId: actor.userId,
+            action: "START_DAY",
+            entityType: "inventory",
+            entityId: item.productId,
+            after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity },
+            source: "rest",
+            createdBy: actor.userId,
+          });
+
+          items.push(
+            buildInventoryResponse(
               {
                 ...product.toJSON(),
                 quantity: currentQuantity,
                 updatedAt: now.toISOString(),
               },
               entry,
-            );
-          }),
-        );
+            ),
+          );
+        }
         return items;
       });
 
@@ -334,9 +343,9 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: results.map((entry) => ({
           productName: entry.product?.name,
-          startQuantity: Number(entry.startQuantity),
-          currentQuantity: Number(entry.currentQuantity),
-          sold: Number(entry.sold),
+          startQuantity: toNumber(entry.startQuantity),
+          currentQuantity: toNumber(entry.currentQuantity),
+          sold: toNumber(entry.sold),
         })),
       });
 
@@ -383,9 +392,9 @@ export class InventoryService {
               session,
             );
 
-            const productQuantity = Number((product as any).quantity ?? 0);
+            const productQuantity = toNumber((product as any).quantity ?? 0);
 
-            if (existing && item.currentQuantity > Number((existing as any).startQuantity)) {
+            if (existing && item.currentQuantity > toNumber((existing as any).startQuantity)) {
               throw new AppError(
                 "currentQuantity cannot be greater than startQuantity",
                 422,
@@ -400,7 +409,7 @@ export class InventoryService {
             }
 
             const startQuantity = existing
-              ? Number((existing as any).startQuantity)
+              ? toNumber((existing as any).startQuantity)
               : productQuantity;
 
             const updated = await inventoryRepository.upsertByProductAndDateWithSession(
@@ -413,14 +422,15 @@ export class InventoryService {
                   `${targetDate}-${(product as any).localId}`,
                 deviceId: payload.deviceId,
                 productId: (product as any).localId,
+                productName: product.name ?? "",
                 date: targetDate,
                 startQuantity,
                 currentQuantity: item.currentQuantity,
-                buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
-                sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
-                lockedRevenue: Number((existing as any)?.lockedRevenue ?? 0),
-                lockedProfit: Number((existing as any)?.lockedProfit ?? 0),
-                lockedSold: Number((existing as any)?.lockedSold ?? 0),
+                buyPrice: toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
+                sellPrice: toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                lockedRevenue: toNumber((existing as any)?.lockedRevenue ?? 0),
+                lockedProfit: toNumber((existing as any)?.lockedProfit ?? 0),
+                lockedSold: toNumber((existing as any)?.lockedSold ?? 0),
                 note: item.note ?? (existing as any)?.note ?? "",
                 createdAt: (existing as any)?.createdAt ?? now,
                 updatedAt: now,
@@ -470,9 +480,9 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: results.map((entry) => ({
           productName: entry.product?.name,
-          startQuantity: Number(entry.startQuantity),
-          currentQuantity: Number(entry.currentQuantity),
-          sold: Number(entry.sold),
+          startQuantity: toNumber(entry.startQuantity),
+          currentQuantity: toNumber(entry.currentQuantity),
+          sold: toNumber(entry.sold),
         })),
       });
 
@@ -524,12 +534,12 @@ export class InventoryService {
               session,
             );
 
-            const productQty = Number((product as any).quantity ?? 0);
+            const productQty = toNumber((product as any).quantity ?? 0);
             const startQty = existing
-              ? Number((existing as any).startQuantity)
+              ? toNumber((existing as any).startQuantity)
               : productQty;
             const currentQty = existing
-              ? Number((existing as any).currentQuantity)
+              ? toNumber((existing as any).currentQuantity)
               : productQty;
 
             if (line.quantity > currentQty) {
@@ -551,14 +561,15 @@ export class InventoryService {
                   `${targetDate}-${(product as any).localId}`,
                 deviceId: payload.deviceId,
                 productId: (product as any).localId,
+                productName: product.name ?? "",
                 date: targetDate,
                 startQuantity: startQty,
                 currentQuantity: newCurrent,
-                buyPrice: Number((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
-                sellPrice: Number((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
-                lockedRevenue: Number((existing as any)?.lockedRevenue ?? 0),
-                lockedProfit: Number((existing as any)?.lockedProfit ?? 0),
-                lockedSold: Number((existing as any)?.lockedSold ?? 0),
+                buyPrice: toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
+                sellPrice: toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
+                lockedRevenue: toNumber((existing as any)?.lockedRevenue ?? 0),
+                lockedProfit: toNumber((existing as any)?.lockedProfit ?? 0),
+                lockedSold: toNumber((existing as any)?.lockedSold ?? 0),
                 note: (existing as any)?.note ?? "",
                 createdAt: (existing as any)?.createdAt ?? now,
                 updatedAt: now,
@@ -612,9 +623,9 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: items.map((entry) => ({
           productName: entry.product?.name,
-          startQuantity: Number(entry.startQuantity),
-          currentQuantity: Number(entry.currentQuantity),
-          sold: Number(entry.sold),
+          startQuantity: toNumber(entry.startQuantity),
+          currentQuantity: toNumber(entry.currentQuantity),
+          sold: toNumber(entry.sold),
         })),
       });
 

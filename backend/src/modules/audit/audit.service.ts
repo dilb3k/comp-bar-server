@@ -3,7 +3,7 @@ import { AuditEventModel } from "./audit.model";
 type AuditLogInput = {
   ownerAdminId: string;
   action: "CREATE" | "UPDATE" | "DELETE" | "SYNC" | "START_DAY";
-  entityType: "product" | "inventory" | "daily" | "debtor" | "sync";
+  entityType: "product" | "inventory" | "daily" | "debtor" | "sync" | "subscription";
   entityId: string;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;

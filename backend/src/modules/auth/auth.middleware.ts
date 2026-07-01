@@ -15,7 +15,7 @@ function extractBearerToken(req: Request) {
   return header.slice(7).trim();
 }
 
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   const token = extractBearerToken(req);
 
   if (!token) {
@@ -24,6 +24,12 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
   try {
     const payload = verifyAccessToken(token);
+
+    const user = await authRepository.findById(payload.userId);
+    if (!user || !user.isActive) {
+      return next(new AppError("User account is deactivated", 401));
+    }
+
     const isSuperAdmin = payload.role === "superAdmin";
     req.auth = {
       userId: payload.userId,
@@ -38,7 +44,10 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
       businessDayEffectiveFrom: payload.businessDayEffectiveFrom
     };
     return next();
-  } catch {
+  } catch (error) {
+    if (error instanceof AppError) {
+      return next(error);
+    }
     return next(new AppError("Invalid or expired token", 401));
   }
 }

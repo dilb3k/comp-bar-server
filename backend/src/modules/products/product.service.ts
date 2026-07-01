@@ -99,7 +99,7 @@ export class ProductService {
             }, session);
             break;
           } catch (err: any) {
-            if (err?.code === 11000 && attempt < 2) {
+            if (err?.code === 11000 && err?.message?.includes("displayIndex") && attempt < 2) {
               displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
               continue;
             }
