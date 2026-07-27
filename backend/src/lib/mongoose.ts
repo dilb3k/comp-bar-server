@@ -11,7 +11,10 @@ export async function connectDatabase() {
   let lastError: unknown;
 
   try {
-    await mongoose.connect(primaryUrl);
+    await mongoose.connect(primaryUrl, {
+      maxPoolSize: 5,
+      serverSelectionTimeoutMS: 5000,
+    });
     console.log("Connected to primary MongoDB");
 
     mongoose.connection.on("disconnected", () => {
