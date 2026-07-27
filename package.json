@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch backend/src/server.ts",
     "build": "tsc -p backend/tsconfig.json",
-    "start": "node backend/dist/server.js",
+    "start": "node --max-old-space-size=450 backend/dist/server.js",
     "check": "tsc --noEmit -p backend/tsconfig.json",
     "test": "tsc -p backend/tsconfig.json && NODE_ENV=test MONGODB_URL=mongodb://127.0.0.1:27017/bar-test JWT_SECRET=test_secret_min_16_chars node backend/dist/tests/business-rules.test.js"
   },

@@ -13,6 +13,14 @@ export async function connectDatabase() {
   try {
     await mongoose.connect(primaryUrl);
     console.log("Connected to primary MongoDB");
+
+    mongoose.connection.on("disconnected", () => {
+      console.warn("MongoDB disconnected");
+    });
+    mongoose.connection.on("error", (err) => {
+      console.error("MongoDB connection error:", err.message);
+    });
+
     return;
   } catch (err) {
     console.warn("Primary MongoDB connection failed, trying fallback...", (err as Error).message);

@@ -10,6 +10,13 @@ import { migrateLegacyProductRecords } from "./modules/products/product.migratio
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.migration";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
+
 async function bootstrap() {
   await connectDatabase();
   const superAdmin = await authService.findSuperAdmin();
