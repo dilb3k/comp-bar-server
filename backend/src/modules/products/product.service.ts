@@ -313,6 +313,12 @@ export class ProductService {
   async remove(actor: AuthUser, identifier: string) {
     const product = await this.getByIdentifier(actor, identifier);
 
+    await inventoryRepository.updateProductNameByProductId(
+      actor.userId,
+      (product as any).localId,
+      (product as any).name ?? "O'chirilgan mahsulot",
+    );
+
     await productRepository.deleteById(actor.userId, product._id?.toString() || (product as any).id);
 
     telegramReportService.reportProductDeleted(actor, {

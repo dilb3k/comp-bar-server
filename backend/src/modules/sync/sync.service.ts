@@ -131,7 +131,7 @@ export class SyncService {
               const lockedProfit = Number(entry.lockedProfit ?? 0);
               return {
                 productId: entry.productId,
-                productName: product?.name ?? "",
+                productName: product?.name ?? entry.productName ?? "",
                 sold: lockedSold + newSold,
                 buyPrice,
                 sellPrice,

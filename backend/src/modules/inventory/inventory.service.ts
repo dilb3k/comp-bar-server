@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { env } from "../../config/env";
 import { AppError } from "../../utils/app-error";
 import { telegramReportService } from "../../services/telegram-report.service";
+import { InventoryEntryModel } from "./inventory.model";
 import {
   assertNotFutureDayKey,
   compareDayKeys,
@@ -122,6 +123,7 @@ export class InventoryService {
 
     const productMap = new Map(products.map((product) => [product.localId, product]));
     const productsWithInventory = new Set<string>();
+    const backfillOps: Promise<unknown>[] = [];
 
     const items = entries.map((entry) => {
       productsWithInventory.add(entry.productId);
@@ -149,8 +151,21 @@ export class InventoryService {
         };
       }
 
+      if (!entry.productName && product.name) {
+        backfillOps.push(
+          InventoryEntryModel.updateOne(
+            { _id: entry._id },
+            { $set: { productName: product.name } },
+          ),
+        );
+      }
+
       return buildInventoryResponse(product, entry);
     });
+
+    if (backfillOps.length > 0) {
+      Promise.all(backfillOps).catch(() => {});
+    }
 
     const isSingleDate = from && to && from === to;
     if (isSingleDate) {
@@ -183,6 +198,7 @@ export class InventoryService {
       products.map((product) => [product.localId, product]),
     );
     const productsWithInventory = new Set<string>();
+    const backfillOps: Promise<unknown>[] = [];
 
     const items = entries.map((entry) => {
       productsWithInventory.add(entry.productId);
@@ -210,8 +226,21 @@ export class InventoryService {
         };
       }
 
+      if (!entry.productName && product.name) {
+        backfillOps.push(
+          InventoryEntryModel.updateOne(
+            { _id: entry._id },
+            { $set: { productName: product.name } },
+          ),
+        );
+      }
+
       return buildInventoryResponse(product, entry);
     });
+
+    if (backfillOps.length > 0) {
+      Promise.all(backfillOps).catch(() => {});
+    }
 
     const isSingleDate = from === to;
     if (isSingleDate) {

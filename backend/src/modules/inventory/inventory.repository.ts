@@ -94,6 +94,13 @@ export class InventoryRepository {
     );
   }
 
+  async updateProductNameByProductId(ownerAdminId: string, productId: string, productName: string) {
+    return InventoryEntryModel.updateMany(
+      { ownerAdminId, productId, productName: "" },
+      { $set: { productName } },
+    );
+  }
+
   async upsertLastWriteWins(
     ownerAdminId: string,
     payload: InventoryPayload & { localId: string; updatedAt: Date | string },
