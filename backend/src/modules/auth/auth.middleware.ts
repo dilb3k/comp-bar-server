@@ -32,8 +32,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     const isSuperAdmin = payload.role === "superAdmin";
 
-    // Clear stale pending businessDayStartHour if effective date has passed
-    // but businessDayStartHour wasn't updated (user changed it back)
+    // Fix stale pending: if effective date passed but active wasn't migrated, clear pending
     if (
       user.pendingBusinessDayStartHour != null &&
       user.businessDayEffectiveFrom &&
@@ -46,6 +45,20 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       });
       payload.pendingBusinessDayStartHour = null;
       payload.businessDayEffectiveFrom = undefined;
+    }
+
+    // Fix corrupted active: if a previous middleware version migrated pending→active
+    // but token has a different (user-intended) value, restore it
+    if (
+      user.businessDayStartHour != null &&
+      payload.businessDayStartHour != null &&
+      user.businessDayStartHour !== payload.businessDayStartHour &&
+      user.pendingBusinessDayStartHour == null &&
+      user.businessDayEffectiveFrom == null
+    ) {
+      await authRepository.updateMe(user._id.toString(), {
+        businessDayStartHour: payload.businessDayStartHour,
+      });
     }
 
     req.auth = {
