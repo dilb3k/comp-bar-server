@@ -32,7 +32,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     const isSuperAdmin = payload.role === "superAdmin";
 
-    // Apply pending businessDayStartHour change if effective date has passed
+    // Clear stale pending businessDayStartHour if effective date has passed
+    // but businessDayStartHour wasn't updated (user changed it back)
     if (
       user.pendingBusinessDayStartHour != null &&
       user.businessDayEffectiveFrom &&
@@ -40,11 +41,9 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       user.businessDayStartHour !== user.pendingBusinessDayStartHour
     ) {
       await authRepository.updateMe(user._id.toString(), {
-        businessDayStartHour: user.pendingBusinessDayStartHour,
         pendingBusinessDayStartHour: null,
         businessDayEffectiveFrom: null,
       });
-      payload.businessDayStartHour = user.pendingBusinessDayStartHour;
       payload.pendingBusinessDayStartHour = null;
       payload.businessDayEffectiveFrom = undefined;
     }
