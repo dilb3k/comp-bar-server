@@ -34,7 +34,7 @@ export function createApp() {
     corsOptions.credentials = true;
   }
   app.use(cors(corsOptions));
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(express.json({ limit: "20mb" }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
   app.use("/api", apiLimiter);
