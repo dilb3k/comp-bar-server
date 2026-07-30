@@ -104,7 +104,7 @@ const dailySnapshotSchema = new Schema<IDailySnapshot>(
     toJSON: {
       transform(_doc, ret: any) {
         ret.id = ret._id.toString();
-        delete ret._id;
+        ret._id = ret.id;
         delete ret.ownerAdminId;
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
