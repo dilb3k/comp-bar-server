@@ -31,6 +31,24 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     }
 
     const isSuperAdmin = payload.role === "superAdmin";
+
+    // Apply pending businessDayStartHour change if effective date has passed
+    if (
+      user.pendingBusinessDayStartHour != null &&
+      user.businessDayEffectiveFrom &&
+      new Date() >= new Date(user.businessDayEffectiveFrom) &&
+      user.businessDayStartHour !== user.pendingBusinessDayStartHour
+    ) {
+      await authRepository.updateMe(user._id.toString(), {
+        businessDayStartHour: user.pendingBusinessDayStartHour,
+        pendingBusinessDayStartHour: null,
+        businessDayEffectiveFrom: null,
+      });
+      payload.businessDayStartHour = user.pendingBusinessDayStartHour;
+      payload.pendingBusinessDayStartHour = null;
+      payload.businessDayEffectiveFrom = undefined;
+    }
+
     req.auth = {
       userId: payload.userId,
       username: payload.username,
