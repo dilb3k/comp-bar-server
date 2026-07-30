@@ -69,9 +69,11 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       isPayed: payload.isPayed ?? isSuperAdmin,
       tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
       subscriptionEndDate: payload.subscriptionEndDate ?? null,
-      businessDayStartHour: payload.businessDayStartHour,
-      pendingBusinessDayStartHour: payload.pendingBusinessDayStartHour,
-      businessDayEffectiveFrom: payload.businessDayEffectiveFrom
+      // Use DB values for business day settings (source of truth),
+      // not token values which may be stale
+      businessDayStartHour: (user as any).businessDayStartHour ?? payload.businessDayStartHour,
+      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour,
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom,
     };
     return next();
   } catch (error) {
