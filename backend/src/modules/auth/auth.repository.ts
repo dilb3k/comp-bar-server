@@ -40,14 +40,14 @@ export class AuthRepository {
   }
 
   async listAdmins() {
-    return UserModel.find({ role: "admin", isActive: true }).sort({
+    return UserModel.find({ role: "admin" }).sort({
       createdAt: -1,
     });
   }
 
   async updateAdmin(
     id: string,
-    payload: { username?: string; phone_number?: string; password?: string; isPayed?: boolean; businessDayStartHour?: number },
+    payload: { username?: string; phone_number?: string; password?: string; isPayed?: boolean; isActive?: boolean; businessDayStartHour?: number },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
@@ -58,6 +58,7 @@ export class AuthRepository {
     if (payload.phone_number !== undefined) user.phone_number = payload.phone_number.trim();
     if (payload.password !== undefined) user.password = payload.password;
     if (payload.isPayed !== undefined) user.isPayed = payload.isPayed;
+    if (payload.isActive !== undefined) (user as any).isActive = payload.isActive;
     if (payload.businessDayStartHour !== undefined) (user as any).businessDayStartHour = payload.businessDayStartHour;
 
     return user.save();
@@ -96,7 +97,7 @@ export class AuthRepository {
 
   async deleteAdmin(id: string) {
     if (!Types.ObjectId.isValid(id)) return null;
-    return UserModel.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true });
+    return UserModel.findByIdAndDelete(id);
   }
 }
 

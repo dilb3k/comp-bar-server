@@ -64,6 +64,7 @@ export const authController = {
       password: req.body.password,
       tier: req.body.tier,
       isPayed: req.body.isPayed,
+      isActive: req.body.isActive,
       durationMonths: req.body.durationMonths,
     });
     return sendSuccess(res, updated);

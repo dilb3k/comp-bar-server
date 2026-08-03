@@ -9,6 +9,9 @@ import { UserModel } from "./user.model";
 import { ProductModel as ProductMongooseModel } from "../products/product.model";
 import { InventoryEntryModel } from "../inventory/inventory.model";
 import { DailySnapshotModel as SnapshotMongooseModel } from "../snapshots/snapshot.model";
+import { CatalogItemModel } from "../catalog/catalog-item.model";
+import { DebtorModel } from "../debtors/debtor.model";
+import { AuditEventModel } from "../audit/audit.model";
 import type { AuthUser } from "./auth.types";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./auth.utils";
 
@@ -254,19 +257,23 @@ export class AuthService {
   async updateAdmin(
     actor: AuthUser,
     id: string,
-    payload: { username?: string; phone_number?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean; durationMonths?: number }
+    payload: { username?: string; phone_number?: string; password?: string; tier?: "tekin" | "bor" | "pro"; isPayed?: boolean; isActive?: boolean; durationMonths?: number }
   ) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can update admins", 403);
     }
 
     const existing = await authRepository.findById(id);
-    if (!existing || !existing.isActive) {
+    if (!existing) {
       throw new AppError("User not found", 404);
     }
 
     if (actor.userId !== id && existing.role !== "admin") {
       throw new AppError("Can only update admin users", 400);
+    }
+
+    if (payload.isActive === false && actor.userId === id) {
+      throw new AppError("Cannot deactivate yourself", 400);
     }
 
     if (payload.username) {
@@ -295,6 +302,7 @@ export class AuthService {
       username: payload.username,
       phone_number: payload.phone_number,
       password: payload.password,
+      isActive: payload.isActive,
     });
 
     const activeSub = await subscriptionService.getActiveSubscription(id);
@@ -378,13 +386,25 @@ export class AuthService {
     }
 
     const existing = await authRepository.findById(id);
-    if (!existing || !existing.isActive) {
+    if (!existing) {
       throw new AppError("User not found", 404);
     }
 
     if (existing.role !== "admin") {
       throw new AppError("Can only delete admin users", 400);
     }
+
+    const adminId = existing._id.toString();
+
+    await Promise.all([
+      ProductMongooseModel.deleteMany({ ownerAdminId: adminId }),
+      CatalogItemModel.deleteMany({ ownerAdminId: adminId }),
+      InventoryEntryModel.deleteMany({ ownerAdminId: adminId }),
+      SnapshotMongooseModel.deleteMany({ ownerAdminId: adminId }),
+      SubscriptionModel.deleteMany({ userId: adminId }),
+      DebtorModel.deleteMany({ createdBy: adminId }),
+      AuditEventModel.deleteMany({ ownerAdminId: adminId }),
+    ]);
 
     const deleted = await authRepository.deleteAdmin(id);
     return deleted?.toJSON() ?? null;

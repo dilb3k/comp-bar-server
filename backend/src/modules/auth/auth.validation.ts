@@ -27,6 +27,7 @@ export const updateAdminSchema = z.object({
   phone_number: z.string().trim().optional(),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional(),
+  isActive: z.boolean().optional(),
   durationMonths: z.coerce.number().int().min(1).max(12).optional(),
 });
 
