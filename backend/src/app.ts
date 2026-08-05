@@ -19,20 +19,49 @@ import { productImageRoutes } from "./modules/products/product-image.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
 
-const allowedOrigins =
-  env.CLIENT_URL === "*"
-    ? true
-    : env.CLIENT_URL.split(",").map((origin) => origin.trim()).filter(Boolean);
+const LOCAL_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:5173",
+  "null"
+];
+const DEFAULT_PRODUCTION_ORIGINS = ["https://hisvex-web.vercel.app"];
+
+function resolveAllowedOrigins(clientUrl: string, nodeEnv: string): string[] | boolean {
+  const explicit = clientUrl
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .filter((origin) => origin !== "*");
+
+  if (nodeEnv !== "production") {
+    return explicit.length > 0 ? [...new Set([...explicit, ...LOCAL_ORIGINS])] : true;
+  }
+
+  const origins = explicit.length > 0 ? explicit : DEFAULT_PRODUCTION_ORIGINS;
+  if (explicit.length === 0) {
+    console.warn(
+      `[security] CLIENT_URL is "*" or unset in production. CORS restricted to: ${origins.join(", ")}. Set CLIENT_URL on the host to override.`
+    );
+  }
+  return [...new Set([...origins, ...LOCAL_ORIGINS])];
+}
 
 export function createApp() {
   const app = express();
 
   app.set("trust proxy", 1);
+  app.disable("x-powered-by");
 
-  const corsOptions: Record<string, unknown> = { origin: allowedOrigins };
-  if (env.CLIENT_URL !== "*") {
-    corsOptions.credentials = true;
-  }
+  const origins = resolveAllowedOrigins(env.CLIENT_URL, env.NODE_ENV);
+  const corsOptions: Record<string, unknown> = {
+    origin: origins,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+    credentials: origins !== true,
+    maxAge: 86400
+  };
   app.use(cors(corsOptions));
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(express.json({ limit: "20mb" }));
