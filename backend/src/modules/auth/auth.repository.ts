@@ -66,7 +66,7 @@ export class AuthRepository {
 
   async updateMe(
     id: string,
-    payload: { username?: string; phone_number?: string; businessDayStartHour?: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null; blockCode?: string | null },
+    payload: { username?: string; phone_number?: string; businessDayStartHour?: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null; blockCode?: string | null; activeSessionId?: string | null },
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
@@ -90,6 +90,9 @@ export class AuthRepository {
     }
     if (payload.blockCode !== undefined) {
       (user as any).blockCode = payload.blockCode;
+    }
+    if (payload.activeSessionId !== undefined) {
+      (user as any).activeSessionId = payload.activeSessionId;
     }
 
     return user.save();

@@ -30,6 +30,13 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       return next(new AppError("User account is deactivated", 401));
     }
 
+    // Single active session: the token's sessionId must match the account's
+    // current session. Otherwise the session was replaced by another login.
+    const activeId = (user as any).activeSessionId;
+    if (activeId && (!payload.sessionId || payload.sessionId !== activeId)) {
+      return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401));
+    }
+
     const isSuperAdmin = payload.role === "superAdmin";
 
     // Fix stale pending: if effective date passed but active wasn't migrated, clear pending
@@ -69,6 +76,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       isPayed: payload.isPayed ?? isSuperAdmin,
       tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
       subscriptionEndDate: payload.subscriptionEndDate ?? null,
+      sessionId: payload.sessionId,
       // Use DB values for business day settings (source of truth),
       // not token values which may be stale
       businessDayStartHour: (user as any).businessDayStartHour ?? payload.businessDayStartHour,

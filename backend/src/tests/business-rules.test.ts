@@ -9,6 +9,7 @@ import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snaps
 import { normalizeProductImage } from "../modules/products/product-image";
 import { updateProductSchema } from "../modules/products/product.validation";
 import { syncPayloadSchema } from "../modules/sync/sync.validation";
+import { normalizePhone, maskPhone } from "../modules/auth/auth.utils";
 
 function run(name: string, fn: () => void) {
   try {
@@ -205,4 +206,34 @@ run("sync validation passes valid inventory", () => {
     ]
   });
   assert.equal(result.success, true);
+});
+
+run("normalizePhone strips formatting and keeps digits", () => {
+  assert.equal(normalizePhone("+998 90 123 45 67"), "998901234567");
+  assert.equal(normalizePhone("(998) 90-123-45-67"), "998901234567");
+  assert.equal(normalizePhone(undefined), "");
+  assert.equal(normalizePhone(""), "");
+});
+
+run("maskPhone hides middle digits, keeps head and tail", () => {
+  const masked = maskPhone("998901234567");
+  assert.equal(masked.startsWith("+998"), true);
+  assert.equal(masked.includes("67"), true);
+  assert.equal(masked.replace(/[^•]/g, "").length >= 4, true);
+  assert.equal(maskPhone("12"), "+998 ••• ••• •• ••");
+});
+
+run("login verification decision requires active session AND phone", () => {
+  const maskSession = (user: { activeSessionId?: string | null; phone_number?: string }) => {
+    if (user.activeSessionId && user.phone_number && normalizePhone(user.phone_number).length >= 6) {
+      return { maskedPhone: maskPhone(user.phone_number) };
+    }
+    return null;
+  };
+  assert.equal(maskSession({ activeSessionId: null, phone_number: "+998901234567" }), null);
+  assert.equal(maskSession({ activeSessionId: "s1", phone_number: "" }), null);
+  assert.equal(maskSession({ activeSessionId: "s1", phone_number: "12" }), null);
+  const r = maskSession({ activeSessionId: "s1", phone_number: "+998901234567" });
+  assert.notEqual(r, null);
+  assert.equal((r as any).maskedPhone.startsWith("+998"), true);
 });

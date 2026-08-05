@@ -57,6 +57,10 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    activeSessionId: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,

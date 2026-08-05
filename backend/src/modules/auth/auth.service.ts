@@ -13,9 +13,47 @@ import { CatalogItemModel } from "../catalog/catalog-item.model";
 import { DebtorModel } from "../debtors/debtor.model";
 import { AuditEventModel } from "../audit/audit.model";
 import type { AuthUser } from "./auth.types";
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./auth.utils";
+import {
+  createSessionId,
+  maskPhone,
+  normalizePhone,
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "./auth.utils";
 
 export class AuthService {
+  private async issueSession(user: any) {
+    const sessionId = createSessionId();
+    await authRepository.updateMe(user._id.toString(), { activeSessionId: sessionId });
+    return sessionId;
+  }
+
+  private buildAuthUser(user: any, isPayed: boolean, tier: any, activeSub: any, sessionId?: string): AuthUser {
+    return {
+      userId: user._id.toString(),
+      username: (user as any).username,
+      phone_number: user.phone_number,
+      role: user.role,
+      isPayed,
+      tier,
+      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
+      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
+      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
+      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
+      blockCode: (user as any).blockCode ?? null,
+      sessionId,
+    };
+  }
+
+  private maskSession(user: any): { maskedPhone: string } | null {
+    const phone = user.phone_number;
+    if (user.activeSessionId && phone && normalizePhone(phone).length >= 6) {
+      return { maskedPhone: maskPhone(phone) };
+    }
+    return null;
+  }
+
   async register(payload: { username: string; password: string; phone_number?: string; businessDayStartHour?: number }) {
     const existing = await authRepository.findByUsername(payload.username);
 
@@ -58,23 +96,13 @@ export class AuthService {
 
     const tier = computeTier(role, isPayed, activeSub);
 
-    const authUser: AuthUser = {
-      userId: user._id.toString(),
-      username: (user as any).username,
-      phone_number: user.phone_number,
-      role: user.role,
-      isPayed,
-      tier,
-      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
-      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
-      blockCode: (user as any).blockCode ?? null
-    };
+    const sessionId = await this.issueSession(user);
+
+    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString() }),
+      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
       user: { ...user.toJSON(), isPayed, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
@@ -92,6 +120,16 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
+    // Account already has an active session on another device. Require the
+    // account owner's phone number to confirm identity before taking over.
+    const active = this.maskSession(user);
+    if (active) {
+      return {
+        needsPhoneVerification: true,
+        maskedPhone: active.maskedPhone,
+        message: "Bu akkaunt boshqa qurilmada faol. Davom etish uchun telefon raqamingizni tasdiqlang.",
+      };
+    }
 
     await subscriptionService.refreshExpiredSubscriptions();
 
@@ -99,25 +137,55 @@ export class AuthService {
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const authUser: AuthUser = {
-      userId: user._id.toString(),
-      username: (user as any).username,
-      phone_number: user.phone_number,
-      role: user.role,
-      isPayed,
-      tier,
-      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
-      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
-      blockCode: (user as any).blockCode ?? null
-    };
+    const sessionId = await this.issueSession(user);
+
+    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString() }),
+      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
+  }
+
+  async loginWithPhoneVerification(username: string, password: string, phone_number: string) {
+    const user = await authRepository.findByUsername(username);
+
+    if (!user || !user.isActive) {
+      throw new AppError("Invalid username, password or phone number", 401);
+    }
+
+    const passwordIsValid = await (user as any).comparePassword(password);
+    if (!passwordIsValid) {
+      throw new AppError("Invalid username, password or phone number", 401);
+    }
+
+    const stored = normalizePhone(user.phone_number);
+    const provided = normalizePhone(phone_number);
+    if (!stored || !provided || stored !== provided) {
+      throw new AppError("Telefon raqam noto'g'ri. Iltimos ro'yxatdan o'tgan raqamni kiriting.", 401);
+    }
+
+    await subscriptionService.refreshExpiredSubscriptions();
+
+    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(user.role, isPayed, activeSub);
+
+    // New session invalidates the previous one (old device gets kicked).
+    const sessionId = await this.issueSession(user);
+
+    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
+
+    return {
+      token: signAccessToken(authUser),
+      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
+    };
+  }
+
+  async logout(userId: string) {
+    await authRepository.updateMe(userId, { activeSessionId: null });
   }
 
   async getCurrentUser(userId: string) {
@@ -141,7 +209,7 @@ export class AuthService {
   }
 
   async refresh(token: string) {
-    let decoded: { userId: string };
+    let decoded: { userId: string; sessionId?: string };
     try {
       decoded = verifyRefreshToken(token);
     } catch {
@@ -153,29 +221,23 @@ export class AuthService {
       throw new AppError("User not found", 404);
     }
 
+    // Session was replaced by another login → this refresh token is dead.
+    const activeId = (user as any).activeSessionId;
+    if (activeId ? decoded.sessionId !== activeId : decoded.sessionId) {
+      throw new AppError("Sessiya tugatildi. Boshqa qurilmadan kirilgan. Qayta kiring.", 401);
+    }
+
     await subscriptionService.refreshExpiredSubscriptions();
 
     const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const authUser: AuthUser = {
-      userId: user._id.toString(),
-      username: (user as any).username,
-      phone_number: user.phone_number,
-      role: user.role,
-      isPayed,
-      tier,
-      subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
-      businessDayStartHour: (user as any).businessDayStartHour ?? 0,
-      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour ?? null,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom?.toISOString?.() ?? null,
-      blockCode: (user as any).blockCode ?? null
-    };
+    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, decoded.sessionId);
 
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString() }),
+      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId: decoded.sessionId }),
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
@@ -366,13 +428,14 @@ export class AuthService {
       tier,
       subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null,
       businessDayStartHour: actor.businessDayStartHour ?? 0,
+      sessionId: actor.sessionId,
       ...authUserUpdate,
     };
 
     return {
       user: updated.toJSON(),
       token: signAccessToken(updatedUser),
-      refreshToken: signRefreshToken({ userId: actor.userId }),
+      refreshToken: signRefreshToken({ userId: actor.userId, sessionId: actor.sessionId }),
     };
   }
 

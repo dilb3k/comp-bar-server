@@ -31,6 +31,21 @@ export const authController = {
     return sendSuccess(res, result);
   },
 
+  async loginWithPhoneVerification(req: Request, res: Response) {
+    const result = await authService.loginWithPhoneVerification(
+      req.body.username,
+      req.body.password,
+      req.body.phone_number
+    );
+    return sendSuccess(res, result);
+  },
+
+  async logout(req: Request, res: Response) {
+    const actor = requireAuth(req);
+    await authService.logout(actor.userId);
+    return sendSuccess(res, { success: true });
+  },
+
   async me(req: Request, res: Response) {
     const actor = requireAuth(req);
     const user = await authService.getCurrentUser(actor.userId);
