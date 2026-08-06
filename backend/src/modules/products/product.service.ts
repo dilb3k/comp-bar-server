@@ -233,24 +233,33 @@ export class ProductService {
           );
 
           const oldSellPrice = Number((inventoryEntry as any).sellPrice ?? 0);
+          const oldBuyPrice = Number((inventoryEntry as any).buyPrice ?? 0);
           let lockedRev = Number((inventoryEntry as any).lockedRevenue ?? 0);
           let lockedProf = Number((inventoryEntry as any).lockedProfit ?? 0);
           let lockedS = Number((inventoryEntry as any).lockedSold ?? 0);
           let startQ = adjusted.startQuantity;
           let currentQ = adjusted.currentQuantity;
           let saveSellPrice = oldSellPrice;
+          let saveBuyPrice = oldBuyPrice;
 
-          const userChangedSellPrice = payload.sellPrice !== undefined;
-          if (userChangedSellPrice && nextSellPrice !== oldSellPrice) {
+          const userChangedSellPrice = payload.sellPrice !== undefined && nextSellPrice !== oldSellPrice;
+          // Mirrors the sellPrice-correction handling above: an admin correcting the
+          // cost basis mid-day must not silently rewrite profit for units already
+          // sold today. Lock in revenue/profit for units sold so far using the
+          // entry's pre-correction prices, then let the corrected price(s) apply
+          // prospectively from this point forward.
+          const userChangedBuyPrice = payload.buyPrice !== undefined && nextBuyPrice !== oldBuyPrice;
+          if (userChangedSellPrice || userChangedBuyPrice) {
             const sold = adjusted.soldSoFar;
             if (sold > 0) {
               lockedRev += sold * oldSellPrice;
-              lockedProf += sold * (oldSellPrice - Number((inventoryEntry as any).buyPrice ?? 0));
+              lockedProf += sold * (oldSellPrice - oldBuyPrice);
               lockedS += sold;
               startQ = adjusted.currentQuantity;
               currentQ = adjusted.currentQuantity;
             }
-            saveSellPrice = nextSellPrice;
+            if (userChangedSellPrice) saveSellPrice = nextSellPrice;
+            if (userChangedBuyPrice) saveBuyPrice = nextBuyPrice;
           }
 
           await inventoryRepository.upsertByProductAndDateWithSession(actor.userId, (product as any).localId, today, {
@@ -260,7 +269,7 @@ export class ProductService {
             date: today,
             startQuantity: startQ,
             currentQuantity: currentQ,
-            buyPrice: Number((inventoryEntry as any).buyPrice ?? 0),
+            buyPrice: saveBuyPrice,
             sellPrice: saveSellPrice,
             lockedRevenue: lockedRev,
             lockedProfit: lockedProf,
