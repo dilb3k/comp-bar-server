@@ -51,12 +51,15 @@ export function errorMiddleware(
     });
   }
 
-  const message = error instanceof Error ? error.message : "Internal server error";
+  // Unclassified/unexpected error: log the real details server-side for
+  // debugging, but never leak raw internals (stack traces, DB/file paths,
+  // library error text) to the client — return a generic, safe message.
+  console.error("Unhandled error:", error);
 
   return res.status(500).json({
     success: false,
     error: {
-      message: translateMessage(message, lang),
+      message: translateMessage("Internal server error", lang),
       details: null
     }
   });
