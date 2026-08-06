@@ -80,12 +80,14 @@ export class ProductService {
           }
         }
 
+        let localId = payload.localId ?? createLocalId("prd", payload.deviceId);
+
         let p: any;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             p = await productRepository.create({
               ownerAdminId: actor.userId,
-              localId: payload.localId ?? createLocalId("prd", payload.deviceId),
+              localId,
               deviceId: payload.deviceId,
               name: payload.name,
               quantity: payload.quantity,
@@ -101,6 +103,10 @@ export class ProductService {
           } catch (err: any) {
             if (err?.code === 11000 && err?.message?.includes("displayIndex") && attempt < 2) {
               displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
+              continue;
+            }
+            if (err?.code === 11000 && err?.message?.includes("localId") && !payload.localId && attempt < 2) {
+              localId = createLocalId("prd", payload.deviceId);
               continue;
             }
             throw err;
@@ -286,6 +292,86 @@ export class ProductService {
           entityId: (product as any).localId,
           before: { quantity: (product as any).quantity, buyPrice: (product as any).buyPrice, sellPrice: (product as any).sellPrice },
           after: { quantity: nextQuantity, buyPrice: nextBuyPrice, sellPrice: nextSellPrice },
+          source: "rest",
+          createdBy: actor.userId,
+        });
+
+        return up;
+      });
+
+      if (updatedProduct) {
+        telegramReportService.reportProductUpdated(actor, {
+          localId: (updatedProduct as any).localId,
+          name: (updatedProduct as any).name,
+          quantity: (updatedProduct as any).quantity,
+          buyPrice: (updatedProduct as any).buyPrice,
+          sellPrice: (updatedProduct as any).sellPrice,
+          deviceId: (updatedProduct as any).deviceId
+        });
+      }
+
+      return updatedProduct;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  async restock(actor: AuthUser, identifier: string, deltaQuantity: number) {
+    const product = await this.getByIdentifier(actor, identifier);
+
+    if (typeof deltaQuantity !== "number" || !Number.isFinite(deltaQuantity) || deltaQuantity <= 0) {
+      throw new AppError("deltaQuantity must be a positive number", 422);
+    }
+
+    const updatedAt = new Date();
+    const businessHour = getEffectiveHour(actor);
+    const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
+
+    const session = await mongoose.startSession();
+    try {
+      const updatedProduct = await session.withTransaction(async () => {
+        const up = await productRepository.incrementQuantity(
+          actor.userId,
+          (product as any)._id.toString(),
+          deltaQuantity,
+          session
+        );
+
+        if (!up) {
+          throw new AppError("Product not found", 404);
+        }
+
+        const inventoryEntry = await inventoryRepository.incrementQuantitiesByProductAndDate(
+          actor.userId,
+          (product as any).localId,
+          today,
+          deltaQuantity,
+          session
+        );
+
+        if (!inventoryEntry) {
+          await inventoryRepository.upsertByProductAndDateWithSession(actor.userId, (product as any).localId, today, {
+            localId: `${today}-${(product as any).localId}`,
+            deviceId: (product as any).deviceId,
+            productId: (product as any).localId,
+            date: today,
+            startQuantity: (up as any).quantity,
+            currentQuantity: (up as any).quantity,
+            buyPrice: Number((up as any).buyPrice || 0),
+            sellPrice: Number((up as any).sellPrice || 0),
+            note: "",
+            createdAt: updatedAt,
+            updatedAt
+          }, session);
+        }
+
+        await auditService.log({
+          ownerAdminId: actor.userId,
+          action: "RESTOCK",
+          entityType: "product",
+          entityId: (product as any).localId,
+          before: { quantity: (product as any).quantity },
+          after: { quantity: (up as any).quantity, delta: deltaQuantity },
           source: "rest",
           createdBy: actor.userId,
         });

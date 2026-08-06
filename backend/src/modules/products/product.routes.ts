@@ -5,6 +5,7 @@ import {
   createProductSchema,
   productIdentifierParamsSchema,
   productSearchQuerySchema,
+  restockProductSchema,
   updateProductSchema
 } from "./product.validation";
 import { productController } from "./product.controller";
@@ -36,6 +37,15 @@ router.put(
     body: updateProductSchema
   }),
   asyncHandler(productController.update)
+);
+
+router.patch(
+  "/:id/restock",
+  validateRequest({
+    params: productIdentifierParamsSchema,
+    body: restockProductSchema
+  }),
+  asyncHandler(productController.restock)
 );
 
 router.delete(

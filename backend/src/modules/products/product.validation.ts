@@ -34,6 +34,10 @@ export const createProductSchema = productBaseSchema.superRefine((value, ctx) =>
   }
 });
 
+export const restockProductSchema = z.object({
+  quantity: z.number().positive("quantity must be > 0")
+});
+
 export const updateProductSchema = productBaseSchema.partial().extend({
   deviceId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1).optional(),

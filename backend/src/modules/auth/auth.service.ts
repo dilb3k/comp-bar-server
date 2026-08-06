@@ -9,7 +9,6 @@ import { UserModel } from "./user.model";
 import { ProductModel as ProductMongooseModel } from "../products/product.model";
 import { InventoryEntryModel } from "../inventory/inventory.model";
 import { DailySnapshotModel as SnapshotMongooseModel } from "../snapshots/snapshot.model";
-import { CatalogItemModel } from "../catalog/catalog-item.model";
 import { DebtorModel } from "../debtors/debtor.model";
 import { AuditEventModel } from "../audit/audit.model";
 import type { AuthUser } from "./auth.types";
@@ -471,7 +470,6 @@ export class AuthService {
 
     await Promise.all([
       ProductMongooseModel.deleteMany({ ownerAdminId: adminId }),
-      CatalogItemModel.deleteMany({ ownerAdminId: adminId }),
       InventoryEntryModel.deleteMany({ ownerAdminId: adminId }),
       SnapshotMongooseModel.deleteMany({ ownerAdminId: adminId }),
       SubscriptionModel.deleteMany({ userId: adminId }),

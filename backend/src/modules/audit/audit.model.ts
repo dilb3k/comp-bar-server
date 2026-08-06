@@ -10,7 +10,7 @@ const auditEventSchema = new Schema(
     action: {
       type: String,
       required: true,
-      enum: ["CREATE", "UPDATE", "DELETE", "SYNC", "START_DAY"],
+      enum: ["CREATE", "UPDATE", "DELETE", "SYNC", "START_DAY", "RESTOCK"],
     },
     entityType: {
       type: String,

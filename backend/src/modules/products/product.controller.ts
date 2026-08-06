@@ -49,6 +49,12 @@ export const productController = {
     return sendSuccess(res, { product, ...state });
   },
 
+  async restock(req: Request, res: Response) {
+    const product = await productService.restock(requireAuth(req), String(req.params.id), req.body.quantity);
+    const state = await rebuildTodayState(requireAuth(req));
+    return sendSuccess(res, { product, ...state });
+  },
+
   async remove(req: Request, res: Response) {
     await productService.remove(requireAuth(req), String(req.params.id));
     const state = await rebuildTodayState(requireAuth(req));

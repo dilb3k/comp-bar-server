@@ -94,6 +94,22 @@ export class InventoryRepository {
     );
   }
 
+  async incrementQuantitiesByProductAndDate(
+    ownerAdminId: string,
+    productId: string,
+    date: string,
+    delta: number,
+    session?: any
+  ) {
+    const options: Record<string, unknown> = { new: true };
+    if (session) options.session = session;
+    return InventoryEntryModel.findOneAndUpdate(
+      { ownerAdminId, productId, date },
+      { $inc: { startQuantity: delta, currentQuantity: delta }, $set: { updatedAt: new Date() } },
+      options
+    );
+  }
+
   async updateProductNameByProductId(ownerAdminId: string, productId: string, productName: string) {
     return InventoryEntryModel.updateMany(
       { ownerAdminId, productId, productName: "" },

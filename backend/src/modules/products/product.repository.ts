@@ -144,6 +144,16 @@ export class ProductRepository {
     );
   }
 
+  async incrementQuantity(ownerAdminId: string, id: string, delta: number, session?: any) {
+    const options: Record<string, unknown> = { new: true };
+    if (session) options.session = session;
+    return ProductModel.findOneAndUpdate(
+      { _id: id, ownerAdminId },
+      { $inc: { quantity: delta }, $set: { updatedAt: new Date() } },
+      options
+    );
+  }
+
   async deleteById(ownerAdminId: string, id: string) {
     return ProductModel.findOneAndDelete({ _id: id, ownerAdminId });
   }

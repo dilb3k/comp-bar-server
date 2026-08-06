@@ -28,6 +28,13 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+if (parsed.data.NODE_ENV === "production" && !parsed.data.JWT_REFRESH_SECRET) {
+  console.error(
+    "JWT_REFRESH_SECRET is required in production. Refusing to boot with a secret derived from JWT_SECRET."
+  );
+  process.exit(1);
+}
+
 export const env = {
   ...parsed.data,
   JWT_REFRESH_SECRET: parsed.data.JWT_REFRESH_SECRET || (parsed.data.JWT_SECRET + "_refresh_salt_2024"),
