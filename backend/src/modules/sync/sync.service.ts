@@ -95,17 +95,16 @@ export class SyncService {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        await Promise.all(
-          processedProducts.map((item) =>
-            productRepository.upsertLastWriteWins(actor.userId, item as any, session)
-          )
-        );
+        // NOTE: these must run sequentially (not via Promise.all) — the MongoDB
+        // driver does not support concurrent operations sharing one ClientSession;
+        // running them in parallel is undefined behaviour per the driver docs.
+        for (const item of processedProducts) {
+          await productRepository.upsertLastWriteWins(actor.userId, item as any, session);
+        }
 
-        await Promise.all(
-          validInventory.map((item) =>
-            inventoryRepository.upsertLastWriteWins(actor.userId, item as any, session)
-          )
-        );
+        for (const item of validInventory) {
+          await inventoryRepository.upsertLastWriteWins(actor.userId, item as any, session);
+        }
 
         // The generic sync path is also how an offline sale/inventory edit reaches the
         // server (desktop/mobile queue InventoryEntry deltas while offline, then replay
@@ -114,33 +113,35 @@ export class SyncService {
         // InventoryEntry.currentQuantity for "today" inside their own transactions — do
         // the same here so a synced offline change doesn't leave the product's top-level
         // stock count stale relative to the day's authoritative inventory record.
-        const productQuantityUpdates = new Map<string, number>();
+        const productQuantityUpdates = new Map<string, { quantity: number; updatedAt: Date }>();
         for (const item of validInventory) {
           const productId = item.productId as string | undefined;
           const currentQuantity = item.currentQuantity;
           if (!productId || typeof currentQuantity !== "number" || !Number.isFinite(currentQuantity)) {
             continue;
           }
-          // Multiple queued items can touch the same product; the last one in payload
-          // order is treated as authoritative for this sync call (they all pertain to
-          // the same "today" business date — past/future days were already rejected).
-          productQuantityUpdates.set(productId, currentQuantity);
+          // Multiple queued items can touch the same product; consistent with
+          // upsertLastWriteWins elsewhere in this file, the item with the latest
+          // updatedAt wins — not simply the last one encountered in payload order.
+          const itemUpdatedAt = item.updatedAt as Date;
+          const existing = productQuantityUpdates.get(productId);
+          if (!existing || itemUpdatedAt.getTime() >= existing.updatedAt.getTime()) {
+            productQuantityUpdates.set(productId, { quantity: currentQuantity, updatedAt: itemUpdatedAt });
+          }
         }
-        await Promise.all(
-          Array.from(productQuantityUpdates.entries()).map(([productLocalId, quantity]) =>
-            productRepository.setQuantityByLocalId(actor.userId, productLocalId, quantity, session)
-          )
-        );
+        for (const [productLocalId, { quantity }] of productQuantityUpdates.entries()) {
+          await productRepository.setQuantityByLocalId(actor.userId, productLocalId, quantity, session);
+        }
 
         for (const item of validSnapshots) {
           const itemDate = item.date as string | undefined;
           let snapshotData = { ...item };
 
           if (itemDate && itemDate.length > 0) {
-            const [entries, products] = await Promise.all([
-              inventoryRepository.findByDate(actor.userId, itemDate, session),
-              productRepository.findAllByOwner(actor.userId, session)
-            ]);
+            // Sequential (not Promise.all) — both queries share the same
+            // ClientSession, and concurrent ops on one session are unsupported.
+            const entries = await inventoryRepository.findByDate(actor.userId, itemDate, session);
+            const products = await productRepository.findAllByOwner(actor.userId, session);
 
             const productMap = new Map(products.map((p: any) => [p.localId, p]));
             const derivedItems = entries.map((entry: any) => {
