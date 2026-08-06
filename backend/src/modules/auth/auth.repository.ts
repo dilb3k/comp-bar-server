@@ -98,6 +98,14 @@ export class AuthRepository {
     return user.save();
   }
 
+  async pushVerifiedDevice(id: string, deviceId: string) {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return UserModel.updateOne(
+      { _id: id, verifiedDeviceIds: { $ne: deviceId } },
+      { $push: { verifiedDeviceIds: deviceId } },
+    );
+  }
+
   async deleteAdmin(id: string) {
     if (!Types.ObjectId.isValid(id)) return null;
     return UserModel.findByIdAndDelete(id);

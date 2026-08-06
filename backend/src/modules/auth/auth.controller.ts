@@ -26,7 +26,8 @@ export const authController = {
   async login(req: Request, res: Response) {
     const result = await authService.login(
       req.body.username,
-      req.body.password
+      req.body.password,
+      req.body.deviceId
     );
     return sendSuccess(res, result);
   },
@@ -35,14 +36,15 @@ export const authController = {
     const result = await authService.loginWithPhoneVerification(
       req.body.username,
       req.body.password,
-      req.body.phone_number
+      req.body.phone_number,
+      req.body.deviceId
     );
     return sendSuccess(res, result);
   },
 
   async logout(req: Request, res: Response) {
     const actor = requireAuth(req);
-    await authService.logout(actor.userId);
+    await authService.logout(actor.userId, actor.sessionId);
     return sendSuccess(res, { success: true });
   },
 

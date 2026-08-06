@@ -7,7 +7,7 @@ const router = Router();
 
 router.get(
   "/",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(statsController.get),
 );

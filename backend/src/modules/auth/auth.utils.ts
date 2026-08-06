@@ -54,3 +54,24 @@ export function maskPhone(value: string | undefined | null): string {
   const middle = digits.slice(4, -2).replace(/./g, "•");
   return `+${head} ${middle} ${tail}`;
 }
+
+export interface PhoneVerificationContext {
+  activeSessionId?: string | null;
+  phone_number?: string;
+  verifiedDeviceIds?: string[];
+}
+
+export function phoneVerificationRequired(user: PhoneVerificationContext, deviceId?: string | null): boolean {
+  if (!user.activeSessionId || !user.phone_number || normalizePhone(user.phone_number).length < 6) {
+    return false;
+  }
+  if (deviceId && (user.verifiedDeviceIds ?? []).includes(deviceId)) {
+    return false;
+  }
+  return true;
+}
+
+export function shouldClearActiveSession(user: { activeSessionId?: string | null }, sessionId?: string | null): boolean {
+  if (!sessionId) return false;
+  return user.activeSessionId === sessionId;
+}

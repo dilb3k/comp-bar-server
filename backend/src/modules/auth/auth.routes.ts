@@ -32,7 +32,7 @@ router.post(
 
 router.post(
   "/logout",
-  authenticate,
+  authenticate({ allowStale: true }),
   asyncHandler(authController.logout)
 );
 
@@ -45,34 +45,34 @@ router.post(
 
 router.get(
   "/me",
-  authenticate,
+  authenticate(),
   asyncHandler(authController.me)
 );
 
 router.put(
   "/me",
-  authenticate,
+  authenticate(),
   validateRequest({ body: updateMeSchema }),
   asyncHandler(authController.updateMe)
 );
 
 router.get(
   "/admins",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(authController.listAdmins)
 );
 
 router.get(
   "/admins/stats",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(authController.adminStats)
 );
 
 router.post(
   "/admins",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   validateRequest({ body: createAdminSchema }),
   asyncHandler(authController.createAdmin)
@@ -80,7 +80,7 @@ router.post(
 
 router.put(
   "/admins/:id",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   validateRequest({ body: updateAdminSchema }),
   asyncHandler(authController.updateAdmin)
@@ -88,7 +88,7 @@ router.put(
 
 router.delete(
   "/admins/:id",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(authController.deleteAdmin)
 );

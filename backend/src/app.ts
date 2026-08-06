@@ -82,13 +82,13 @@ export function createApp() {
   app.use("/api/health", healthRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/products", productImageRoutes);
-  app.use("/api/products", authenticate, productRoutes);
-  app.use("/api/debtors", authenticate, debtorRoutes);
-  app.use("/api/inventory", authenticate, inventoryRoutes);
-  app.use("/api/snapshots", authenticate, snapshotRoutes);
-  app.use("/api/sync", authenticate, syncRoutes);
-  app.use("/api/subscriptions", authenticate, subscriptionRoutes);
-  app.use("/api/stats", authenticate, statsRoutes);
+  app.use("/api/products", authenticate(), productRoutes);
+  app.use("/api/debtors", authenticate(), debtorRoutes);
+  app.use("/api/inventory", authenticate(), inventoryRoutes);
+  app.use("/api/snapshots", authenticate(), snapshotRoutes);
+  app.use("/api/sync", authenticate(), syncRoutes);
+  app.use("/api/subscriptions", authenticate(), subscriptionRoutes);
+  app.use("/api/stats", authenticate(), statsRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);

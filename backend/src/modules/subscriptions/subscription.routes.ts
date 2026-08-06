@@ -10,7 +10,7 @@ const router = Router();
 
 router.post(
   "/activate",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   validateRequest({ body: activateSubscriptionSchema }),
   asyncHandler(subscriptionController.activate)
@@ -18,14 +18,14 @@ router.post(
 
 router.post(
   "/deactivate/:userId",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(subscriptionController.deactivate)
 );
 
 router.get(
   "/",
-  authenticate,
+  authenticate(),
   authorize("superAdmin"),
   asyncHandler(subscriptionController.list)
 );

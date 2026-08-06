@@ -15,27 +15,33 @@ function extractBearerToken(req: Request) {
   return header.slice(7).trim();
 }
 
-export async function authenticate(req: Request, _res: Response, next: NextFunction) {
-  const token = extractBearerToken(req);
+export function authenticate(options?: { allowStale?: boolean }) {
+  const allowStale = options?.allowStale ?? false;
+  return async function authenticateMiddleware(req: Request, _res: Response, next: NextFunction) {
+    const token = extractBearerToken(req);
 
-  if (!token) {
-    return next(new AppError("Authorization token is required", 401));
-  }
-
-  try {
-    const payload = verifyAccessToken(token);
-
-    const user = await authRepository.findById(payload.userId);
-    if (!user || !user.isActive) {
-      return next(new AppError("User account is deactivated", 401));
+    if (!token) {
+      return next(new AppError("Authorization token is required", 401));
     }
 
-    // Single active session: the token's sessionId must match the account's
-    // current session. Otherwise the session was replaced by another login.
-    const activeId = (user as any).activeSessionId;
-    if (activeId && (!payload.sessionId || payload.sessionId !== activeId)) {
-      return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401));
-    }
+    try {
+      const payload = verifyAccessToken(token);
+
+      const user = await authRepository.findById(payload.userId);
+      if (!user || !user.isActive) {
+        return next(new AppError("User account is deactivated", 401));
+      }
+
+      // Single active session: the token's sessionId must match the account's
+      // current session. Otherwise the session was replaced by another login.
+      // allowStale is used by logout so a kicked device can still log itself out
+      // without destroying the live session.
+      const activeId = (user as any).activeSessionId;
+      const tokenSession = payload.sessionId;
+      const validSession = activeId ? tokenSession === activeId : !tokenSession;
+      if (!allowStale && !validSession) {
+        return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401));
+      }
 
     const isSuperAdmin = payload.role === "superAdmin";
 
@@ -89,7 +95,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       return next(error);
     }
     return next(new AppError("Invalid or expired token", 401));
-  }
+    }
+  };
 }
 
 export function authorize(...roles: UserRole[]) {

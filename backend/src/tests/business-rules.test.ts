@@ -9,7 +9,7 @@ import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snaps
 import { normalizeProductImage } from "../modules/products/product-image";
 import { updateProductSchema } from "../modules/products/product.validation";
 import { syncPayloadSchema } from "../modules/sync/sync.validation";
-import { normalizePhone, maskPhone } from "../modules/auth/auth.utils";
+import { normalizePhone, maskPhone, phoneVerificationRequired, shouldClearActiveSession } from "../modules/auth/auth.utils";
 
 function run(name: string, fn: () => void) {
   try {
@@ -224,16 +224,24 @@ run("maskPhone hides middle digits, keeps head and tail", () => {
 });
 
 run("login verification decision requires active session AND phone", () => {
-  const maskSession = (user: { activeSessionId?: string | null; phone_number?: string }) => {
-    if (user.activeSessionId && user.phone_number && normalizePhone(user.phone_number).length >= 6) {
-      return { maskedPhone: maskPhone(user.phone_number) };
-    }
-    return null;
-  };
-  assert.equal(maskSession({ activeSessionId: null, phone_number: "+998901234567" }), null);
-  assert.equal(maskSession({ activeSessionId: "s1", phone_number: "" }), null);
-  assert.equal(maskSession({ activeSessionId: "s1", phone_number: "12" }), null);
-  const r = maskSession({ activeSessionId: "s1", phone_number: "+998901234567" });
-  assert.notEqual(r, null);
-  assert.equal((r as any).maskedPhone.startsWith("+998"), true);
+  assert.equal(phoneVerificationRequired({ activeSessionId: null, phone_number: "+998901234567" }), false);
+  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "" }), false);
+  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "12" }), false);
+  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "+998901234567" }), true);
+  assert.equal(maskPhone("998901234567").startsWith("+998"), true);
+});
+
+run("trusted device skips phone verification even when another session is active", () => {
+  const user = { activeSessionId: "s1", phone_number: "+998901234567", verifiedDeviceIds: ["dev-b"] };
+  assert.equal(phoneVerificationRequired(user, "dev-b"), false);
+  assert.equal(phoneVerificationRequired(user, "dev-x"), true);
+  assert.equal(phoneVerificationRequired(user), true);
+  assert.equal(phoneVerificationRequired({ ...user, verifiedDeviceIds: [] }, "dev-b"), true);
+});
+
+run("logout only clears the active session, stale sessions cannot kill it", () => {
+  assert.equal(shouldClearActiveSession({ activeSessionId: "s2" }, "s2"), true);
+  assert.equal(shouldClearActiveSession({ activeSessionId: "s2" }, "s1"), false);
+  assert.equal(shouldClearActiveSession({ activeSessionId: null }, "s1"), false);
+  assert.equal(shouldClearActiveSession({ activeSessionId: "s2" }, undefined), false);
 });

@@ -2,13 +2,15 @@ import { z } from "zod";
 
 export const loginSchema = z.object({
   username: z.string().trim().min(1, "username is required"),
-  password: z.string().min(1, "password is required")
+  password: z.string().min(1, "password is required"),
+  deviceId: z.string().trim().min(1).max(128).optional(),
 });
 
 export const loginWithPhoneSchema = z.object({
   username: z.string().trim().min(1, "username is required"),
   password: z.string().min(1, "password is required"),
   phone_number: z.string().trim().min(4, "phone_number is required"),
+  deviceId: z.string().trim().min(1).max(128).optional(),
 });
 
 export const registerSchema = z.object({

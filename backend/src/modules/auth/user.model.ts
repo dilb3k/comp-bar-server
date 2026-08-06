@@ -61,6 +61,10 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    verifiedDeviceIds: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

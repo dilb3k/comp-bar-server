@@ -17,6 +17,8 @@ import {
   createSessionId,
   maskPhone,
   normalizePhone,
+  phoneVerificationRequired,
+  shouldClearActiveSession,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
@@ -46,12 +48,9 @@ export class AuthService {
     };
   }
 
-  private maskSession(user: any): { maskedPhone: string } | null {
-    const phone = user.phone_number;
-    if (user.activeSessionId && phone && normalizePhone(phone).length >= 6) {
-      return { maskedPhone: maskPhone(phone) };
-    }
-    return null;
+  private async addVerifiedDevice(userId: string, deviceId?: string | null) {
+    if (!deviceId) return;
+    await authRepository.pushVerifiedDevice(userId, deviceId);
   }
 
   async register(payload: { username: string; password: string; phone_number?: string; businessDayStartHour?: number }) {
@@ -107,7 +106,7 @@ export class AuthService {
     };
   }
 
-  async login(username: string, password: string) {
+  async login(username: string, password: string, deviceId?: string) {
     const user = await authRepository.findByUsername(username);
 
     if (!user || !user.isActive) {
@@ -121,15 +120,17 @@ export class AuthService {
     }
 
     // Account already has an active session on another device. Require the
-    // account owner's phone number to confirm identity before taking over.
-    const active = this.maskSession(user);
-    if (active) {
+    // account owner's phone number to confirm identity before taking over —
+    // unless this device already verified the phone before (trusted device).
+    if (phoneVerificationRequired(user, deviceId)) {
       return {
         needsPhoneVerification: true,
-        maskedPhone: active.maskedPhone,
+        maskedPhone: maskPhone(user.phone_number),
         message: "Bu akkaunt boshqa qurilmada faol. Davom etish uchun telefon raqamingizni tasdiqlang.",
       };
     }
+
+    await this.addVerifiedDevice(user._id.toString(), deviceId);
 
     await subscriptionService.refreshExpiredSubscriptions();
 
@@ -148,7 +149,7 @@ export class AuthService {
     };
   }
 
-  async loginWithPhoneVerification(username: string, password: string, phone_number: string) {
+  async loginWithPhoneVerification(username: string, password: string, phone_number: string, deviceId?: string) {
     const user = await authRepository.findByUsername(username);
 
     if (!user || !user.isActive) {
@@ -165,6 +166,9 @@ export class AuthService {
     if (!stored || !provided || stored !== provided) {
       throw new AppError("Telefon raqam noto'g'ri. Iltimos ro'yxatdan o'tgan raqamni kiriting.", 401);
     }
+
+    // Phone verified → remember this device so it won't be asked again.
+    await this.addVerifiedDevice(user._id.toString(), deviceId);
 
     await subscriptionService.refreshExpiredSubscriptions();
 
@@ -184,8 +188,14 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string) {
-    await authRepository.updateMe(userId, { activeSessionId: null });
+  async logout(userId: string, sessionId?: string) {
+    const user = await authRepository.findById(userId);
+
+    // Only the currently-active session may end the account session. A stale
+    // (already kicked) device calling logout must not kill the live session.
+    if (user && shouldClearActiveSession(user, sessionId)) {
+      await authRepository.updateMe(userId, { activeSessionId: null });
+    }
   }
 
   async getCurrentUser(userId: string) {
