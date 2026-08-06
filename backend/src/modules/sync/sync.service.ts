@@ -6,6 +6,7 @@ import { inventoryRepository } from "../inventory/inventory.repository";
 import { processAndStoreProductImage } from "../products/product-image";
 import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
+import { snapshotService } from "../snapshots/snapshot.service";
 import { aggregateSnapshot } from "../snapshots/snapshot.logic";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
@@ -106,6 +107,31 @@ export class SyncService {
           )
         );
 
+        // The generic sync path is also how an offline sale/inventory edit reaches the
+        // server (desktop/mobile queue InventoryEntry deltas while offline, then replay
+        // them here). The dedicated /inventory/sales, /inventory/start-day and
+        // /inventory/bulk-current REST endpoints keep Product.quantity mirroring
+        // InventoryEntry.currentQuantity for "today" inside their own transactions — do
+        // the same here so a synced offline change doesn't leave the product's top-level
+        // stock count stale relative to the day's authoritative inventory record.
+        const productQuantityUpdates = new Map<string, number>();
+        for (const item of validInventory) {
+          const productId = item.productId as string | undefined;
+          const currentQuantity = item.currentQuantity;
+          if (!productId || typeof currentQuantity !== "number" || !Number.isFinite(currentQuantity)) {
+            continue;
+          }
+          // Multiple queued items can touch the same product; the last one in payload
+          // order is treated as authoritative for this sync call (they all pertain to
+          // the same "today" business date — past/future days were already rejected).
+          productQuantityUpdates.set(productId, currentQuantity);
+        }
+        await Promise.all(
+          Array.from(productQuantityUpdates.entries()).map(([productLocalId, quantity]) =>
+            productRepository.setQuantityByLocalId(actor.userId, productLocalId, quantity, session)
+          )
+        );
+
         for (const item of validSnapshots) {
           const itemDate = item.date as string | undefined;
           let snapshotData = { ...item };
@@ -183,6 +209,35 @@ export class SyncService {
           });
         }
       });
+
+      // Same rationale as the Product.quantity mirroring above: the dedicated
+      // /inventory/sales REST endpoint recomputes that day's DailySnapshot
+      // (dashboard revenue/profit/sold totals) inside its own transaction after
+      // every sale. The generic sync path only recomputes a snapshot when the
+      // client explicitly included one in `daily`/`snapshots` — but an offline
+      // sale/inventory edit queued on the client only ever produces `inventory`
+      // items (see desktop/mobile offline queues), never a `daily` entry. Without
+      // this, a synced offline sale would leave that day's stored snapshot stale
+      // until something unrelated happened to trigger a recompute. Auto-recompute
+      // for every business date touched by validInventory that wasn't already
+      // explicitly (re)computed above via validSnapshots.
+      const explicitSnapshotDates = new Set(validSnapshots.map((item) => item.date as string));
+      const inventoryTouchedDates = new Set(
+        validInventory
+          .map((item) => item.date as string | undefined)
+          .filter((date): date is string => Boolean(date) && !explicitSnapshotDates.has(date as string))
+      );
+      for (const date of inventoryTouchedDates) {
+        try {
+          await snapshotService.createOrUpdate(actor, { date, deviceId: "sync-auto" });
+        } catch (error) {
+          // Non-fatal: the sale/inventory data itself already synced successfully
+          // above; a snapshot recompute failure here shouldn't fail the whole sync
+          // call (the next createOrUpdate call, e.g. from an online sale or a later
+          // sync, will self-heal it since it always derives from scratch).
+          rejected.push({ entity: "snapshot", localId: `auto-${date}`, reason: "RECOMPUTE_FAILED" });
+        }
+      }
 
       const limit = payload.limit ?? 1000;
       const offset = payload.offset ?? 0;

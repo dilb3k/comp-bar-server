@@ -158,6 +158,16 @@ export class ProductRepository {
     return ProductModel.findOneAndDelete({ _id: id, ownerAdminId });
   }
 
+  async setQuantityByLocalId(ownerAdminId: string, localId: string, quantity: number, session?: any) {
+    const options: Record<string, unknown> = { new: true };
+    if (session) options.session = session;
+    return ProductModel.findOneAndUpdate(
+      { ownerAdminId, localId },
+      { $set: { quantity, updatedAt: new Date() } },
+      options
+    );
+  }
+
   async updateByLocalId(ownerAdminId: string, localId: string, payload: ProductPayload) {
     return ProductModel.findOneAndUpdate(
       { ownerAdminId, localId },
