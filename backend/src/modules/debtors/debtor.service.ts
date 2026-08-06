@@ -68,8 +68,12 @@ export const debtorService = {
     if (!debtor) throw new AppError("Debtor not found", 404);
 
     if (debtor.amount < 0) {
+      // `id` was already tenant-scoped by the findOneAndUpdate above (which
+      // succeeded, since `debtor` is non-null here) — this filter is
+      // defense-in-depth consistency with every other query in this file,
+      // not a fix for an exploitable gap.
       const corrected = await DebtorModel.findOneAndUpdate(
-        { _id: id, amount: { $lt: 0 } },
+        { _id: id, createdBy: auth.userId, amount: { $lt: 0 } },
         { $set: { amount: 0 } },
         { new: true }
       );

@@ -35,6 +35,32 @@ if (parsed.data.NODE_ENV === "production" && !parsed.data.JWT_REFRESH_SECRET) {
   process.exit(1);
 }
 
+// Outside production/test, JWT_REFRESH_SECRET is still derived from
+// JWT_SECRET below for convenience (so `npm run dev` and other ad-hoc local
+// setups don't need an extra env var). `npm test` sets JWT_SECRET inline and
+// relies on this same fallback, so we deliberately don't warn for "test".
+// This is not a secret-strength issue in dev, just a loud reminder so nobody
+// carries this shortcut into a real deployment by mistake.
+if (parsed.data.NODE_ENV === "development" && !parsed.data.JWT_REFRESH_SECRET) {
+  console.warn(
+    "JWT_REFRESH_SECRET is not set — deriving it from JWT_SECRET with a fixed suffix for local development only. " +
+      "Set JWT_REFRESH_SECRET explicitly before deploying to production (production already refuses to boot without it)."
+  );
+}
+
+// ALLOW_PUBLIC_REGISTER defaults to true (self-serve signup may be
+// intentional); it is not force-checked like JWT_REFRESH_SECRET. Still, an
+// operator deploying to production should consciously decide this rather
+// than inherit the default silently — warn (don't block boot) when it was
+// left unset in production. Check the raw env var (not the coerced/defaulted
+// value) so an explicit `ALLOW_PUBLIC_REGISTER=true` doesn't warn.
+if (parsed.data.NODE_ENV === "production" && process.env.ALLOW_PUBLIC_REGISTER === undefined) {
+  console.warn(
+    "ALLOW_PUBLIC_REGISTER is not set in production — defaulting to true (public self-registration is open). " +
+      "Set ALLOW_PUBLIC_REGISTER=false explicitly if that's not intended."
+  );
+}
+
 export const env = {
   ...parsed.data,
   JWT_REFRESH_SECRET: parsed.data.JWT_REFRESH_SECRET || (parsed.data.JWT_SECRET + "_refresh_salt_2024"),
