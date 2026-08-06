@@ -70,7 +70,7 @@ export class ProductService {
         if (payload.barcodes?.length) {
           for (const code of payload.barcodes) {
             if (!code) continue;
-            const existingBarcode = await productRepository.findByBarcode(actor.userId, code);
+            const existingBarcode = await productRepository.findByBarcode(actor.userId, code, session);
             if (existingBarcode) {
               throw new AppError(
                 `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
@@ -101,9 +101,16 @@ export class ProductService {
             }, session);
             break;
           } catch (err: any) {
-            if (err?.code === 11000 && err?.message?.includes("displayIndex") && attempt < 2) {
-              displayIndex = await productRepository.getNextDisplayIndex(actor.userId, session);
-              continue;
+            // Note: displayIndex is no longer a unique index (see product.model.ts),
+            // so a displayIndex-specific retry branch here would be dead code.
+            if (err?.code === 11000 && err?.message?.includes("barcodes")) {
+              // The pre-check above and this insert aren't atomic against a
+              // concurrent request; the unique index is the real guard here.
+              // Surface a clean error instead of the raw duplicate-key exception.
+              throw new AppError(
+                "Ushbu barcode allaqachon boshqa mahsulotda ishlatilmoqda",
+                409,
+              );
             }
             if (err?.code === 11000 && err?.message?.includes("localId") && !payload.localId && attempt < 2) {
               localId = createLocalId("prd", payload.deviceId);
@@ -176,19 +183,6 @@ export class ProductService {
       throw new AppError("sellPrice must be greater than or equal to buyPrice", 422);
     }
 
-    if (payload.barcodes?.length) {
-      for (const code of payload.barcodes) {
-        if (!code) continue;
-        const existingBarcode = await productRepository.findByBarcode(actor.userId, code);
-        if (existingBarcode && existingBarcode.localId !== (product as any).localId) {
-          throw new AppError(
-            `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
-            409,
-          );
-        }
-      }
-    }
-
     const updatePayload: Record<string, unknown> = {
       deviceId: payload.deviceId ?? (product as any).deviceId,
       name: payload.name ?? (product as any).name,
@@ -216,12 +210,39 @@ export class ProductService {
     const session = await mongoose.startSession();
     try {
       const updatedProduct = await session.withTransaction(async () => {
-        const up = await productRepository.updateById(
-          actor.userId,
-          (product as any)._id.toString(),
-          updatePayload,
-          session
-        );
+        if (payload.barcodes?.length) {
+          for (const code of payload.barcodes) {
+            if (!code) continue;
+            const existingBarcode = await productRepository.findByBarcode(actor.userId, code, session);
+            if (existingBarcode && existingBarcode.localId !== (product as any).localId) {
+              throw new AppError(
+                `"${existingBarcode.name}" mahsuloti allaqachon bu barcode dan foydalanmoqda`,
+                409,
+              );
+            }
+          }
+        }
+
+        let up: any;
+        try {
+          up = await productRepository.updateById(
+            actor.userId,
+            (product as any)._id.toString(),
+            updatePayload,
+            session
+          );
+        } catch (err: any) {
+          if (err?.code === 11000 && err?.message?.includes("barcodes")) {
+            // The pre-check above and this write aren't atomic against a
+            // concurrent request; the unique index is the real guard here.
+            // Surface a clean error instead of the raw duplicate-key exception.
+            throw new AppError(
+              "Ushbu barcode allaqachon boshqa mahsulotda ishlatilmoqda",
+              409,
+            );
+          }
+          throw err;
+        }
 
         const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today, session);
 

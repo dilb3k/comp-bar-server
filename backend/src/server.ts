@@ -9,6 +9,7 @@ import { createApp } from "./app";
 import { migrateLegacyProductRecords } from "./modules/products/product.migration";
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.migration";
+import { migrateProductBarcodeUniqueIndex } from "./modules/migrations/product-barcode-unique-index.migration";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
@@ -28,6 +29,11 @@ async function bootstrap() {
   // Always heal the stale unique displayIndex index — idempotent, and it
   // prevents E11000 errors on product create/sync/reorder.
   await migrateFixDisplayIndex();
+
+  // Always attempt to roll the products.idx_barcodes index over to unique
+  // (idempotent, safe — detects pre-existing duplicate barcodes and skips
+  // without touching data if any are found; see migration file for details).
+  await migrateProductBarcodeUniqueIndex();
 
   if (env.MIGRATION_ENABLED) {
     await migrateSplitCollections();

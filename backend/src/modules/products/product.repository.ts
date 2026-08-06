@@ -94,8 +94,10 @@ export class ProductRepository {
     return query;
   }
 
-  async findByBarcode(ownerAdminId: string, barcode: string) {
-    return ProductModel.findOne({ ownerAdminId, barcodes: barcode });
+  async findByBarcode(ownerAdminId: string, barcode: string, session?: any) {
+    const query = ProductModel.findOne({ ownerAdminId, barcodes: barcode });
+    if (session) query.session(session);
+    return query;
   }
 
   async findByIdentifier(ownerAdminId: string, identifier: string) {

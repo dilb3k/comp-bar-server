@@ -123,11 +123,19 @@ productSchema.index(
   }
 );
 
+// Unlike displayIndex (presentation ordering, deliberately non-unique — see
+// comment above), a barcode is an identity: two products for the same admin
+// must never share one. `sparse: true` keeps products without a barcode
+// (undefined/no `barcodes` field) from colliding with each other. Scoped to
+// ownerAdminId, matching the tenant-scoped uniqueness convention used by
+// idx_unique_owner_localid above (barcodes are not required to be globally
+// unique across different tenants).
 productSchema.index(
   { ownerAdminId: 1, barcodes: 1 },
   {
     name: "idx_barcodes",
     background: true,
+    unique: true,
     sparse: true
   }
 );
