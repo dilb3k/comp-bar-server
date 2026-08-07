@@ -18,6 +18,7 @@ import { productRoutes } from "./modules/products/product.routes";
 import { productImageRoutes } from "./modules/products/product-image.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
+import { botRoutes, clickWebhookRoutes } from "./modules/payments";
 
 const LOCAL_ORIGINS = [
   "http://localhost:3000",
@@ -89,6 +90,12 @@ export function createApp() {
   app.use("/api/sync", authenticate(), syncRoutes);
   app.use("/api/subscriptions", authenticate(), subscriptionRoutes);
   app.use("/api/stats", authenticate(), statsRoutes);
+
+  // hisvex-bot integration: its own auth (shared secret, not a user JWT —
+  // see bot-auth.middleware.ts), and Click's webhook (signature-verified
+  // inside the controller, no auth header at all — Click calls it directly).
+  app.use("/api/bot", botRoutes);
+  app.use("/api/payments/click", clickWebhookRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);

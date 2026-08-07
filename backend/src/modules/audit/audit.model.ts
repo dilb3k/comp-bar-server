@@ -32,7 +32,7 @@ const auditEventSchema = new Schema(
     source: {
       type: String,
       required: true,
-      enum: ["rest", "sync", "cron"],
+      enum: ["rest", "sync", "cron", "bot"],
     },
     createdBy: {
       type: String,

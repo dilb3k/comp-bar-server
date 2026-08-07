@@ -52,6 +52,53 @@ export class SubscriptionService {
     return subscription.toJSON();
   }
 
+  // Same core effect as activate() above, but callable from a trusted
+  // system context (the payments module, triggered by an approved Click or
+  // manual-card payment) that has no superAdmin AuthUser to act as — the
+  // real actor here is "a completed payment", recorded via `source` rather
+  // than an audit `createdBy` user id impersonating a superAdmin.
+  async activateFromPayment(userId: string, tier: "bor" | "pro", durationMonths: 1 | 6 | 12, source: string) {
+    const user = await authRepository.findById(userId);
+    if (!user || !user.isActive) {
+      throw new AppError("User not found", 404);
+    }
+    // Same guard activate() enforces for a superAdmin-initiated change —
+    // a bot payment must only ever touch a regular tenant ("admin")
+    // account, never the platform superAdmin's own subscription record.
+    if ((user as any).role !== "admin") {
+      throw new AppError("Cannot manage superAdmin subscription", 400);
+    }
+
+    const now = new Date();
+    const endDate = new Date(now);
+    endDate.setMonth(endDate.getMonth() + durationMonths);
+
+    await this.deactivateExisting(userId);
+
+    const subscription = await SubscriptionModel.create({
+      userId,
+      tier,
+      startDate: now,
+      endDate,
+      isActive: true,
+      activatedBy: source,
+    });
+
+    await authRepository.updateAdmin(userId, { isPayed: true });
+
+    await auditService.log({
+      ownerAdminId: userId,
+      action: "UPDATE",
+      entityType: "subscription",
+      entityId: `subscription-${userId}`,
+      after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString(), source },
+      source: "bot",
+      createdBy: source,
+    });
+
+    return subscription.toJSON();
+  }
+
   async deactivate(actor: AuthUser, userId: string) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can manage subscriptions", 403);
@@ -122,6 +169,21 @@ export class SubscriptionService {
     }
 
     return count;
+  }
+
+  // Subscriptions whose endDate falls within [now, now+daysAhead] — used by
+  // the bot's daily reminder job so a business doesn't get silently
+  // downgraded without warning (previously nothing notified a user their
+  // subscription was about to lapse at all).
+  async findExpiringSoon(daysAhead: number) {
+    const now = new Date();
+    const until = new Date(now);
+    until.setDate(until.getDate() + daysAhead);
+
+    return SubscriptionModel.find({
+      isActive: true,
+      endDate: { $gte: now, $lte: until },
+    }).sort({ endDate: 1 });
   }
 
   async getUserTier(

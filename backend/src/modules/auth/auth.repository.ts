@@ -1,10 +1,36 @@
 import { Types } from "mongoose";
 
 import { UserModel } from "./user.model";
+import { normalizePhone } from "./auth.utils";
 
 export class AuthRepository {
   async findByUsername(username: string) {
     return UserModel.findOne({ username: username.trim().toLowerCase() });
+  }
+
+  // Used by the bot to link a Telegram user to their Hisvex account after
+  // they share their contact via /start. Matches on the digits-only form of
+  // phone_number so formatting differences (+998, spaces, dashes) don't
+  // cause a false miss — mirrors normalizePhone's use elsewhere for the
+  // same reason (phoneVerificationRequired).
+  async findByPhone(phone: string) {
+    const digits = normalizePhone(phone);
+    if (digits.length < 6) return null;
+    const admins = await UserModel.find({ role: "admin", isActive: true });
+    return admins.find((u) => normalizePhone(u.phone_number) === digits) ?? null;
+  }
+
+  async findByTelegramId(telegramId: string) {
+    return UserModel.findOne({ telegramId, isActive: true });
+  }
+
+  async linkTelegram(id: string, telegramId: string, telegramUsername?: string) {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return UserModel.findByIdAndUpdate(
+      id,
+      { telegramId, telegramUsername: telegramUsername ?? null },
+      { new: true }
+    );
   }
 
   async findSuperAdmin() {

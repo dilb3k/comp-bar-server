@@ -116,6 +116,25 @@ export class InventoryService {
   }
 
   async getByDate(actor: AuthUser, from?: string, to?: string) {
+    // Real gap closed: "Statistika & Reyting" is advertised as a paid-only
+    // feature (tekin tier has it explicitly crossed out on the pricing
+    // page), and every client app's Statistics screen already hides itself
+    // behind an isPayed/tier check — but that's UI-only. This single
+    // endpoint (GET /api/inventory) backs BOTH the daily Inventory screen
+    // (routine, must stay free — a single day's own stock is core
+    // "Mahsulot va ombor" functionality every tier gets) AND every
+    // Statistics view (daily/monthly/yearly/All-Time, which are wide,
+    // multi-day queries) — so a tekin user could previously bypass the
+    // paywall entirely just by calling this endpoint with from!==to
+    // directly. Gate on that distinction: a single-day read is always
+    // allowed; a genuine multi-day range requires a paid tier.
+    if (from && to && from !== to && actor.tier === "tekin") {
+      throw new AppError(
+        "Bu davr uchun hisobot faqat pullik tarif egalari uchun mavjud",
+        402
+      );
+    }
+
     const [entries, products] = await Promise.all([
       inventoryRepository.findByDateRange(actor.userId, from, to),
       productRepository.findAllByOwner(actor.userId),

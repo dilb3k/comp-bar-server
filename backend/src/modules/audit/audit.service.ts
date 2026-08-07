@@ -7,7 +7,7 @@ type AuditLogInput = {
   entityId: string;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
-  source: "rest" | "sync" | "cron";
+  source: "rest" | "sync" | "cron" | "bot";
   createdBy: string;
 };
 

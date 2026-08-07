@@ -1,6 +1,7 @@
 import http from "node:http";
 
 import mongoose from "mongoose";
+import cron from "node-cron";
 
 import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
@@ -10,6 +11,7 @@ import { migrateLegacyProductRecords } from "./modules/products/product.migratio
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.migration";
 import { migrateProductBarcodeUniqueIndex } from "./modules/migrations/product-barcode-unique-index.migration";
+import { subscriptionService } from "./modules/subscriptions/subscription.service";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
@@ -39,6 +41,17 @@ async function bootstrap() {
     await migrateSplitCollections();
     await migrateLegacyProductRecords();
   }
+
+  // Real fix for a long-standing gap: subscription expiry used to only be
+  // checked lazily (on a user's next login/me/refresh call), so a lapsed
+  // paid account could keep working for an arbitrary amount of time if it
+  // simply didn't hit one of those routes. Runs every hour; harmless to run
+  // more often than subscriptions actually expire.
+  cron.schedule("0 * * * *", () => {
+    subscriptionService.refreshExpiredSubscriptions().catch((error) => {
+      console.error("refreshExpiredSubscriptions cron failed", error);
+    });
+  });
 
   const app = createApp();
 

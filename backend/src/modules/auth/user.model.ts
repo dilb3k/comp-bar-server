@@ -65,6 +65,19 @@ const userSchema = new Schema(
       type: [String],
       default: [],
     },
+    // Telegram account linked via the hisvex-bot payment/subscription bot
+    // (matched by phone_number on /start, then remembered here so the bot
+    // doesn't need to re-look-up on every interaction and so the backend
+    // can DM expiry reminders directly).
+    telegramId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    telegramUsername: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -18,7 +18,22 @@ const envSchema = z.object({
   BOT_TOKEN: z.string().trim().min(1).optional(),
   TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   MIGRATION_ENABLED: z.coerce.boolean().default(false),
-  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(true)
+  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(true),
+
+  // Shared secret the hisvex-bot service presents (X-Bot-Secret header) to
+  // call the internal /api/bot/* routes. Optional here so the backend can
+  // still boot without the bot deployed yet; botAuth middleware fails
+  // closed (401/503) when this is unset, so leaving it empty just means
+  // the bot integration is off, not an open door.
+  BOT_INTERNAL_SECRET: z.string().trim().min(16).optional(),
+
+  // Click (click.uz) merchant credentials for automatic subscription
+  // payments. All optional — clickPaymentService.isEnabled() gates the
+  // webhook the same way telegramReportService gates its own calls, so an
+  // unconfigured Click integration fails closed (rejects, doesn't crash).
+  CLICK_MERCHANT_ID: z.string().trim().optional(),
+  CLICK_SERVICE_ID: z.string().trim().optional(),
+  CLICK_SECRET_KEY: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
