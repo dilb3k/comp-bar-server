@@ -2,6 +2,7 @@
 import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
+import { getNextBusinessDayStart } from "../../utils/business-day";
 import { subscriptionService } from "../subscriptions/subscription.service";
 import { computeTier, SubscriptionModel } from "../subscriptions/subscription.model";
 import { authRepository } from "./auth.repository";
@@ -405,10 +406,17 @@ export class AuthService {
     }
 
     if (payload.businessDayStartHour !== undefined) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(payload.businessDayStartHour, 0, 0, 0);
-      repoPayload.businessDayStartHour = actor.businessDayStartHour ?? 0;
+      const tomorrow = getNextBusinessDayStart(
+        payload.businessDayStartHour,
+        env.TIMEZONE_OFFSET
+      );
+      // Only the pending pair is written — the change deliberately takes effect
+      // tomorrow, so today's already-open business day keeps its boundary and
+      // today's sales don't get re-attributed mid-day. auth.middleware.ts
+      // promotes pending → businessDayStartHour once `tomorrow` arrives; the
+      // active hour must NOT be touched here (rewriting it with its own current
+      // value was pointless churn, and reset it to 0 whenever the actor's hour
+      // was unset).
       repoPayload.pendingBusinessDayStartHour = payload.businessDayStartHour;
       repoPayload.businessDayEffectiveFrom = tomorrow;
       authUserUpdate.pendingBusinessDayStartHour = payload.businessDayStartHour;

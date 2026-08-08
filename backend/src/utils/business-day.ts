@@ -71,6 +71,36 @@ export function getCurrentBusinessDate(businessDayStartHour = 6, timezoneOffsetM
   return getBusinessDate(new Date(), businessDayStartHour, timezoneOffsetMinutes);
 }
 
+/**
+ * The instant at which "tomorrow's" business day begins for the given hour,
+ * as a real UTC Date — i.e. when a scheduled business-day hour change should
+ * take effect.
+ *
+ * Must go through timezoneOffsetMinutes like every other business-date
+ * computation here. Building it with `new Date().setHours(hour, 0, 0, 0)`
+ * instead resolves the hour in the *server's* timezone (UTC on Render), so for
+ * a UTC+5 business the change landed 5 hours late and disagreed with the day
+ * keys produced by getBusinessDate().
+ */
+export function getNextBusinessDayStart(
+  businessDayStartHour: number,
+  timezoneOffsetMinutes = 0,
+  from: Date = new Date()
+) {
+  const offsetMs = timezoneOffsetMinutes * 60 * 1000;
+  const local = new Date(from.getTime() + offsetMs);
+  const tomorrowLocal = Date.UTC(
+    local.getUTCFullYear(),
+    local.getUTCMonth(),
+    local.getUTCDate() + 1,
+    businessDayStartHour,
+    0,
+    0,
+    0
+  );
+  return new Date(tomorrowLocal - offsetMs);
+}
+
 export function compareDayKeys(left: string, right: string) {
   return left.localeCompare(right);
 }

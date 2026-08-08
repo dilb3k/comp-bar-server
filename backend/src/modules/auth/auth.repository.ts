@@ -124,6 +124,34 @@ export class AuthRepository {
     return user.save();
   }
 
+  /**
+   * Promotes a scheduled business-day hour change into the active field once
+   * its effective moment has passed, then clears the pending fields.
+   *
+   * Conditional on the pending pair still matching what the caller read, so
+   * the concurrent requests that all run this check (it sits in the auth
+   * middleware) can't double-apply it or clobber a newer schedule — the first
+   * one wins and the rest no-op, returning null.
+   */
+  async promoteBusinessDayHourIfDue(id: string, pendingHour: number, effectiveFrom: Date) {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return UserModel.findOneAndUpdate(
+      {
+        _id: id,
+        pendingBusinessDayStartHour: pendingHour,
+        businessDayEffectiveFrom: effectiveFrom,
+      },
+      {
+        $set: {
+          businessDayStartHour: pendingHour,
+          pendingBusinessDayStartHour: null,
+          businessDayEffectiveFrom: null,
+        },
+      },
+      { new: true },
+    );
+  }
+
   async pushVerifiedDevice(id: string, deviceId: string) {
     if (!Types.ObjectId.isValid(id)) return null;
     return UserModel.updateOne(

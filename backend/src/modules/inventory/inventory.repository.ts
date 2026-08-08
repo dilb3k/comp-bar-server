@@ -8,6 +8,14 @@ function buildInventoryRecord(payload: InventoryPayload) {
     localId: payload.localId,
     deviceId: payload.deviceId,
     productId: payload.productId,
+    // startDay/bulkCurrent/sales/sync all pass productName, but it used to be
+    // dropped here. The denormalized copy exists so an entry still shows the
+    // real product name after the product itself is deleted — with it missing,
+    // upsertLastWriteWins' Object.assign set the path to undefined (which
+    // mongoose turns into an $unset), history for deleted products degraded to
+    // "O'chirilgan mahsulot", and the read-path backfill rewrote it on every
+    // single GET.
+    productName: payload.productName,
     date: payload.date,
     startQuantity: payload.startQuantity,
     currentQuantity: payload.currentQuantity,
@@ -159,6 +167,7 @@ export class InventoryRepository {
                 lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : conflicting.lockedRevenue,
                 lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : conflicting.lockedProfit,
                 lockedSold: payload.lockedSold !== undefined ? record.lockedSold : conflicting.lockedSold,
+                productName: payload.productName !== undefined ? record.productName : conflicting.productName,
               };
               Object.assign(conflicting, merged);
               return conflicting.save({ session });
@@ -181,6 +190,7 @@ export class InventoryRepository {
       lockedRevenue: payload.lockedRevenue !== undefined ? record.lockedRevenue : existing.lockedRevenue,
       lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : existing.lockedProfit,
       lockedSold: payload.lockedSold !== undefined ? record.lockedSold : existing.lockedSold,
+      productName: payload.productName !== undefined ? record.productName : existing.productName,
     };
     Object.assign(existing, merged);
     return existing.save({ session });

@@ -29,11 +29,17 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function isProductVisibleOnDate(product: any, date: string): boolean {
+// businessDayStartHour must be the *actor's* effective hour, not the global
+// env default: every other business-date computation in this service uses
+// getEffectiveHour(actor), so falling back to env here put a product's
+// creation day on a different boundary than the day key it is compared
+// against, wrongly hiding (or showing) products created near the boundary for
+// any account whose hour differs from the server default.
+function isProductVisibleOnDate(product: any, date: string, businessDayStartHour: number): boolean {
   if (!product) return false;
   const p = typeof product.toJSON === "function" ? product.toJSON() : product;
   if (p.createdAt) {
-    const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, env.BUSINESS_DAY_START_HOUR, env.TIMEZONE_OFFSET);
+    const createdBusinessDate = getBusinessDateFromTimestamp(p.createdAt, businessDayStartHour, env.TIMEZONE_OFFSET);
     if (createdBusinessDate > date) return false;
   }
   return true;
@@ -97,6 +103,31 @@ function buildInventoryResponse(product: any, inventory: any) {
 }
 
 export class InventoryService {
+  /**
+   * "Statistika & Reyting" is a paid-only feature (crossed out for the tekin
+   * tier on the pricing page) and every client hides it behind a tier check —
+   * but that is UI-only, so the read endpoints have to enforce it too.
+   *
+   * A single explicit day stays free: that is the daily Inventory screen, which
+   * is core "Mahsulot va ombor" functionality every tier gets. Anything wider
+   * is a Statistics query and requires a paid tier.
+   *
+   * Crucially, "wider" includes a *missing* bound. The previous inline check
+   * (`from && to && from !== to`) only fired when both bounds were present, so
+   * `GET /api/inventory` with no params — or with only `from` — skipped the gate
+   * entirely and returned the caller's whole history plus an all-time summary,
+   * which is exactly the report being sold.
+   */
+  private assertRangeAllowed(actor: AuthUser, from?: string, to?: string) {
+    if (actor.tier !== "tekin") return;
+    if (!from || !to || from !== to) {
+      throw new AppError(
+        "Bu davr uchun hisobot faqat pullik tarif egalari uchun mavjud",
+        402,
+      );
+    }
+  }
+
   private getAllowedDate(actor: AuthUser, date?: string) {
     const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
@@ -116,24 +147,7 @@ export class InventoryService {
   }
 
   async getByDate(actor: AuthUser, from?: string, to?: string) {
-    // Real gap closed: "Statistika & Reyting" is advertised as a paid-only
-    // feature (tekin tier has it explicitly crossed out on the pricing
-    // page), and every client app's Statistics screen already hides itself
-    // behind an isPayed/tier check — but that's UI-only. This single
-    // endpoint (GET /api/inventory) backs BOTH the daily Inventory screen
-    // (routine, must stay free — a single day's own stock is core
-    // "Mahsulot va ombor" functionality every tier gets) AND every
-    // Statistics view (daily/monthly/yearly/All-Time, which are wide,
-    // multi-day queries) — so a tekin user could previously bypass the
-    // paywall entirely just by calling this endpoint with from!==to
-    // directly. Gate on that distinction: a single-day read is always
-    // allowed; a genuine multi-day range requires a paid tier.
-    if (from && to && from !== to && actor.tier === "tekin") {
-      throw new AppError(
-        "Bu davr uchun hisobot faqat pullik tarif egalari uchun mavjud",
-        402
-      );
-    }
+    this.assertRangeAllowed(actor, from, to);
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findByDateRange(actor.userId, from, to),
@@ -188,8 +202,9 @@ export class InventoryService {
 
     const isSingleDate = from && to && from === to;
     if (isSingleDate) {
+      const businessHour = getEffectiveHour(actor);
       for (const product of products) {
-        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from)) {
+        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from, businessHour)) {
           const derived = deriveMissingInventoryEntry(product, from);
           items.push(buildInventoryResponse(product, derived));
         }
@@ -207,6 +222,10 @@ export class InventoryService {
     if (compareDayKeys(from, to) > 0) {
       throw new AppError("from must be less than or equal to to", 422);
     }
+
+    // GET /api/inventory/range had no tier check at all, making it a complete
+    // bypass of the same paywall getByDate enforces over the same data.
+    this.assertRangeAllowed(actor, from, to);
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findRange(actor.userId, from, to),
@@ -263,8 +282,9 @@ export class InventoryService {
 
     const isSingleDate = from === to;
     if (isSingleDate) {
+      const businessHour = getEffectiveHour(actor);
       for (const product of products) {
-        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from)) {
+        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from, businessHour)) {
           const derived = deriveMissingInventoryEntry(product, from);
           items.push(buildInventoryResponse(product, derived));
         }

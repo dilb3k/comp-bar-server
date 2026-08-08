@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { getBusinessDate, isPastBusinessDate, getEffectiveHour } from "../utils/business-day";
+import { getBusinessDate, isPastBusinessDate, getEffectiveHour, getNextBusinessDayStart } from "../utils/business-day";
 import {
   calculateSold,
   getAdjustedInventoryQuantities
@@ -244,4 +244,82 @@ run("logout only clears the active session, stale sessions cannot kill it", () =
   assert.equal(shouldClearActiveSession({ activeSessionId: "s2" }, "s1"), false);
   assert.equal(shouldClearActiveSession({ activeSessionId: null }, "s1"), false);
   assert.equal(shouldClearActiveSession({ activeSessionId: "s2" }, undefined), false);
+});
+
+run("getNextBusinessDayStart resolves the hour in the business timezone, not the server's", () => {
+  // UTC+5 (Tashkent, TIMEZONE_OFFSET=300). From 2026-04-20T09:00Z (14:00 local)
+  // the next business day starting at 10:00 local is 2026-04-21T05:00Z.
+  const from = new Date("2026-04-20T09:00:00Z");
+  assert.equal(
+    getNextBusinessDayStart(10, 300, from).toISOString(),
+    "2026-04-21T05:00:00.000Z"
+  );
+  // Hour 0 -> local midnight of the next day.
+  assert.equal(
+    getNextBusinessDayStart(0, 300, from).toISOString(),
+    "2026-04-20T19:00:00.000Z"
+  );
+  // With no offset the local frame is UTC itself.
+  assert.equal(
+    getNextBusinessDayStart(10, 0, from).toISOString(),
+    "2026-04-21T10:00:00.000Z"
+  );
+  // Late-evening local time must still roll to the *next* local day, not skip one:
+  // 2026-04-20T20:00Z is already 2026-04-21 01:00 local, so next is 2026-04-22.
+  assert.equal(
+    getNextBusinessDayStart(6, 300, new Date("2026-04-20T20:00:00Z")).toISOString(),
+    "2026-04-22T01:00:00.000Z"
+  );
+});
+
+run("a scheduled hour change becomes effective, and getEffectiveHour honours it", () => {
+  // Regression: auth.middleware used to clear the pending pair without copying
+  // the value into businessDayStartHour, so a scheduled change was silently
+  // discarded and the hour never actually changed.
+  const base = {
+    userId: "u1",
+    username: "test",
+    phone_number: "test",
+    role: "admin" as const,
+    isPayed: false,
+    tier: "tekin" as const,
+  };
+  const from = new Date("2026-04-20T09:00:00Z");
+  const effectiveFrom = getNextBusinessDayStart(10, 300, from);
+
+  // Before the boundary the old hour still applies.
+  assert.equal(
+    getEffectiveHour({
+      ...base,
+      businessDayStartHour: 6,
+      pendingBusinessDayStartHour: 10,
+      businessDayEffectiveFrom: new Date(Date.now() + 60_000).toISOString(),
+    }),
+    6
+  );
+
+  // After the boundary the pending hour applies...
+  assert.equal(
+    getEffectiveHour({
+      ...base,
+      businessDayStartHour: 6,
+      pendingBusinessDayStartHour: 10,
+      businessDayEffectiveFrom: new Date(Date.now() - 60_000).toISOString(),
+    }),
+    10
+  );
+
+  // ...and once the middleware has promoted it (pending cleared, active moved),
+  // the effective hour must still be the chosen one — not fall back to the old.
+  assert.equal(
+    getEffectiveHour({
+      ...base,
+      businessDayStartHour: 10,
+      pendingBusinessDayStartHour: null,
+      businessDayEffectiveFrom: null,
+    }),
+    10
+  );
+
+  assert.ok(effectiveFrom instanceof Date);
 });

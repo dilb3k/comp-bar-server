@@ -45,33 +45,39 @@ export function authenticate(options?: { allowStale?: boolean }) {
 
     const isSuperAdmin = payload.role === "superAdmin";
 
-    // Fix stale pending: if effective date passed but active wasn't migrated, clear pending
-    if (
-      user.pendingBusinessDayStartHour != null &&
-      user.businessDayEffectiveFrom &&
-      new Date() >= new Date(user.businessDayEffectiveFrom) &&
-      user.businessDayStartHour !== user.pendingBusinessDayStartHour
-    ) {
-      await authRepository.updateMe(user._id.toString(), {
-        pendingBusinessDayStartHour: null,
-        businessDayEffectiveFrom: null,
-      });
-      payload.pendingBusinessDayStartHour = null;
-      payload.businessDayEffectiveFrom = undefined;
-    }
+    // A scheduled business-day hour change becomes active once its effective
+    // moment passes. Promote it here — the one code path every authenticated
+    // request goes through — so the DB, which both getEffectiveHour() and
+    // GET /auth/me read from, ends up holding the hour the user actually chose.
+    //
+    // This previously cleared the pending fields WITHOUT copying the value into
+    // businessDayStartHour, so every scheduled change was silently discarded
+    // and the setting never took effect at all. A second block then rewrote
+    // businessDayStartHour from the access token (valid for days) whenever the
+    // two disagreed, which reverted any correct promotion and issued a write on
+    // every single request. Both are replaced by the promotion below.
+    let activeHour = (user as any).businessDayStartHour ?? payload.businessDayStartHour;
+    let pendingHour: number | null = (user as any).pendingBusinessDayStartHour ?? null;
+    const storedEffectiveFrom: Date | null = (user as any).businessDayEffectiveFrom ?? null;
+    // AuthUser types this as an ISO string (that's what buildAuthUser puts in the
+    // token); the raw mongoose value is a Date, so normalize instead of leaking
+    // a Date through an `as any` the way this used to.
+    let effectiveFrom: string | null = storedEffectiveFrom
+      ? new Date(storedEffectiveFrom).toISOString()
+      : null;
 
-    // Fix corrupted active: if a previous middleware version migrated pending→active
-    // but token has a different (user-intended) value, restore it
-    if (
-      user.businessDayStartHour != null &&
-      payload.businessDayStartHour != null &&
-      user.businessDayStartHour !== payload.businessDayStartHour &&
-      user.pendingBusinessDayStartHour == null &&
-      user.businessDayEffectiveFrom == null
-    ) {
-      await authRepository.updateMe(user._id.toString(), {
-        businessDayStartHour: payload.businessDayStartHour,
-      });
+    if (pendingHour != null && storedEffectiveFrom && new Date() >= new Date(storedEffectiveFrom)) {
+      const promoted = await authRepository.promoteBusinessDayHourIfDue(
+        user._id.toString(),
+        pendingHour,
+        storedEffectiveFrom,
+      );
+      // A concurrent request may have promoted it first (promoted === null).
+      // Either way the pending hour is the active one now, so use it locally
+      // regardless of which request won the race.
+      activeHour = promoted ? (promoted as any).businessDayStartHour : pendingHour;
+      pendingHour = null;
+      effectiveFrom = null;
     }
 
     req.auth = {
@@ -83,11 +89,11 @@ export function authenticate(options?: { allowStale?: boolean }) {
       tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
       subscriptionEndDate: payload.subscriptionEndDate ?? null,
       sessionId: payload.sessionId,
-      // Use DB values for business day settings (source of truth),
-      // not token values which may be stale
-      businessDayStartHour: (user as any).businessDayStartHour ?? payload.businessDayStartHour,
-      pendingBusinessDayStartHour: (user as any).pendingBusinessDayStartHour,
-      businessDayEffectiveFrom: (user as any).businessDayEffectiveFrom,
+      // DB values are the source of truth for business-day settings; the token
+      // only fills in for accounts predating the field.
+      businessDayStartHour: activeHour,
+      pendingBusinessDayStartHour: pendingHour,
+      businessDayEffectiveFrom: effectiveFrom,
     };
     return next();
   } catch (error) {
