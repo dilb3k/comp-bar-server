@@ -34,6 +34,17 @@ const envSchema = z.object({
   CLICK_MERCHANT_ID: z.string().trim().optional(),
   CLICK_SERVICE_ID: z.string().trim().optional(),
   CLICK_SECRET_KEY: z.string().trim().optional(),
+
+  // Mobile has no store/GitHub-releases feed to check against (it ships as
+  // a direct EAS build link, not a Play Store listing), so — unlike the
+  // desktop app, which reads dilb3k/hisvex-landing's GitHub releases
+  // directly — its "is a new version out" check goes through this backend
+  // instead. Bump these two on every mobile release; no redeploy needed,
+  // just an env var update on the host.
+  MOBILE_LATEST_VERSION: z.string().trim().default("1.0.1"),
+  MOBILE_DOWNLOAD_URL: z.string().trim().default(
+    "https://expo.dev/accounts/hisvex/projects/hisvex/builds/e9188422-b986-4702-bd6b-5ea5eeea36d0"
+  ),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -12,6 +12,7 @@ import { authRoutes } from "./modules/auth/auth.routes";
 import { authenticate } from "./modules/auth/auth.middleware";
 import { statsRoutes } from "./modules/stats/stats.routes";
 import { healthRoutes } from "./modules/health/health.routes";
+import { metaRoutes } from "./modules/meta/meta.routes";
 import { debtorRoutes } from "./modules/debtors/debtor.routes";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes";
 import { productRoutes } from "./modules/products/product.routes";
@@ -81,6 +82,7 @@ export function createApp() {
   });
 
   app.use("/api/health", healthRoutes);
+  app.use("/api/meta", metaRoutes);
   app.use("/api/auth", authRoutes);
   app.use("/api/products", productImageRoutes);
   app.use("/api/products", authenticate(), productRoutes);
