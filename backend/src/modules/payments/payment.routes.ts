@@ -25,6 +25,7 @@ router.get("/pricing", asyncHandler(botController.pricing));
 
 router.post("/lookup", validateRequest({ body: lookupUserSchema }), asyncHandler(botController.lookupUser));
 router.post("/link-telegram", validateRequest({ body: linkTelegramSchema }), asyncHandler(botController.linkTelegram));
+router.get("/lookup-by-telegram/:telegramId", asyncHandler(botController.lookupByTelegramId));
 router.get("/subscription/:userId", asyncHandler(botController.subscriptionStatus));
 router.get("/expiring-soon", asyncHandler(botController.expiringSoon));
 

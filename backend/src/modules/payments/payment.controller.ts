@@ -32,6 +32,12 @@ export const botController = {
     return sendSuccess(res, result);
   },
 
+  async lookupByTelegramId(req: Request, res: Response) {
+    const result = await paymentService.lookupUserByTelegramId(String(req.params.telegramId));
+    if (!result) throw new AppError("User not found", 404);
+    return sendSuccess(res, result);
+  },
+
   async createManualPayment(req: Request, res: Response) {
     const payment = await paymentService.createManualPayment(req.body);
     return sendSuccess(res, payment, 201);

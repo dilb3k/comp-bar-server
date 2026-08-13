@@ -176,6 +176,30 @@ export class PaymentService {
     return authRepository.linkTelegram(userId, telegramId, telegramUsername);
   }
 
+  // Lets the bot re-resolve an already-linked account from telegramId alone
+  // (see auth.repository.ts's findByTelegramId, which this account gets
+  // linked into via linkTelegram above). The bot's own "am I linked"
+  // state is just an in-memory Telegraf session, wiped on every restart —
+  // without this, that meant re-prompting every previously-linked user to
+  // share their phone number again after each deploy, even though the
+  // backend never forgot who they were.
+  async lookupUserByTelegramId(telegramId: string) {
+    const user = await authRepository.findByTelegramId(telegramId);
+    if (!user) return null;
+    const { tier, subscription } = await subscriptionService.getUserTier(
+      user._id.toString(),
+      (user as any).role,
+      (user as any).isPayed
+    );
+    return {
+      userId: user._id.toString(),
+      username: (user as any).username,
+      phone_number: (user as any).phone_number,
+      tier,
+      subscriptionEndDate: subscription?.endDate ?? null,
+    };
+  }
+
   async getSubscriptionStatus(userId: string) {
     const user = await authRepository.findById(userId);
     if (!user) throw new AppError("User not found", 404);
