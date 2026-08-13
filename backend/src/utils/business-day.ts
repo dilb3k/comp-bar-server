@@ -126,3 +126,33 @@ export function getBusinessDateFromTimestamp(
 ) {
   return getBusinessDate(value, businessDayStartHour, timezoneOffsetMinutes);
 }
+
+/**
+ * "Statistika & Reyting" (historical date-range reports) is a paid-only
+ * feature — every client hides it behind a tier check, but that's UI-only,
+ * so every read endpoint that can return a date range has to enforce it
+ * server-side too, or a "tekin" caller can just hit the API directly.
+ *
+ * A single explicit day stays free — that's the daily Inventory/Statistika
+ * screen, core functionality every tier gets. Anything wider is a paid
+ * report, and "wider" includes a *missing* bound: `from`/`to` both absent
+ * (or only one present) must NOT silently fall through as "not a range" —
+ * that was exactly the shape that returned a tekin caller's entire history
+ * (see inventory.service.ts's former inline `from && to && from !== to`
+ * check, and the identical gap this same policy had in
+ * snapshot.service.ts's getRange, which had no gate at all).
+ *
+ * Shared here (rather than reimplemented per module) so the policy can only
+ * drift out of sync with itself by forgetting to call this in a new range
+ * endpoint, not by two copies quietly disagreeing the way inventory's and
+ * snapshots' independently-written checks just did.
+ */
+export function assertPaidRangeAllowed(actor: AuthUser, from?: string, to?: string) {
+  if (actor.tier !== "tekin") return;
+  if (!from || !to || from !== to) {
+    throw new AppError(
+      "Bu davr uchun hisobot faqat pullik tarif egalari uchun mavjud",
+      402,
+    );
+  }
+}

@@ -3,6 +3,7 @@ import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
 import {
   assertNotFutureDayKey,
+  assertPaidRangeAllowed,
   compareDayKeys,
   getCurrentBusinessDate,
   getEffectiveHour,
@@ -46,6 +47,13 @@ export class SnapshotService {
     if (compareDayKeys(from, to) > 0) {
       throw new AppError("from must be <= to", 422);
     }
+
+    // Same paywall inventory.service.ts's getByDate/getRange enforce over the
+    // same underlying report (daily revenue/profit history) — this endpoint
+    // had no gate at all, so a "tekin" caller could pull their full
+    // Statistics history straight from the API regardless of what the client
+    // UI hides.
+    assertPaidRangeAllowed(actor, from, to);
 
     return snapshotRepository.findRange(actor.userId, from, to);
   }

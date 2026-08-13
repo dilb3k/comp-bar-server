@@ -6,6 +6,7 @@ import { telegramReportService } from "../../services/telegram-report.service";
 import { InventoryEntryModel } from "./inventory.model";
 import {
   assertNotFutureDayKey,
+  assertPaidRangeAllowed,
   compareDayKeys,
   getBusinessDateFromTimestamp,
   getCurrentBusinessDate,
@@ -103,31 +104,6 @@ function buildInventoryResponse(product: any, inventory: any) {
 }
 
 export class InventoryService {
-  /**
-   * "Statistika & Reyting" is a paid-only feature (crossed out for the tekin
-   * tier on the pricing page) and every client hides it behind a tier check —
-   * but that is UI-only, so the read endpoints have to enforce it too.
-   *
-   * A single explicit day stays free: that is the daily Inventory screen, which
-   * is core "Mahsulot va ombor" functionality every tier gets. Anything wider
-   * is a Statistics query and requires a paid tier.
-   *
-   * Crucially, "wider" includes a *missing* bound. The previous inline check
-   * (`from && to && from !== to`) only fired when both bounds were present, so
-   * `GET /api/inventory` with no params — or with only `from` — skipped the gate
-   * entirely and returned the caller's whole history plus an all-time summary,
-   * which is exactly the report being sold.
-   */
-  private assertRangeAllowed(actor: AuthUser, from?: string, to?: string) {
-    if (actor.tier !== "tekin") return;
-    if (!from || !to || from !== to) {
-      throw new AppError(
-        "Bu davr uchun hisobot faqat pullik tarif egalari uchun mavjud",
-        402,
-      );
-    }
-  }
-
   private getAllowedDate(actor: AuthUser, date?: string) {
     const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
@@ -147,7 +123,7 @@ export class InventoryService {
   }
 
   async getByDate(actor: AuthUser, from?: string, to?: string) {
-    this.assertRangeAllowed(actor, from, to);
+    assertPaidRangeAllowed(actor, from, to);
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findByDateRange(actor.userId, from, to),
@@ -225,7 +201,7 @@ export class InventoryService {
 
     // GET /api/inventory/range had no tier check at all, making it a complete
     // bypass of the same paywall getByDate enforces over the same data.
-    this.assertRangeAllowed(actor, from, to);
+    assertPaidRangeAllowed(actor, from, to);
 
     const [entries, products] = await Promise.all([
       inventoryRepository.findRange(actor.userId, from, to),
