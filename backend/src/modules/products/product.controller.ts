@@ -19,10 +19,23 @@ function requireAuth(req: Request) {
 async function rebuildTodayState(actor: any) {
   const businessHour = getEffectiveHour(actor);
   const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
+
+  // snapshotService.createOrUpdate recomputes totals across every product +
+  // inventory entry for the tenant and writes the result back to Mongo — too
+  // slow to block a product create/update/restock/remove response on. Kick
+  // it off in the background (it self-logs via telegramReportService and
+  // upserts idempotently, so firing it without awaiting is safe) and answer
+  // the request with the last-persisted snapshot instead, which is a single
+  // cheap indexed read. Worst case the returned snapshot is momentarily
+  // stale until the background write lands (self-heals on the next request).
+  snapshotService.createOrUpdate(actor, { date: today }).catch((err) => {
+    console.error("[rebuildTodayState] background snapshot refresh failed", err);
+  });
+
   const [products, inventoryResult, snapshot] = await Promise.all([
     productService.getAll(actor),
     inventoryService.getByDate(actor, today, today),
-    snapshotService.createOrUpdate(actor, { date: today }),
+    snapshotService.getDaily(actor, today),
   ]);
   return { products, inventory: inventoryResult.items, inventorySummary: inventoryResult.summary, snapshot };
 }
