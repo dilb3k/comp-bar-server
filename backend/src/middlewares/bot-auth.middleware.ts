@@ -1,7 +1,18 @@
+import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 
 import { env } from "../config/env";
 import { AppError } from "../utils/app-error";
+
+// `!==` leaks how many leading bytes of a guess matched via response-time
+// differences — the same class of signature-timing side channel guarded
+// against in click.service.ts. Compare in constant time instead.
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // Guards the /api/bot/* routes the hisvex-bot service calls. This is
 // deliberately NOT the normal user authenticate() middleware — the bot acts
@@ -18,7 +29,7 @@ export function botAuth(req: Request, _res: Response, next: NextFunction) {
   }
 
   const provided = req.headers["x-bot-secret"];
-  if (typeof provided !== "string" || provided !== env.BOT_INTERNAL_SECRET) {
+  if (typeof provided !== "string" || !timingSafeStringEqual(provided, env.BOT_INTERNAL_SECRET)) {
     return next(new AppError("Unauthorized", 401));
   }
 

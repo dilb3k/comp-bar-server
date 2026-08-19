@@ -453,9 +453,15 @@ export class ProductService {
     businessDayStartHour?: number
   ) {
     const hour = businessDayStartHour ?? env.BUSINESS_DAY_START_HOUR;
+    // Must go through TIMEZONE_OFFSET like every other business-date
+    // computation (see inventory.service.ts's isProductVisibleOnDate) —
+    // omitting it resolves the boundary in raw UTC instead of the business's
+    // local time, which can misclassify products created near the day
+    // boundary by up to the offset's width (5h for TIMEZONE_OFFSET=300).
     const createdBusinessDate = getBusinessDateFromTimestamp(
       product.createdAt,
-      hour
+      hour,
+      env.TIMEZONE_OFFSET
     );
 
     return createdBusinessDate <= date;

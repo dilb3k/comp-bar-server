@@ -78,6 +78,14 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    // Touched (throttled, see auth.middleware.ts) on every authenticated
+    // request — the superAdmin-facing "is this admin actually using the app"
+    // signal. Deliberately separate from `updatedAt`, which means "the
+    // profile document was edited" and shouldn't be conflated with usage.
+    lastActionAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

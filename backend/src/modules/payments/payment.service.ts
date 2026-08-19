@@ -47,18 +47,46 @@ export class PaymentService {
     if (!payment) throw new AppError("Payment not found", 404);
     if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
 
-    await subscriptionService.activateFromPayment(
-      payment.userId,
-      payment.tier,
-      payment.durationMonths,
-      `bot-manual:${approvedByTelegramId}`
+    // Same read-then-write race as completeClickPayment used to have, human
+    // rather than webhook-retry triggered (two admins tapping Approve on the
+    // same pending payment within milliseconds) — atomically claim the
+    // pending->completed transition before activating, so only the winner
+    // credits the subscription.
+    const claimed = await PaymentModel.findOneAndUpdate(
+      { _id: payment._id, status: "pending" },
+      {
+        $set: {
+          status: "completed",
+          approvedBy: `bot:${approvedByTelegramId}`,
+          approvedAt: new Date(),
+        },
+      },
+      { new: true }
     );
 
-    payment.status = "completed";
-    payment.approvedBy = `bot:${approvedByTelegramId}`;
-    payment.approvedAt = new Date();
-    await payment.save();
-    return payment.toJSON();
+    if (!claimed) {
+      const latest = await PaymentModel.findById(payment._id);
+      return (latest ?? payment).toJSON();
+    }
+
+    try {
+      await subscriptionService.activateFromPayment(
+        claimed.userId,
+        claimed.tier,
+        claimed.durationMonths,
+        `bot-manual:${approvedByTelegramId}`
+      );
+    } catch (err) {
+      // Revert to pending so a retried Approve tap can try activation again
+      // instead of being stuck "completed" with no subscription granted.
+      await PaymentModel.updateOne(
+        { _id: claimed._id, status: "completed" },
+        { $set: { status: "pending", approvedBy: null, approvedAt: null } }
+      );
+      throw err;
+    }
+
+    return claimed.toJSON();
   }
 
   async rejectPayment(paymentId: string, rejectedByTelegramId: string, reason?: string) {
@@ -66,12 +94,28 @@ export class PaymentService {
     if (!payment) throw new AppError("Payment not found", 404);
     if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
 
-    payment.status = "rejected";
-    payment.approvedBy = `bot:${rejectedByTelegramId}`;
-    payment.approvedAt = new Date();
-    payment.rejectedReason = reason ?? null;
-    await payment.save();
-    return payment.toJSON();
+    // Same atomic-claim reasoning as approveManualPayment above — no
+    // activation call to roll back here, so a plain conditional update
+    // (rather than a full findOneAndUpdate+catch) is enough.
+    const claimed = await PaymentModel.findOneAndUpdate(
+      { _id: payment._id, status: "pending" },
+      {
+        $set: {
+          status: "rejected",
+          approvedBy: `bot:${rejectedByTelegramId}`,
+          approvedAt: new Date(),
+          rejectedReason: reason ?? null,
+        },
+      },
+      { new: true }
+    );
+
+    if (!claimed) {
+      const latest = await PaymentModel.findById(payment._id);
+      return (latest ?? payment).toJSON();
+    }
+
+    return claimed.toJSON();
   }
 
   async getByUserId(userId: string) {
@@ -132,20 +176,62 @@ export class PaymentService {
       throw new AppError("Payment is not pending", 400);
     }
 
-    await subscriptionService.activateFromPayment(
-      payment.userId,
-      payment.tier,
-      payment.durationMonths,
-      `bot-click:${clickTransId}`
+    // Atomically claim the pending->completed transition before activating
+    // anything. The read-then-write this replaced (check payment.status,
+    // then activate, then save) let two concurrent Complete calls for the
+    // same payment (Click retries the webhook on timeout/ambiguous response)
+    // both observe "pending" and both call activateFromPayment, double
+    // crediting the subscription. Only the request that wins this
+    // conditional update performs the activation; a request that loses the
+    // race falls back to the same idempotent "already completed" response.
+    const claimed = await PaymentModel.findOneAndUpdate(
+      { _id: payment._id, status: "pending" },
+      {
+        $set: {
+          status: "completed",
+          clickTransId,
+          clickPaydocId,
+          approvedBy: "click",
+          approvedAt: new Date(),
+        },
+      },
+      { new: true }
     );
 
-    payment.status = "completed";
-    payment.clickTransId = clickTransId;
-    payment.clickPaydocId = clickPaydocId;
-    payment.approvedBy = "click";
-    payment.approvedAt = new Date();
-    await payment.save();
-    return payment.toJSON();
+    if (!claimed) {
+      // Lost the race — another concurrent request already completed it.
+      const latest = await PaymentModel.findById(payment._id);
+      return (latest ?? payment).toJSON();
+    }
+
+    try {
+      await subscriptionService.activateFromPayment(
+        claimed.userId,
+        claimed.tier,
+        claimed.durationMonths,
+        `bot-click:${clickTransId}`
+      );
+    } catch (err) {
+      // Activation failed after we'd already claimed "completed" — revert to
+      // "pending" so this isn't left stuck completed-but-unactivated with no
+      // way to retry (Click's retried Complete webhook, or a manual retry,
+      // needs to see "pending" again to try activation once more).
+      await PaymentModel.updateOne(
+        { _id: claimed._id, status: "completed" },
+        {
+          $set: {
+            status: "pending",
+            clickTransId: null,
+            clickPaydocId: null,
+            approvedBy: null,
+            approvedAt: null,
+          },
+        }
+      );
+      throw err;
+    }
+
+    return claimed.toJSON();
   }
 
   async cancelClickPayment(payment: InstanceType<typeof PaymentModel>) {

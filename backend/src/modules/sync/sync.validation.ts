@@ -86,5 +86,12 @@ export const syncPayloadSchema = z.object({
   inventory: z.array(syncedInventorySchema).optional(),
   daily: z.array(syncedSnapshotSchema).optional(),
   snapshots: z.array(syncedSnapshotSchema).optional(),
-  lastSyncAt: z.string().datetime().optional()
+  lastSyncAt: z.string().datetime().optional(),
+  // Pagination for the server->client page of changes returned alongside
+  // this sync (see sync.service.ts). Zod strips unrecognized keys by
+  // default, so omitting these here silently dropped every client-provided
+  // limit/offset and pinned every sync response to the hardcoded defaults —
+  // a client could never page past the first 1000 changed records per entity.
+  limit: z.number().int().positive().optional(),
+  offset: z.number().int().min(0).optional()
 });

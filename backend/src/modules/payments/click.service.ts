@@ -43,6 +43,18 @@ export type ClickCompleteBody = ClickPrepareBody & {
   merchant_prepare_id: string;
 };
 
+// `===` on the recomputed hash leaks how many leading bytes of a guess
+// matched via response-time differences (a classic MD5/HMAC signature-check
+// timing side channel). Both signature checks below verify a
+// server-controlled secret is right, so compare in constant time instead.
+function timingSafeStringEqual(a: string, b: unknown): boolean {
+  if (typeof b !== "string") return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 class ClickPaymentService {
   isEnabled() {
     return Boolean(env.CLICK_MERCHANT_ID && env.CLICK_SERVICE_ID && env.CLICK_SECRET_KEY);
@@ -56,7 +68,7 @@ class ClickPaymentService {
         `${body.click_trans_id}${body.service_id}${env.CLICK_SECRET_KEY}${body.merchant_trans_id}${body.amount}${body.action}${body.sign_time}`
       )
       .digest("hex");
-    return expected === body.sign_string;
+    return timingSafeStringEqual(expected, body.sign_string);
   }
 
   verifyCompleteSignature(body: ClickCompleteBody): boolean {
@@ -67,7 +79,7 @@ class ClickPaymentService {
         `${body.click_trans_id}${body.service_id}${env.CLICK_SECRET_KEY}${body.merchant_trans_id}${body.merchant_prepare_id}${body.amount}${body.action}${body.sign_time}`
       )
       .digest("hex");
-    return expected === body.sign_string;
+    return timingSafeStringEqual(expected, body.sign_string);
   }
 
   // The pay-page URL the bot sends the user to. `transaction_param` carries

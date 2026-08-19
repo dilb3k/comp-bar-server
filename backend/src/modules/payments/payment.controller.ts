@@ -89,6 +89,7 @@ export const botController = {
       const user = await authRepository.findById(sub.userId);
       if (!user || !(user as any).telegramId) continue; // can't DM someone who never linked the bot
       results.push({
+        subscriptionId: String(sub._id),
         userId: sub.userId,
         telegramId: (user as any).telegramId,
         username: (user as any).username,
@@ -97,6 +98,11 @@ export const botController = {
       });
     }
     return sendSuccess(res, results);
+  },
+
+  async markReminderSent(req: Request, res: Response) {
+    await subscriptionService.markReminderSent(String(req.params.subscriptionId));
+    return sendSuccess(res, { ok: true });
   },
 
   async createClickPending(req: Request, res: Response) {
@@ -167,6 +173,15 @@ export const clickController = {
       const payment = await paymentService.findByMerchantTransId(body.merchant_trans_id);
       if (!payment) {
         return res.json({ error: CLICK_ERROR.USER_NOT_FOUND, error_note: "Payment not found" });
+      }
+
+      // Same check prepare() makes — Complete's signature covers merchant_prepare_id
+      // in addition to amount, but doesn't re-derive amount from our own records, so
+      // a forged/tampered amount here would still pass signature verification if
+      // it were signed with a leaked/reused sign_string. Re-verify against what we
+      // actually created the payment for, exactly like prepare() does.
+      if (Number(body.amount) !== payment.amount) {
+        return res.json({ error: CLICK_ERROR.INCORRECT_AMOUNT, error_note: "Incorrect amount" });
       }
 
       // error < 0 means Click itself is telling us the payment failed/was

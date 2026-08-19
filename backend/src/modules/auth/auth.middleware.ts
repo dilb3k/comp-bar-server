@@ -5,6 +5,13 @@ import type { UserRole } from "./auth.types";
 import { verifyAccessToken } from "./auth.utils";
 import { authRepository } from "./auth.repository";
 
+// How often an authenticated request is allowed to write lastActionAt.
+// Writing on literally every request would mean a write per API call for
+// every active session — this keeps the "last seen" signal accurate to
+// within a few minutes (plenty for "is this admin using the app at all")
+// without turning every GET into a DB write.
+const LAST_ACTION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+
 function extractBearerToken(req: Request) {
   const header = req.headers.authorization;
 
@@ -42,6 +49,13 @@ export function authenticate(options?: { allowStale?: boolean }) {
       if (!allowStale && !validSession) {
         return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401));
       }
+
+    // Never blocks the request and never fails it — this is a best-effort
+    // usage signal, not something any request should wait on or fail over.
+    const lastTouch = (user as any).lastActionAt ? new Date((user as any).lastActionAt).getTime() : 0;
+    if (Date.now() - lastTouch > LAST_ACTION_TOUCH_INTERVAL_MS) {
+      authRepository.touchLastActionAt(user._id.toString()).catch(() => {});
+    }
 
     const isSuperAdmin = payload.role === "superAdmin";
 

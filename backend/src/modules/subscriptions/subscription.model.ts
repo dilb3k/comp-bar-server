@@ -9,6 +9,13 @@ export interface ISubscription {
   endDate: Date;
   isActive: boolean;
   activatedBy: string;
+  // Set once the bot successfully DMs the user an expiry reminder for THIS
+  // subscription period. Renewal always deactivates the old doc and creates
+  // a fresh one (see activateFromPayment), so this naturally resets to null
+  // every period — no separate cleanup needed. Without it, findExpiringSoon
+  // matched the same subscription on every daily cron run until it actually
+  // expired, so a user got the same reminder up to REMINDER_DAYS_BEFORE times.
+  reminderSentAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +48,10 @@ const subscriptionSchema = new Schema<ISubscription>(
     activatedBy: {
       type: String,
       required: true,
+    },
+    reminderSentAt: {
+      type: Date,
+      default: null,
     },
   },
   {

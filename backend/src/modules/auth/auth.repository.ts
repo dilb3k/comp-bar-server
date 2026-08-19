@@ -164,6 +164,22 @@ export class AuthRepository {
     if (!Types.ObjectId.isValid(id)) return null;
     return UserModel.findByIdAndDelete(id);
   }
+
+  /**
+   * Fire-and-forget "last seen" touch — called from the auth middleware on
+   * every authenticated request, throttled by the caller so this doesn't
+   * write on literally every single one. `timestamps: false` so this
+   * intentionally does NOT also bump `updatedAt` (that field means "profile
+   * was edited", this one means "user was active").
+   */
+  async touchLastActionAt(id: string) {
+    if (!Types.ObjectId.isValid(id)) return;
+    await UserModel.updateOne(
+      { _id: id },
+      { $set: { lastActionAt: new Date() } },
+      { timestamps: false },
+    );
+  }
 }
 
 export const authRepository = new AuthRepository();

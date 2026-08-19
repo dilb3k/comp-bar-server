@@ -175,6 +175,10 @@ export class SubscriptionService {
   // the bot's daily reminder job so a business doesn't get silently
   // downgraded without warning (previously nothing notified a user their
   // subscription was about to lapse at all).
+  //
+  // Excludes subscriptions already reminded this period (reminderSentAt set
+  // — see markReminderSent) so the daily cron doesn't re-match and re-DM the
+  // same subscription on every run between now and its actual expiry.
   async findExpiringSoon(daysAhead: number) {
     const now = new Date();
     const until = new Date(now);
@@ -183,7 +187,20 @@ export class SubscriptionService {
     return SubscriptionModel.find({
       isActive: true,
       endDate: { $gte: now, $lte: until },
+      reminderSentAt: null,
     }).sort({ endDate: 1 });
+  }
+
+  // Called by the bot right after it successfully DMs the expiry reminder.
+  // Best-effort by design: if this call fails (bot restart, transient
+  // network blip), the subscription simply gets re-matched and re-reminded
+  // on the next daily run — a rare extra DM, not silence, which is the
+  // safer failure mode for a "your subscription is expiring" notice.
+  async markReminderSent(subscriptionId: string) {
+    await SubscriptionModel.updateOne(
+      { _id: subscriptionId },
+      { $set: { reminderSentAt: new Date() } }
+    );
   }
 
   async getUserTier(
