@@ -49,9 +49,9 @@ const envSchema = z.object({
   //   2. hisvex-landing/src/App.tsx's MOBILE_APK_VERSION / MOBILE_APK_URL
   //   3. right here (and the actual env vars on the backend host — these
   //      defaults only apply when the host doesn't override them)
-  MOBILE_LATEST_VERSION: z.string().trim().default("1.0.1"),
+  MOBILE_LATEST_VERSION: z.string().trim().default("1.0.2"),
   MOBILE_DOWNLOAD_URL: z.string().trim().default(
-    "https://expo.dev/accounts/hisvex/projects/hisvex/builds/e9188422-b986-4702-bd6b-5ea5eeea36d0"
+    "https://expo.dev/accounts/hisvex/projects/hisvex/builds/20f048fa-503a-4772-9bd2-3175d91b8886"
   ),
 });
 
