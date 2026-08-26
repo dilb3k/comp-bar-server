@@ -50,6 +50,31 @@ Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulani
 - Product delete soft delete qiladi
 - Snapshot inventorydan derive qilinadi
 - Sync conflict strategy: oxirgi `updatedAt` yutadi
+- Har mahsulotning `unit`i bor: `dona` (butun son) yoki `kg` (3 kasrgacha,
+  ya'ni 1 gramm aniqligida). Miqdorlar shu panjaraga yaxlitlanadi — qarang
+  `utils/quantity.ts`
+- Sotuv qatorida `unitPrice` bo'lsa (kelishilgan narx yoki chegirma natijasi),
+  o'sha birliklar `locked*` akkumulyatorlarga haqiqiy narxda yoziladi va
+  `startQuantity` ular bilan birga tushadi. Kun boshidagi zaxira
+  `startQuantity + lockedSold` sifatida tiklanadi
+
+## Miqdor va narx modeli
+
+Sotilgan birliklar ikki yo'ldan biri bilan hisoblanadi:
+
+| yo'l | qachon | qanday baholanadi |
+|---|---|---|
+| **derive** | qo'lda qoldiq tahriri, kun boshi, `unitPrice`siz sotuv | `(startQuantity − currentQuantity) × sellPrice` |
+| **locked** | `unitPrice` berilgan sotuv, kun o'rtasida narx tuzatilishi | `lockedRevenue` / `lockedProfit` — haqiqiy narxda yozilgan |
+
+Yakuniy ko'rsatkichlar ikkalasining yig'indisi, shuning uchun bitta mahsulot
+bir kunda bir necha xil narxda sotilsa ham tushum so'mgacha aniq bo'ladi.
+`lockedProfit` manfiy bo'lishi mumkin — tannarxdan past sotish haqiqiy holat.
+
+**Muhim:** chegirmani mijoz taqsimlaydi. Server faqat bitta tushunchani
+biladi — har birlik qanchaga sotilgani. Mijoz ko'rsatadigan yakuniy summa
+aynan shu narxlardan hosil qilinishi shart, aks holda ekran va hisobot
+farq qiladi.
 
 ## API
 
@@ -72,9 +97,24 @@ Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulani
   "deviceId": "expo-device-1",
   "name": "Cola 1L",
   "quantity": 20,
+  "unit": "dona",
   "buyPrice": 10000,
   "sellPrice": 15000,
   "image": ""
+}
+```
+
+`unit` ixtiyoriy va `dona` ga default bo'ladi (eski mijozlar shu sababli
+o'zgarishsiz ishlaydi). `kg` bo'lsa `quantity` kasr bo'lishi mumkin:
+
+```json
+{
+  "deviceId": "expo-device-1",
+  "name": "Mol go'shti",
+  "quantity": 12.5,
+  "unit": "kg",
+  "buyPrice": 80000,
+  "sellPrice": 95000
 }
 ```
 
@@ -84,6 +124,22 @@ Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulani
 - `GET /api/inventory/range?from=2026-04-19&to=2026-04-20`
 - `POST /api/inventory/start-day`
 - `PUT /api/inventory/bulk-current`
+- `POST /api/inventory/sales`
+
+`POST /api/inventory/sales` body — `unitPrice` faqat asl narxdan farq
+qilganda yuboriladi:
+
+```json
+{
+  "deviceId": "expo-device-1",
+  "date": "2026-04-20",
+  "lines": [
+    { "productId": "prd_abc123", "quantity": 2 },
+    { "productId": "prd_abc123", "quantity": 3, "unitPrice": 9000 },
+    { "productId": "prd_meat01", "quantity": 1.75, "unitPrice": 90000 }
+  ]
+}
+```
 
 `PUT /api/inventory/bulk-current` body:
 
