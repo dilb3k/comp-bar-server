@@ -17,6 +17,10 @@ import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snaps
 import { normalizeProductImage } from "../modules/products/product-image";
 import { updateProductSchema } from "../modules/products/product.validation";
 import { syncPayloadSchema } from "../modules/sync/sync.validation";
+import {
+  inventoryBulkCurrentSchema,
+  inventorySalesSchema
+} from "../modules/inventory/inventory.validation";
 import { normalizePhone, maskPhone, phoneVerificationRequired, shouldClearActiveSession } from "../modules/auth/auth.utils";
 
 function run(name: string, fn: () => void) {
@@ -273,6 +277,80 @@ run("a discounted sale is valued at the price actually charged", () => {
   assert.equal(metrics.realizedProfit, 2 * 4000 + 3 * 3000);
   // Opening stock stays recoverable as startQuantity + lockedSold.
   assert.equal(19 + 3, 22);
+});
+
+run("a hand-typed revenue takes every so'm straight off the profit", () => {
+  // The user's own example: bought at 10 000, list price 14 000, two units
+  // sold. Left alone that is 28 000 revenue and 8 000 profit; restating the
+  // revenue as 25 000 must leave exactly 25 000 - 2 x 10 000 = 5 000 profit.
+  const buyPrice = 10000;
+  const sold = 2;
+  const stated = 25000;
+
+  const metrics = calculateInventoryMetrics({
+    // The derived span has collapsed: those units now live in locked*.
+    startQuantity: 5,
+    currentQuantity: 5,
+    buyPrice,
+    sellPrice: 14000,
+    lockedSold: sold,
+    lockedRevenue: stated,
+    lockedProfit: stated - sold * buyPrice,
+  });
+
+  assert.equal(metrics.sold, 2);
+  assert.equal(metrics.revenue, 25000);
+  assert.equal(metrics.realizedProfit, 5000);
+
+  // And the drop in profit equals the drop in revenue, exactly.
+  const untouched = calculateInventoryMetrics({
+    startQuantity: 7,
+    currentQuantity: 5,
+    buyPrice,
+    sellPrice: 14000,
+  });
+  assert.equal(untouched.revenue, 28000);
+  assert.equal(untouched.realizedProfit, 8000);
+  assert.equal(untouched.revenue - metrics.revenue, untouched.realizedProfit - metrics.realizedProfit);
+});
+
+run("an exact line revenue survives a quantity no price can divide", () => {
+  // 25 000 over 3 units has no exact per-unit price (8333.33 x 3 = 24 999.99),
+  // which is why the accumulator stores an amount rather than a price.
+  const metrics = calculateInventoryMetrics({
+    startQuantity: 0,
+    currentQuantity: 0,
+    buyPrice: 5000,
+    sellPrice: 10000,
+    lockedSold: 3,
+    lockedRevenue: 25000,
+    lockedProfit: 25000 - 3 * 5000,
+  });
+  assert.equal(metrics.revenue, 25000);
+  assert.equal(metrics.realizedProfit, 10000);
+});
+
+run("sales validation accepts an exact line revenue", () => {
+  const okResult = inventorySalesSchema.safeParse({
+    deviceId: "dev_1",
+    lines: [{ productId: "prd_1", quantity: 3, lineRevenue: 25000 }],
+  });
+  assert.equal(okResult.success, true);
+
+  // A negative amount is not money taken.
+  const bad = inventorySalesSchema.safeParse({
+    deviceId: "dev_1",
+    lines: [{ productId: "prd_1", quantity: 3, lineRevenue: -1 }],
+  });
+  assert.equal(bad.success, false);
+});
+
+run("bulk-current validation accepts a restated revenue", () => {
+  const result = inventoryBulkCurrentSchema.safeParse({
+    deviceId: "dev_1",
+    items: [{ productId: "prd_1", currentQuantity: 5, lineRevenue: 25000 }],
+  });
+  assert.equal(result.success, true);
 });
 
 run("selling below cost records a real loss instead of clamping at zero", () => {

@@ -88,6 +88,7 @@ type BulkCurrentInput = {
   items: Array<{
     productId: string;
     currentQuantity: number;
+    lineRevenue?: number;
     note?: string;
   }>;
 };
@@ -496,6 +497,30 @@ export class InventoryService {
             ? toNumber((existing as any).startQuantity)
             : productQuantity;
 
+          const buyPrice = toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0);
+          const sellPrice = toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0);
+
+          let lockedRevenue = toNumber((existing as any)?.lockedRevenue ?? 0);
+          let lockedProfit = toNumber((existing as any)?.lockedProfit ?? 0);
+          let lockedSold = toNumber((existing as any)?.lockedSold ?? 0);
+          let nextStartQuantity = startQuantity;
+
+          // `lineRevenue` restates the money taken for everything this entry
+          // counts as sold — the "Kutilgan tushum" field on the inventory
+          // screen. The whole derived span therefore moves into the locked
+          // accumulators at that amount and collapses (start meets current),
+          // so nothing is left to be re-valued at the list price. Profit
+          // follows on its own: the cost of those units has not changed, so
+          // every so'm taken off the revenue comes straight off the profit.
+          const derivedSold = roundQty(Math.max(startQuantity - currentQuantity, 0));
+          if (item.lineRevenue !== undefined && derivedSold > 0) {
+            const stated = roundMoney(item.lineRevenue);
+            lockedSold = roundQty(lockedSold + derivedSold);
+            lockedRevenue = roundMoney(lockedRevenue + stated);
+            lockedProfit = roundMoney(lockedProfit + stated - derivedSold * buyPrice);
+            nextStartQuantity = currentQuantity;
+          }
+
           const updated = await inventoryRepository.upsertByProductAndDateWithSession(
             actor.userId,
             (product as any).localId,
@@ -509,13 +534,13 @@ export class InventoryService {
               productName: product.name ?? "",
               unit,
               date: targetDate,
-              startQuantity,
+              startQuantity: nextStartQuantity,
               currentQuantity,
-              buyPrice: toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
-              sellPrice: toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
-              lockedRevenue: toNumber((existing as any)?.lockedRevenue ?? 0),
-              lockedProfit: toNumber((existing as any)?.lockedProfit ?? 0),
-              lockedSold: toNumber((existing as any)?.lockedSold ?? 0),
+              buyPrice,
+              sellPrice,
+              lockedRevenue,
+              lockedProfit,
+              lockedSold,
               note: item.note ?? (existing as any)?.note ?? "",
               createdAt: (existing as any)?.createdAt ?? now,
               updatedAt: now,
@@ -542,7 +567,14 @@ export class InventoryService {
             before: existing
               ? { currentQuantity: (existing as any).currentQuantity }
               : undefined,
-            after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity, unit },
+            after: {
+              productId: item.productId,
+              date: targetDate,
+              startQuantity: nextStartQuantity,
+              currentQuantity,
+              unit,
+              ...(item.lineRevenue !== undefined ? { revenue: roundMoney(item.lineRevenue) } : {}),
+            },
             source: "rest",
             createdBy: actor.userId,
           });
@@ -587,22 +619,25 @@ export class InventoryService {
   /**
    * Record a sale.
    *
-   * A line may carry a `unitPrice` — the price actually charged, when the
-   * cashier haggled or applied a discount. Those units cannot be valued by the
-   * usual derivation (`(startQuantity - currentQuantity) * sellPrice`), so they
-   * are moved into the entry's `locked*` accumulators at their real price, the
-   * same mechanism a mid-day price correction already uses:
+   * A line may state what it actually brought in, either as `lineRevenue`
+   * (money for the whole line — exact, and what a hand-typed total uses) or
+   * as `unitPrice` (a haggled per-unit price). Those units cannot be valued
+   * by the usual derivation (`(startQuantity - currentQuantity) * sellPrice`),
+   * so they move into the entry's `locked*` accumulators at the money actually
+   * taken, the same mechanism a mid-day price correction already uses:
    *
    *   lockedSold    += qty
-   *   lockedRevenue += qty * chargedPrice
-   *   lockedProfit  += qty * (chargedPrice - buyPrice)
+   *   lockedRevenue += chargedRevenue
+   *   lockedProfit  += chargedRevenue - qty * buyPrice
    *   startQuantity -= qty   (in lockstep, so the derived portion is untouched)
    *   currentQuantity -= qty
    *
    * The day's opening stock stays recoverable as `startQuantity + lockedSold`
    * (what aggregateInventoryForRange and the statistics screens already do),
    * and revenue is exact to the so'm regardless of how many different prices
-   * one product sold at during the day.
+   * one product sold at during the day. Because the accumulator holds an
+   * amount rather than a price, a figure the user typed is stored exactly —
+   * 25 000 over 3 units stays 25 000, which no per-unit price can express.
    *
    * A line at the list price skips all of that and just decrements
    * currentQuantity, keeping the common case byte-identical to before.
@@ -610,7 +645,7 @@ export class InventoryService {
   async sales(actor: AuthUser, payload: {
     date?: string;
     deviceId: string;
-    lines: Array<{ productId: string; quantity: number; unitPrice?: number }>;
+    lines: Array<{ productId: string; quantity: number; unitPrice?: number; lineRevenue?: number }>;
   }) {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
@@ -670,8 +705,17 @@ export class InventoryService {
 
           const buyPrice = toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0);
           const listSellPrice = toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0);
-          const chargedPrice =
-            line.unitPrice === undefined ? listSellPrice : roundMoney(line.unitPrice);
+
+          // Money for this line. `lineRevenue` wins over `unitPrice` — it is
+          // an exact amount, so a hand-typed cart total survives intact where
+          // a per-unit price would round (see the validation schema).
+          const listRevenue = roundMoney(quantity * listSellPrice);
+          const chargedRevenue =
+            line.lineRevenue !== undefined
+              ? roundMoney(line.lineRevenue)
+              : line.unitPrice !== undefined
+                ? roundMoney(quantity * line.unitPrice)
+                : listRevenue;
 
           let lockedRevenue = toNumber((existing as any)?.lockedRevenue ?? 0);
           let lockedProfit = toNumber((existing as any)?.lockedProfit ?? 0);
@@ -679,16 +723,16 @@ export class InventoryService {
 
           const newCurrent = roundQty(currentQty - quantity);
           // Off-list units can't be valued by the start-minus-current
-          // derivation, so they move into the locked accumulators at the price
-          // actually charged and drop out of the derived span entirely (both
+          // derivation, so they move into the locked accumulators at the money
+          // actually taken and drop out of the derived span entirely (both
           // quantities fall together). See this method's doc comment.
-          const isOffListPrice = Math.abs(chargedPrice - listSellPrice) > 0.005;
-          const newStart = isOffListPrice ? roundQty(startQty - quantity) : startQty;
+          const isOffList = Math.abs(chargedRevenue - listRevenue) > 0.005;
+          const newStart = isOffList ? roundQty(startQty - quantity) : startQty;
 
-          if (isOffListPrice) {
+          if (isOffList) {
             lockedSold = roundQty(lockedSold + quantity);
-            lockedRevenue = roundMoney(lockedRevenue + quantity * chargedPrice);
-            lockedProfit = roundMoney(lockedProfit + quantity * (chargedPrice - buyPrice));
+            lockedRevenue = roundMoney(lockedRevenue + chargedRevenue);
+            lockedProfit = roundMoney(lockedProfit + chargedRevenue - quantity * buyPrice);
           }
 
           const updated = await inventoryRepository.upsertByProductAndDateWithSession(
@@ -742,9 +786,9 @@ export class InventoryService {
               // Recorded on every sale, not just discounted ones: the trail
               // has to answer "what was this actually sold for" without
               // needing the product's price history to reconstruct it.
-              unitPrice: chargedPrice,
-              listPrice: listSellPrice,
-              discount: roundMoney((listSellPrice - chargedPrice) * quantity),
+              revenue: chargedRevenue,
+              listRevenue,
+              discount: roundMoney(listRevenue - chargedRevenue),
             },
             source: "rest",
             createdBy: actor.userId,

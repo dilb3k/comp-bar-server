@@ -57,9 +57,24 @@ const inventoryItemSchema = z.object({
   }
 });
 
+/**
+ * Money actually taken for a line, overriding whatever the list price would
+ * have produced. It is an absolute amount rather than a per-unit price
+ * because that is the only way a figure the user typed can be stored
+ * exactly: a target of 25 000 over 3 units has no exact per-unit price
+ * (8333.33 x 3 = 24 999.99), so any price-based route loses a tiyin.
+ */
+const lineRevenueSchema = z.number().min(0).finite().optional();
+
 const bulkCurrentItemSchema = z.object({
   productId: z.string().trim().min(1),
   currentQuantity: quantitySchema,
+  /**
+   * Restates the revenue for every unit this edit accounts as sold — the
+   * "Kutilgan tushum" figure on the inventory screen. Profit follows from it
+   * automatically, since the cost of those units does not change.
+   */
+  lineRevenue: lineRevenueSchema,
   note: z.string().optional().default("")
 });
 
@@ -80,15 +95,20 @@ const salesLineItemSchema = z.object({
   quantity: quantitySchema.refine((value) => value > 0, "quantity must be > 0"),
   /**
    * The price actually charged per unit for this line, when it differs from
-   * the product's list price — a haggled price, or the per-unit result of a
-   * discount the client already distributed across the cart. Omitted means
-   * "charge the list price".
+   * the product's list price — a haggled price the cashier typed on the row.
+   * Omitted means "charge the list price".
    *
    * Deliberately allowed below buyPrice (a clearance sale at a loss is a real
    * thing) and down to 0 (a giveaway); the resulting negative profit is
    * representable — see the lockedProfit field in inventory.model.ts.
    */
   unitPrice: z.number().min(0).finite().optional(),
+  /**
+   * Money actually taken for the whole line. Wins over `unitPrice` when both
+   * are present, because it is the only form that can carry a hand-typed
+   * cart total without rounding drift — see lineRevenueSchema above.
+   */
+  lineRevenue: lineRevenueSchema,
 });
 
 export const inventorySalesSchema = z.object({
