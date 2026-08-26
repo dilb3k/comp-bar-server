@@ -1,5 +1,7 @@
+import { roundMoney, roundQty } from "../../utils/quantity";
+
 export function calculateSold(startQuantity: number, currentQuantity: number) {
-  return Math.max(startQuantity - currentQuantity, 0);
+  return roundQty(Math.max(startQuantity - currentQuantity, 0));
 }
 
 export function calculateInventoryMetrics({
@@ -19,20 +21,24 @@ export function calculateInventoryMetrics({
   lockedProfit?: number;
   lockedSold?: number;
 }) {
-  const safeStart = Math.max(startQuantity, 0);
-  const safeCurrent = Math.max(currentQuantity, 0);
+  const safeStart = roundQty(Math.max(startQuantity, 0));
+  const safeCurrent = roundQty(Math.max(currentQuantity, 0));
 
   const remaining = safeCurrent;
-  const newSold = Math.max(safeStart - safeCurrent, 0);
-  const sold = lockedSold + newSold;
+  // Units moved by manual stock edits (start-day, "set current quantity"),
+  // valued at the entry's list price. Units sold at a *negotiated* price never
+  // appear here — inventory.service's sales() folds those into locked* at the
+  // price actually charged, so this stays exactly the list-price portion.
+  const newSold = roundQty(Math.max(safeStart - safeCurrent, 0));
+  const sold = roundQty(lockedSold + newSold);
 
-  const revenue = lockedRevenue + newSold * sellPrice;
-  const realizedProfit = lockedProfit + newSold * (sellPrice - buyPrice);
+  const revenue = roundMoney(lockedRevenue + newSold * sellPrice);
+  const realizedProfit = roundMoney(lockedProfit + newSold * (sellPrice - buyPrice));
 
-  const stockSellValue = remaining * sellPrice;
-  const stockBuyValue = remaining * buyPrice;
+  const stockSellValue = roundMoney(remaining * sellPrice);
+  const stockBuyValue = roundMoney(remaining * buyPrice);
 
-  const potentialProfit = remaining * (sellPrice - buyPrice);
+  const potentialProfit = roundMoney(remaining * (sellPrice - buyPrice));
 
   const marginPercent =
     sellPrice > 0 ? Math.round(((sellPrice - buyPrice) / sellPrice) * 100) : 0;
@@ -143,7 +149,7 @@ export function aggregateInventoryForRange(items: any[]) {
     const productId = getItemProductId(item);
     if (!productId) continue;
 
-    const entrySold = item.sold ?? (item.lockedSold ?? 0) + Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0);
+    const entrySold = item.sold ?? roundQty((item.lockedSold ?? 0) + Math.max((item.startQuantity ?? 0) - (item.currentQuantity ?? 0), 0));
     const entryRevenue = item.revenue ?? 0;
     const entryProfit = item.realizedProfit ?? 0;
 
@@ -164,7 +170,11 @@ export function aggregateInventoryForRange(items: any[]) {
 
     if (!existing) {
       productLatestEntry.set(productId, item);
-      productFirstStart.set(productId, (item.startQuantity ?? 0) + (item.lockedSold ?? 0));
+      // Reconstructed opening stock. `startQuantity` is decremented in lockstep
+    // with lockedSold whenever units are moved into the locked accumulators
+    // (a negotiated-price sale, a mid-day price correction), so their sum is
+    // the day's true opening count regardless of which path units took.
+    productFirstStart.set(productId, roundQty((item.startQuantity ?? 0) + (item.lockedSold ?? 0)));
       continue;
     }
 
@@ -204,14 +214,14 @@ export function aggregateInventoryForRange(items: any[]) {
   }
 
   return {
-    totalStart,
-    totalCurrent,
-    totalSold,
-    totalRevenue,
-    totalProfit,
-    totalStockSellValue,
-    totalStockBuyValue,
-    totalStockProfit,
+    totalStart: roundQty(totalStart),
+    totalCurrent: roundQty(totalCurrent),
+    totalSold: roundQty(totalSold),
+    totalRevenue: roundMoney(totalRevenue),
+    totalProfit: roundMoney(totalProfit),
+    totalStockSellValue: roundMoney(totalStockSellValue),
+    totalStockBuyValue: roundMoney(totalStockBuyValue),
+    totalStockProfit: roundMoney(totalStockProfit),
   };
 }
 
@@ -226,8 +236,8 @@ export function getAdjustedInventoryQuantities(
   );
   return {
     soldSoFar,
-    startQuantity: soldSoFar + newQuantity,
-    currentQuantity: newQuantity,
+    startQuantity: roundQty(soldSoFar + newQuantity),
+    currentQuantity: roundQty(newQuantity),
   };
 }
 

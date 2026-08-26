@@ -1,5 +1,7 @@
 import { Schema, model, models } from "mongoose";
 
+import { DEFAULT_UNIT, PRODUCT_UNITS } from "../../utils/quantity";
+
 function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
@@ -15,6 +17,11 @@ const snapshotItemSchema = new Schema(
       type: String,
       required: true,
       trim: true
+    },
+    unit: {
+      type: String,
+      enum: PRODUCT_UNITS,
+      default: DEFAULT_UNIT
     },
     sold: {
       type: Number,

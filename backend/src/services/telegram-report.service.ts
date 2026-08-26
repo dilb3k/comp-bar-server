@@ -1,4 +1,5 @@
 import { env } from "../config/env";
+import { formatQuantity, normalizeUnit } from "../utils/quantity";
 
 type TelegramReportPayload = {
   title: string;
@@ -89,6 +90,7 @@ class TelegramReportService {
       localId?: string;
       name?: string;
       quantity?: number;
+      unit?: string;
       buyPrice?: number;
       sellPrice?: number;
       deviceId?: string;
@@ -100,7 +102,7 @@ class TelegramReportService {
       lines: [
         `Mahsulot: ${formatValue(product.name)}`,
         `Local ID: ${formatValue(product.localId)}`,
-        `Qoldiq: ${formatValue(product.quantity)}`,
+        `Qoldiq: ${product.quantity === undefined ? formatValue(product.quantity) : formatQuantity(product.quantity, normalizeUnit(product.unit))}`,
         `Olish narxi: ${formatValue(product.buyPrice)}`,
         `Sotish narxi: ${formatValue(product.sellPrice)}`,
         `Device ID: ${formatValue(product.deviceId)}`
@@ -114,6 +116,7 @@ class TelegramReportService {
       localId?: string;
       name?: string;
       quantity?: number;
+      unit?: string;
       buyPrice?: number;
       sellPrice?: number;
       deviceId?: string;
@@ -125,7 +128,7 @@ class TelegramReportService {
       lines: [
         `Mahsulot: ${formatValue(product.name)}`,
         `Local ID: ${formatValue(product.localId)}`,
-        `Yangi qoldiq: ${formatValue(product.quantity)}`,
+        `Yangi qoldiq: ${product.quantity === undefined ? formatValue(product.quantity) : formatQuantity(product.quantity, normalizeUnit(product.unit))}`,
         `Olish narxi: ${formatValue(product.buyPrice)}`,
         `Sotish narxi: ${formatValue(product.sellPrice)}`,
         `Device ID: ${formatValue(product.deviceId)}`
@@ -157,6 +160,7 @@ class TelegramReportService {
       deviceId: string;
       items: Array<{
         productName?: string;
+        unit?: string;
         startQuantity: number;
         currentQuantity: number;
         sold: number;
@@ -172,7 +176,7 @@ class TelegramReportService {
         `Pozitsiyalar soni: ${payload.items.length}`,
         ...payload.items.map(
           (item) =>
-            `${formatValue(item.productName)} | start=${formatValue(item.startQuantity)} | current=${formatValue(item.currentQuantity)} | sold=${formatValue(item.sold)}`
+            `${formatValue(item.productName)} | start=${formatQuantity(item.startQuantity, normalizeUnit(item.unit))} | current=${formatQuantity(item.currentQuantity, normalizeUnit(item.unit))} | sold=${formatQuantity(item.sold, normalizeUnit(item.unit))}`
         )
       ]
     });
@@ -185,6 +189,7 @@ class TelegramReportService {
       deviceId: string;
       items: Array<{
         productName?: string;
+        unit?: string;
         startQuantity: number;
         currentQuantity: number;
         sold: number;
@@ -200,7 +205,7 @@ class TelegramReportService {
         `Pozitsiyalar soni: ${payload.items.length}`,
         ...payload.items.map(
           (item) =>
-            `${formatValue(item.productName)} | start=${formatValue(item.startQuantity)} | current=${formatValue(item.currentQuantity)} | sold=${formatValue(item.sold)}`
+            `${formatValue(item.productName)} | start=${formatQuantity(item.startQuantity, normalizeUnit(item.unit))} | current=${formatQuantity(item.currentQuantity, normalizeUnit(item.unit))} | sold=${formatQuantity(item.sold, normalizeUnit(item.unit))}`
         )
       ]
     });

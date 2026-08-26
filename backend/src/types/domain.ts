@@ -1,3 +1,5 @@
+import type { ProductUnit } from "../utils/quantity";
+
 export interface Product {
   id: string;
   ownerAdminId: string;
@@ -5,6 +7,7 @@ export interface Product {
   deviceId: string;
   name: string;
   quantity: number;
+  unit?: ProductUnit;
   buyPrice: number;
   sellPrice: number;
   image: string;
@@ -36,6 +39,7 @@ export interface InventoryEntry {
 export interface DailySnapshotItem {
   productId: string;
   productName: string;
+  unit?: ProductUnit;
   sold: number;
   buyPrice?: number;
   sellPrice?: number;

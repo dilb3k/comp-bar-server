@@ -1,9 +1,24 @@
 import { z } from "zod";
 
 import { isValidDayKey } from "../../utils/business-day";
+import { QTY_DECIMALS, QTY_EPSILON, roundQty } from "../../utils/quantity";
 
 const dayKeySchema = z.string().refine(isValidDayKey, "date must be YYYY-MM-DD");
 const isoDateTime = z.string().optional();
+
+/**
+ * Quantities carry fractions now (a "kg" product can be 2.5), so the guard is
+ * precision rather than integrality — see utils/quantity for why every value
+ * is snapped to the 3-decimal grid before any arithmetic touches it.
+ */
+const quantitySchema = z
+  .number()
+  .min(0)
+  .refine(
+    (value) => Math.abs(value * 10 ** QTY_DECIMALS - Math.round(value * 10 ** QTY_DECIMALS)) < 1e-6,
+    `quantity supports at most ${QTY_DECIMALS} decimals`,
+  )
+  .transform(roundQty);
 
 export const inventoryDateQuerySchema = z.object({
   date: dayKeySchema.optional(),
@@ -21,15 +36,18 @@ const inventoryItemSchema = z.object({
   deviceId: z.string().trim().min(1).optional(),
   productId: z.string().trim().min(1),
   date: dayKeySchema.optional(),
-  startQuantity: z.number().int().min(0),
-  currentQuantity: z.number().int().min(0).optional(),
+  startQuantity: quantitySchema,
+  currentQuantity: quantitySchema.optional(),
   note: z.string().optional().default(""),
   createdAt: isoDateTime,
   updatedAt: isoDateTime
 }).superRefine((value, ctx) => {
+  // Epsilon-tolerant: both sides have already been rounded to the same grid,
+  // so a difference smaller than half a step is rounding noise, not an
+  // over-count worth rejecting.
   if (
     value.currentQuantity !== undefined &&
-    value.currentQuantity > value.startQuantity
+    value.currentQuantity - value.startQuantity > QTY_EPSILON
   ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -41,7 +59,7 @@ const inventoryItemSchema = z.object({
 
 const bulkCurrentItemSchema = z.object({
   productId: z.string().trim().min(1),
-  currentQuantity: z.number().int().min(0),
+  currentQuantity: quantitySchema,
   note: z.string().optional().default("")
 });
 
@@ -59,7 +77,18 @@ export const inventoryBulkCurrentSchema = z.object({
 
 const salesLineItemSchema = z.object({
   productId: z.string().trim().min(1),
-  quantity: z.number().int().min(1),
+  quantity: quantitySchema.refine((value) => value > 0, "quantity must be > 0"),
+  /**
+   * The price actually charged per unit for this line, when it differs from
+   * the product's list price — a haggled price, or the per-unit result of a
+   * discount the client already distributed across the cart. Omitted means
+   * "charge the list price".
+   *
+   * Deliberately allowed below buyPrice (a clearance sale at a loss is a real
+   * thing) and down to 0 (a giveaway); the resulting negative profit is
+   * representable — see the lockedProfit field in inventory.model.ts.
+   */
+  unitPrice: z.number().min(0).finite().optional(),
 });
 
 export const inventorySalesSchema = z.object({

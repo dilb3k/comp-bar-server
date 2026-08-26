@@ -5,6 +5,7 @@ import type { Product } from "../../types/domain";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
 import { getBusinessDateFromTimestamp, getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
+import { normalizeQuantity, normalizeUnit, roundQty } from "../../utils/quantity";
 import { telegramReportService } from "../../services/telegram-report.service";
 import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
@@ -45,6 +46,12 @@ export class ProductService {
     } catch {
       storedImage = normalizedImage;
     }
+
+    // The unit decides what a quantity may even look like, so resolve it
+    // before anything touches payload.quantity: "dona" snaps to a whole
+    // number, "kg" keeps its 3 decimals.
+    const unit = normalizeUnit(payload.unit);
+    const quantity = normalizeQuantity(Number(payload.quantity ?? 0), unit);
 
     let displayIndex = payload.displayIndex;
     const businessHour = getEffectiveHour(actor);
@@ -90,7 +97,8 @@ export class ProductService {
               localId,
               deviceId: payload.deviceId,
               name: payload.name,
-              quantity: payload.quantity,
+              quantity,
+              unit,
               buyPrice: payload.buyPrice,
               sellPrice: payload.sellPrice,
               displayIndex,
@@ -125,9 +133,11 @@ export class ProductService {
             localId: `${today}-${(p as any).localId}`,
             deviceId: payload.deviceId,
             productId: (p as any).localId,
+            productName: payload.name,
+            unit,
             date: today,
-            startQuantity: payload.quantity,
-            currentQuantity: payload.quantity,
+            startQuantity: quantity,
+            currentQuantity: quantity,
             buyPrice: Number(payload.buyPrice || 0),
             sellPrice: Number(payload.sellPrice || 0),
             note: "",
@@ -140,7 +150,7 @@ export class ProductService {
             action: "CREATE",
             entityType: "product",
             entityId: (p as any).localId,
-            after: { name: payload.name, quantity: payload.quantity, buyPrice: payload.buyPrice, sellPrice: payload.sellPrice },
+            after: { name: payload.name, quantity, unit, buyPrice: payload.buyPrice, sellPrice: payload.sellPrice },
             source: "rest",
             createdBy: actor.userId,
           });
@@ -153,6 +163,7 @@ export class ProductService {
         localId: (product as any).localId,
         name: (product as any).name,
         quantity: (product as any).quantity,
+        unit: (product as any).unit,
         buyPrice: (product as any).buyPrice,
         sellPrice: (product as any).sellPrice,
         deviceId: (product as any).deviceId
@@ -168,7 +179,13 @@ export class ProductService {
     const product = await this.getByIdentifier(actor, identifier);
 
     const updatedAt = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
-    const nextQuantity = payload.quantity ?? (product as any).quantity;
+    // Switching a product to "dona" must also make its existing stock
+    // countable — otherwise a 2.5 kg product silently keeps a half piece.
+    const nextUnit = normalizeUnit(payload.unit ?? (product as any).unit);
+    const nextQuantity = normalizeQuantity(
+      Number(payload.quantity ?? (product as any).quantity ?? 0),
+      nextUnit,
+    );
     const nextBuyPrice = payload.buyPrice ?? (product as any).buyPrice;
     const nextSellPrice = payload.sellPrice ?? (product as any).sellPrice;
     const normalizedImage = normalizeProductImage(payload.image);
@@ -187,6 +204,7 @@ export class ProductService {
       deviceId: payload.deviceId ?? (product as any).deviceId,
       name: payload.name ?? (product as any).name,
       quantity: nextQuantity,
+      unit: nextUnit,
       buyPrice: nextBuyPrice,
       sellPrice: nextSellPrice,
       image:
@@ -287,6 +305,8 @@ export class ProductService {
             localId: (inventoryEntry as any).localId,
             deviceId: payload.deviceId ?? (inventoryEntry as any).deviceId,
             productId: (product as any).localId,
+            productName: payload.name ?? (product as any).name,
+            unit: nextUnit,
             date: today,
             startQuantity: startQ,
             currentQuantity: currentQ,
@@ -304,6 +324,8 @@ export class ProductService {
             localId: `${today}-${(product as any).localId}`,
             deviceId: payload.deviceId ?? (product as any).deviceId,
             productId: (product as any).localId,
+            productName: payload.name ?? (product as any).name,
+            unit: nextUnit,
             date: today,
             startQuantity: nextQuantity,
             currentQuantity: nextQuantity,
@@ -320,8 +342,8 @@ export class ProductService {
           action: "UPDATE",
           entityType: "product",
           entityId: (product as any).localId,
-          before: { quantity: (product as any).quantity, buyPrice: (product as any).buyPrice, sellPrice: (product as any).sellPrice },
-          after: { quantity: nextQuantity, buyPrice: nextBuyPrice, sellPrice: nextSellPrice },
+          before: { quantity: (product as any).quantity, unit: normalizeUnit((product as any).unit), buyPrice: (product as any).buyPrice, sellPrice: (product as any).sellPrice },
+          after: { quantity: nextQuantity, unit: nextUnit, buyPrice: nextBuyPrice, sellPrice: nextSellPrice },
           source: "rest",
           createdBy: actor.userId,
         });
@@ -334,6 +356,7 @@ export class ProductService {
           localId: (updatedProduct as any).localId,
           name: (updatedProduct as any).name,
           quantity: (updatedProduct as any).quantity,
+          unit: (updatedProduct as any).unit,
           buyPrice: (updatedProduct as any).buyPrice,
           sellPrice: (updatedProduct as any).sellPrice,
           deviceId: (updatedProduct as any).deviceId
@@ -353,6 +376,17 @@ export class ProductService {
       throw new AppError("deltaQuantity must be a positive number", 422);
     }
 
+    const unit = normalizeUnit((product as any).unit);
+    const delta = normalizeQuantity(deltaQuantity, unit);
+    if (delta <= 0) {
+      throw new AppError(
+        unit === "kg"
+          ? "Qo'shiladigan miqdor 0 dan katta bo'lishi kerak"
+          : "Qo'shiladigan miqdor kamida 1 dona bo'lishi kerak",
+        422,
+      );
+    }
+
     const updatedAt = new Date();
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
@@ -363,7 +397,7 @@ export class ProductService {
         const up = await productRepository.incrementQuantity(
           actor.userId,
           (product as any)._id.toString(),
-          deltaQuantity,
+          delta,
           session
         );
 
@@ -375,7 +409,7 @@ export class ProductService {
           actor.userId,
           (product as any).localId,
           today,
-          deltaQuantity,
+          delta,
           session
         );
 
@@ -384,9 +418,11 @@ export class ProductService {
             localId: `${today}-${(product as any).localId}`,
             deviceId: (product as any).deviceId,
             productId: (product as any).localId,
+            productName: (product as any).name,
+            unit,
             date: today,
-            startQuantity: (up as any).quantity,
-            currentQuantity: (up as any).quantity,
+            startQuantity: roundQty((up as any).quantity),
+            currentQuantity: roundQty((up as any).quantity),
             buyPrice: Number((up as any).buyPrice || 0),
             sellPrice: Number((up as any).sellPrice || 0),
             note: "",
@@ -400,8 +436,8 @@ export class ProductService {
           action: "RESTOCK",
           entityType: "product",
           entityId: (product as any).localId,
-          before: { quantity: (product as any).quantity },
-          after: { quantity: (up as any).quantity, delta: deltaQuantity },
+          before: { quantity: (product as any).quantity, unit },
+          after: { quantity: (up as any).quantity, delta, unit },
           source: "rest",
           createdBy: actor.userId,
         });
@@ -414,6 +450,7 @@ export class ProductService {
           localId: (updatedProduct as any).localId,
           name: (updatedProduct as any).name,
           quantity: (updatedProduct as any).quantity,
+          unit: (updatedProduct as any).unit,
           buyPrice: (updatedProduct as any).buyPrice,
           sellPrice: (updatedProduct as any).sellPrice,
           deviceId: (updatedProduct as any).deviceId

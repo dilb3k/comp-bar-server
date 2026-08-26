@@ -1,3 +1,4 @@
+import { normalizeUnit } from "../../utils/quantity";
 import { InventoryEntryModel } from "./inventory.model";
 
 type InventoryPayload = Record<string, unknown>;
@@ -16,6 +17,7 @@ function buildInventoryRecord(payload: InventoryPayload) {
     // "O'chirilgan mahsulot", and the read-path backfill rewrote it on every
     // single GET.
     productName: payload.productName,
+    unit: normalizeUnit(payload.unit),
     date: payload.date,
     startQuantity: payload.startQuantity,
     currentQuantity: payload.currentQuantity,
@@ -168,6 +170,7 @@ export class InventoryRepository {
                 lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : conflicting.lockedProfit,
                 lockedSold: payload.lockedSold !== undefined ? record.lockedSold : conflicting.lockedSold,
                 productName: payload.productName !== undefined ? record.productName : conflicting.productName,
+                unit: payload.unit !== undefined ? record.unit : conflicting.unit,
               };
               Object.assign(conflicting, merged);
               return conflicting.save({ session });
@@ -191,6 +194,7 @@ export class InventoryRepository {
       lockedProfit: payload.lockedProfit !== undefined ? record.lockedProfit : existing.lockedProfit,
       lockedSold: payload.lockedSold !== undefined ? record.lockedSold : existing.lockedSold,
       productName: payload.productName !== undefined ? record.productName : existing.productName,
+      unit: payload.unit !== undefined ? record.unit : existing.unit,
     };
     Object.assign(existing, merged);
     return existing.save({ session });

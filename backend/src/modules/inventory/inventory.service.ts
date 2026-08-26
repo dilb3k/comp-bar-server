@@ -13,6 +13,14 @@ import {
   getEffectiveHour,
   isPastBusinessDate,
 } from "../../utils/business-day";
+import {
+  formatQuantity,
+  normalizeUnit,
+  qtyGreaterThan,
+  roundMoney,
+  roundQty,
+  type ProductUnit,
+} from "../../utils/quantity";
 import type { AuthUser } from "../auth/auth.types";
 import { productRepository } from "../products/product.repository";
 import { auditService } from "../audit/audit.service";
@@ -28,6 +36,20 @@ import {
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * A "dona" product is countable, so half a piece is a client bug, not a valid
+ * sale. Validation can't enforce this (it never sees the product, only the
+ * payload), so the check lives here where the unit is known.
+ */
+function assertQuantityFitsUnit(quantity: number, unit: ProductUnit, productName?: string) {
+  if (unit !== "kg" && !Number.isInteger(quantity)) {
+    throw new AppError(
+      `"${productName ?? "Mahsulot"}" dona bilan o'lchanadi — miqdor butun son bo'lishi kerak`,
+      422,
+    );
+  }
 }
 
 // businessDayStartHour must be the *actor's* effective hour, not the global
@@ -91,11 +113,16 @@ function buildInventoryResponse(product: any, inventory: any) {
     lockedSold: toNumber(inventoryJson?.lockedSold ?? 0),
   });
 
+  // The live product is the authority on unit; the entry's denormalized copy
+  // is the fallback that keeps history readable once a product is deleted.
+  const unit = normalizeUnit(productJson?.unit ?? inventoryJson?.unit);
+
   return {
     ...inventoryJson,
     ...metrics,
     name: productJson?.name,
     quantity: productJson?.quantity,
+    unit,
     buyPrice: effectiveBuyPrice,
     sellPrice: effectiveSellPrice,
     image: productJson?.image ?? "",
@@ -305,10 +332,14 @@ export class InventoryService {
             );
           }
 
-          const startQuantity = item.startQuantity;
-          const currentQuantity = item.currentQuantity ?? item.startQuantity;
+          const unit = normalizeUnit((product as any).unit);
+          const startQuantity = roundQty(item.startQuantity);
+          const currentQuantity = roundQty(item.currentQuantity ?? item.startQuantity);
 
-          if (currentQuantity > startQuantity) {
+          assertQuantityFitsUnit(startQuantity, unit, (product as any).name);
+          assertQuantityFitsUnit(currentQuantity, unit, (product as any).name);
+
+          if (qtyGreaterThan(currentQuantity, startQuantity)) {
             throw new AppError(
               "currentQuantity cannot be greater than startQuantity",
               422,
@@ -333,6 +364,7 @@ export class InventoryService {
               deviceId: payload.deviceId,
               productId: (product as any).localId,
               productName: product.name ?? "",
+              unit,
               date: targetDate,
               startQuantity,
               currentQuantity,
@@ -387,6 +419,7 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: results.map((entry) => ({
           productName: entry.product?.name,
+          unit: entry.unit,
           startQuantity: toNumber(entry.startQuantity),
           currentQuantity: toNumber(entry.currentQuantity),
           sold: toNumber(entry.sold),
@@ -439,16 +472,20 @@ export class InventoryService {
             session,
           );
 
+          const unit = normalizeUnit((product as any).unit);
+          const currentQuantity = roundQty(item.currentQuantity);
+          assertQuantityFitsUnit(currentQuantity, unit, (product as any).name);
+
           const productQuantity = toNumber((product as any).quantity ?? 0);
 
-          if (existing && item.currentQuantity > toNumber((existing as any).startQuantity)) {
+          if (existing && qtyGreaterThan(currentQuantity, toNumber((existing as any).startQuantity))) {
             throw new AppError(
               "currentQuantity cannot be greater than startQuantity",
               422,
             );
           }
 
-          if (!existing && item.currentQuantity > productQuantity) {
+          if (!existing && qtyGreaterThan(currentQuantity, productQuantity)) {
             throw new AppError(
               "currentQuantity cannot be greater than product quantity",
               422,
@@ -470,9 +507,10 @@ export class InventoryService {
               deviceId: payload.deviceId,
               productId: (product as any).localId,
               productName: product.name ?? "",
+              unit,
               date: targetDate,
               startQuantity,
-              currentQuantity: item.currentQuantity,
+              currentQuantity,
               buyPrice: toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
               sellPrice: toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
               lockedRevenue: toNumber((existing as any)?.lockedRevenue ?? 0),
@@ -489,7 +527,7 @@ export class InventoryService {
             actor.userId,
             (product as any)._id.toString(),
             {
-              quantity: item.currentQuantity,
+              quantity: currentQuantity,
               updatedAt: now,
             },
             session,
@@ -504,7 +542,7 @@ export class InventoryService {
             before: existing
               ? { currentQuantity: (existing as any).currentQuantity }
               : undefined,
-            after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity: item.currentQuantity },
+            after: { productId: item.productId, date: targetDate, startQuantity, currentQuantity, unit },
             source: "rest",
             createdBy: actor.userId,
           });
@@ -513,7 +551,7 @@ export class InventoryService {
             buildInventoryResponse(
               {
                 ...product.toJSON(),
-                quantity: item.currentQuantity,
+                quantity: currentQuantity,
                 updatedAt: now.toISOString(),
               },
               updated,
@@ -528,6 +566,7 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: results.map((entry) => ({
           productName: entry.product?.name,
+          unit: entry.unit,
           startQuantity: toNumber(entry.startQuantity),
           currentQuantity: toNumber(entry.currentQuantity),
           sold: toNumber(entry.sold),
@@ -545,10 +584,33 @@ export class InventoryService {
     }
   }
 
+  /**
+   * Record a sale.
+   *
+   * A line may carry a `unitPrice` — the price actually charged, when the
+   * cashier haggled or applied a discount. Those units cannot be valued by the
+   * usual derivation (`(startQuantity - currentQuantity) * sellPrice`), so they
+   * are moved into the entry's `locked*` accumulators at their real price, the
+   * same mechanism a mid-day price correction already uses:
+   *
+   *   lockedSold    += qty
+   *   lockedRevenue += qty * chargedPrice
+   *   lockedProfit  += qty * (chargedPrice - buyPrice)
+   *   startQuantity -= qty   (in lockstep, so the derived portion is untouched)
+   *   currentQuantity -= qty
+   *
+   * The day's opening stock stays recoverable as `startQuantity + lockedSold`
+   * (what aggregateInventoryForRange and the statistics screens already do),
+   * and revenue is exact to the so'm regardless of how many different prices
+   * one product sold at during the day.
+   *
+   * A line at the list price skips all of that and just decrements
+   * currentQuantity, keeping the common case byte-identical to before.
+   */
   async sales(actor: AuthUser, payload: {
     date?: string;
     deviceId: string;
-    lines: Array<{ productId: string; quantity: number }>;
+    lines: Array<{ productId: string; quantity: number; unitPrice?: number }>;
   }) {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
@@ -587,6 +649,10 @@ export class InventoryService {
             session,
           );
 
+          const unit = normalizeUnit((product as any).unit);
+          const quantity = roundQty(line.quantity);
+          assertQuantityFitsUnit(quantity, unit, (product as any).name);
+
           const productQty = toNumber((product as any).quantity ?? 0);
           const startQty = existing
             ? toNumber((existing as any).startQuantity)
@@ -595,14 +661,35 @@ export class InventoryService {
             ? toNumber((existing as any).currentQuantity)
             : productQty;
 
-          if (line.quantity > currentQty) {
+          if (qtyGreaterThan(quantity, currentQty)) {
             throw new AppError(
-              `Sotilgan miqdor (${line.quantity}) qoldiqdan (${currentQty}) ko'p bo'lishi mumkin emas`,
+              `Sotilgan miqdor (${formatQuantity(quantity, unit)}) qoldiqdan (${formatQuantity(currentQty, unit)}) ko'p bo'lishi mumkin emas`,
               422,
             );
           }
 
-          const newCurrent = currentQty - line.quantity;
+          const buyPrice = toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0);
+          const listSellPrice = toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0);
+          const chargedPrice =
+            line.unitPrice === undefined ? listSellPrice : roundMoney(line.unitPrice);
+
+          let lockedRevenue = toNumber((existing as any)?.lockedRevenue ?? 0);
+          let lockedProfit = toNumber((existing as any)?.lockedProfit ?? 0);
+          let lockedSold = toNumber((existing as any)?.lockedSold ?? 0);
+
+          const newCurrent = roundQty(currentQty - quantity);
+          // Off-list units can't be valued by the start-minus-current
+          // derivation, so they move into the locked accumulators at the price
+          // actually charged and drop out of the derived span entirely (both
+          // quantities fall together). See this method's doc comment.
+          const isOffListPrice = Math.abs(chargedPrice - listSellPrice) > 0.005;
+          const newStart = isOffListPrice ? roundQty(startQty - quantity) : startQty;
+
+          if (isOffListPrice) {
+            lockedSold = roundQty(lockedSold + quantity);
+            lockedRevenue = roundMoney(lockedRevenue + quantity * chargedPrice);
+            lockedProfit = roundMoney(lockedProfit + quantity * (chargedPrice - buyPrice));
+          }
 
           const updated = await inventoryRepository.upsertByProductAndDateWithSession(
             actor.userId,
@@ -615,14 +702,15 @@ export class InventoryService {
               deviceId: payload.deviceId,
               productId: (product as any).localId,
               productName: product.name ?? "",
+              unit,
               date: targetDate,
-              startQuantity: startQty,
+              startQuantity: newStart,
               currentQuantity: newCurrent,
-              buyPrice: toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0),
-              sellPrice: toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0),
-              lockedRevenue: toNumber((existing as any)?.lockedRevenue ?? 0),
-              lockedProfit: toNumber((existing as any)?.lockedProfit ?? 0),
-              lockedSold: toNumber((existing as any)?.lockedSold ?? 0),
+              buyPrice,
+              sellPrice: listSellPrice,
+              lockedRevenue,
+              lockedProfit,
+              lockedSold,
               note: (existing as any)?.note ?? "",
               createdAt: (existing as any)?.createdAt ?? now,
               updatedAt: now,
@@ -645,7 +733,19 @@ export class InventoryService {
             before: existing
               ? { currentQuantity: (existing as any).currentQuantity }
               : undefined,
-            after: { productId: line.productId, date: targetDate, currentQuantity: newCurrent, sold: line.quantity },
+            after: {
+              productId: line.productId,
+              date: targetDate,
+              currentQuantity: newCurrent,
+              sold: quantity,
+              unit,
+              // Recorded on every sale, not just discounted ones: the trail
+              // has to answer "what was this actually sold for" without
+              // needing the product's price history to reconstruct it.
+              unitPrice: chargedPrice,
+              listPrice: listSellPrice,
+              discount: roundMoney((listSellPrice - chargedPrice) * quantity),
+            },
             source: "rest",
             createdBy: actor.userId,
           });
@@ -677,6 +777,7 @@ export class InventoryService {
         deviceId: payload.deviceId,
         items: items.map((entry) => ({
           productName: entry.product?.name,
+          unit: entry.unit,
           startQuantity: toNumber(entry.startQuantity),
           currentQuantity: toNumber(entry.currentQuantity),
           sold: toNumber(entry.sold),

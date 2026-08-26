@@ -1,5 +1,6 @@
 import { FilterQuery, Types } from "mongoose";
 
+import { normalizeUnit } from "../../utils/quantity";
 import { ProductModel, IProduct } from "./product.model";
 
 type ProductPayload = Record<string, unknown>;
@@ -15,6 +16,7 @@ function buildProductRecord(payload: ProductPayload) {
     deviceId: payload.deviceId,
     name: payload.name ?? "",
     quantity: payload.quantity ?? 0,
+    unit: normalizeUnit(payload.unit),
     buyPrice: payload.buyPrice ?? 0,
     sellPrice: payload.sellPrice ?? 0,
     displayIndex: payload.displayIndex ?? 1,
@@ -33,6 +35,7 @@ function buildProductUpdate(payload: ProductPayload) {
   if ("updatedAt" in payload) update.updatedAt = payload.updatedAt;
   if ("name" in payload) update.name = payload.name;
   if ("quantity" in payload) update.quantity = payload.quantity;
+  if ("unit" in payload) update.unit = normalizeUnit(payload.unit);
   if ("buyPrice" in payload) update.buyPrice = payload.buyPrice;
   if ("sellPrice" in payload) update.sellPrice = payload.sellPrice;
   if ("displayIndex" in payload) update.displayIndex = payload.displayIndex;

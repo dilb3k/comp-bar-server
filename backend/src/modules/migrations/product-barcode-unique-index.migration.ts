@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 /**
  * Idempotent, safe-to-run-always healer for the products.idx_barcodes index.
  *
- * product.model.ts now declares { ownerAdminId, barcodes } as UNIQUE (sparse)
+ * product.model.ts now declares { ownerAdminId, barcodes } as UNIQUE (partial)
  * to close a race where two near-simultaneous requests could create two
  * products sharing one barcode (previously only checked at the application
  * level via findByBarcode, which is a find-then-create race). Mongoose's
@@ -31,7 +31,7 @@ export async function migrateProductBarcodeUniqueIndex() {
 
   const collection = db.collection("products");
 
-  let indexes: Array<{ name?: string; unique?: boolean }> = [];
+  let indexes: Array<{ name?: string; unique?: boolean; sparse?: boolean; partialFilterExpression?: unknown }> = [];
   try {
     indexes = await collection.indexes();
   } catch {
@@ -39,7 +39,14 @@ export async function migrateProductBarcodeUniqueIndex() {
   }
 
   const existingIndex = indexes.find((idx) => idx.name === "idx_barcodes");
-  if (existingIndex?.unique) {
+  // A *sparse* unique index here was actively broken: a compound sparse index
+  // includes a document when ANY indexed field exists, and `ownerAdminId`
+  // always exists, so barcode-less products were all indexed under
+  // {ownerAdminId, null} and the second one an admin created failed with
+  // E11000. Such an index must be rebuilt as a partial one even though it is
+  // already `unique`, so it is explicitly NOT treated as migrated.
+  const isBrokenSparseIndex = Boolean(existingIndex?.unique && existingIndex?.sparse);
+  if (existingIndex?.unique && existingIndex.partialFilterExpression && !isBrokenSparseIndex) {
     // Already migrated.
     return;
   }
@@ -85,10 +92,14 @@ export async function migrateProductBarcodeUniqueIndex() {
     return;
   }
 
-  if (existingIndex && !existingIndex.unique) {
+  if (existingIndex && (!existingIndex.unique || isBrokenSparseIndex)) {
     try {
       await collection.dropIndex("idx_barcodes");
-      console.log("[migrateProductBarcodeUniqueIndex] Dropped stale non-unique idx_barcodes index on products");
+      console.log(
+        isBrokenSparseIndex
+          ? "[migrateProductBarcodeUniqueIndex] Dropped broken sparse idx_barcodes index on products (blocked a second barcode-less product per admin)"
+          : "[migrateProductBarcodeUniqueIndex] Dropped stale non-unique idx_barcodes index on products",
+      );
     } catch (error) {
       console.warn(
         "[migrateProductBarcodeUniqueIndex] Could not drop stale idx_barcodes index:",
@@ -99,11 +110,19 @@ export async function migrateProductBarcodeUniqueIndex() {
   }
 
   try {
+    // Partial, not sparse — see the index declaration in product.model.ts for
+    // why `$type: "string"` is the condition that actually excludes products
+    // without a barcode (and with an empty barcodes array).
     await collection.createIndex(
       { ownerAdminId: 1, barcodes: 1 },
-      { name: "idx_barcodes", unique: true, sparse: true, background: true },
+      {
+        name: "idx_barcodes",
+        unique: true,
+        partialFilterExpression: { barcodes: { $type: "string" } },
+        background: true,
+      },
     );
-    console.log("[migrateProductBarcodeUniqueIndex] Created unique idx_barcodes index on products");
+    console.log("[migrateProductBarcodeUniqueIndex] Created unique partial idx_barcodes index on products");
   } catch (error) {
     console.warn(
       "[migrateProductBarcodeUniqueIndex] Could not create unique idx_barcodes index:",

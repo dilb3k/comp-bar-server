@@ -101,6 +101,7 @@ export class SnapshotService {
       return buildSnapshotItem({
         productId: (product as any).localId,
         productName: String((product as any).name),
+        unit: (product as any).unit ?? (inventory as any).unit,
         startQuantity: Number((inventory as any).startQuantity),
         currentQuantity: Number((inventory as any).currentQuantity),
         buyPrice,

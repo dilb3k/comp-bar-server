@@ -1,5 +1,7 @@
 import { Schema, model, models } from "mongoose";
 
+import { DEFAULT_UNIT, PRODUCT_UNITS, normalizeUnit, type ProductUnit } from "../../utils/quantity";
+
 function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
@@ -11,6 +13,7 @@ export interface IInventoryEntry {
   deviceId: string;
   productId: string;
   productName: string;
+  unit: ProductUnit;
   date: string;
   startQuantity: number;
   currentQuantity: number;
@@ -51,6 +54,14 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
       type: String,
       default: ""
     },
+    // Denormalized from the product for the same reason productName is: an
+    // entry must still render correctly ("1.5 kg", not a bare "1.5") after the
+    // product it points at has been deleted.
+    unit: {
+      type: String,
+      enum: PRODUCT_UNITS,
+      default: DEFAULT_UNIT
+    },
     date: {
       type: String,
       required: true
@@ -80,9 +91,13 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
       min: 0,
       default: 0
     },
+    // NOT `min: 0`, unlike lockedRevenue: money received can never be
+    // negative, but profit can. Selling below cost is a legitimate outcome
+    // (clearance, a haggled price, a discount taken past the margin), and the
+    // old floor would have made mongoose reject the write instead of just
+    // recording the loss.
     lockedProfit: {
       type: Number,
-      min: 0,
       default: 0
     },
     lockedSold: {
@@ -104,6 +119,7 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
         ret.id = ret._id.toString();
         ret._id = ret.id;
         delete ret.ownerAdminId;
+        ret.unit = normalizeUnit(ret.unit);
         ret.createdAt = iso(ret.createdAt);
         ret.updatedAt = iso(ret.updatedAt);
         return ret;

@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 
 import { getBusinessDate, isPastBusinessDate, getEffectiveHour, getNextBusinessDayStart } from "../utils/business-day";
 import {
+  calculateInventoryMetrics,
   calculateSold,
   getAdjustedInventoryQuantities
 } from "../modules/inventory/inventory.logic";
+import {
+  formatQuantity,
+  normalizeQuantity,
+  qtyGreaterThan,
+  roundMoney,
+  roundQty
+} from "../utils/quantity";
 import { aggregateSnapshot, buildSnapshotItem } from "../modules/snapshots/snapshot.logic";
 import { normalizeProductImage } from "../modules/products/product-image";
 import { updateProductSchema } from "../modules/products/product.validation";
@@ -101,6 +109,9 @@ run("snapshot aggregation derives revenue and profit from inventory", () => {
   assert.deepEqual(item, {
     productId: "p1",
     productName: "Cola",
+    // Defaulted, not passed: pre-unit snapshots must still resolve to the
+    // countable unit rather than leaving the field undefined.
+    unit: "dona",
     sold: 5,
     buyPrice: 10000,
     sellPrice: 15000,
@@ -206,6 +217,143 @@ run("sync validation passes valid inventory", () => {
     ]
   });
   assert.equal(result.success, true);
+});
+
+run("quantities round to the 3-decimal grid instead of drifting", () => {
+  // The whole reason roundQty exists: plain float subtraction produces
+  // 19.799999999999997 here, which would then be stored and compared.
+  assert.equal(roundQty(22.1 - 2.3), 19.8);
+  assert.equal(calculateSold(22.1, 2.3), 19.8);
+  assert.equal(roundMoney(0.333 * 15000), 4995);
+});
+
+run("normalizeQuantity keeps kg fractional and forces dona whole", () => {
+  assert.equal(normalizeQuantity(2.5, "kg"), 2.5);
+  assert.equal(normalizeQuantity(2.5049, "kg"), 2.505);
+  assert.equal(normalizeQuantity(2.5, "dona"), 3);
+  assert.equal(normalizeQuantity(-4, "kg"), 0);
+});
+
+run("qtyGreaterThan ignores sub-grid rounding noise", () => {
+  assert.equal(qtyGreaterThan(5.001, 5), true);
+  assert.equal(qtyGreaterThan(5 + 1e-12, 5), false);
+  assert.equal(qtyGreaterThan(5, 5), false);
+});
+
+run("formatQuantity trims trailing zeros and appends the unit", () => {
+  assert.equal(formatQuantity(2.5, "kg"), "2.5 kg");
+  assert.equal(formatQuantity(2.5, "dona"), "3 dona");
+  assert.equal(formatQuantity(3.0, "kg"), "3 kg");
+});
+
+run("a discounted sale is valued at the price actually charged", () => {
+  // Mirrors inventory.service.sales(): off-list units move into the locked
+  // accumulators while start/current fall together, so the derived span keeps
+  // valuing only the list-price units.
+  //
+  // Day opens 22 @ 10000 (cost 6000). Sell 2 at list, then 3 at 9000.
+  const buyPrice = 6000;
+  const sellPrice = 10000;
+
+  // after the list-price sale: start 22, current 20
+  // after the discounted sale: start 19, current 17, locked 3 @ 9000
+  const metrics = calculateInventoryMetrics({
+    startQuantity: 19,
+    currentQuantity: 17,
+    buyPrice,
+    sellPrice,
+    lockedSold: 3,
+    lockedRevenue: 3 * 9000,
+    lockedProfit: 3 * (9000 - buyPrice),
+  });
+
+  assert.equal(metrics.remaining, 17);
+  assert.equal(metrics.sold, 5);
+  assert.equal(metrics.revenue, 2 * 10000 + 3 * 9000);
+  assert.equal(metrics.realizedProfit, 2 * 4000 + 3 * 3000);
+  // Opening stock stays recoverable as startQuantity + lockedSold.
+  assert.equal(19 + 3, 22);
+});
+
+run("selling below cost records a real loss instead of clamping at zero", () => {
+  const metrics = calculateInventoryMetrics({
+    startQuantity: 10,
+    currentQuantity: 10,
+    buyPrice: 6000,
+    sellPrice: 10000,
+    lockedSold: 2,
+    lockedRevenue: 2 * 5000,
+    lockedProfit: 2 * (5000 - 6000),
+  });
+
+  assert.equal(metrics.revenue, 10000);
+  assert.equal(metrics.realizedProfit, -2000);
+});
+
+run("kg quantities survive a fractional sale end to end", () => {
+  const metrics = calculateInventoryMetrics({
+    startQuantity: 12.5,
+    currentQuantity: 10.25,
+    buyPrice: 8000,
+    sellPrice: 12000,
+  });
+
+  assert.equal(metrics.sold, 2.25);
+  assert.equal(metrics.remaining, 10.25);
+  assert.equal(metrics.revenue, 27000);
+  assert.equal(metrics.realizedProfit, 9000);
+});
+
+run("sync validation accepts fractional kg quantities and a losing day", () => {
+  const result = syncPayloadSchema.safeParse({
+    products: [
+      {
+        localId: "prd_1",
+        deviceId: "dev_1",
+        name: "Go'sht",
+        quantity: 12.5,
+        unit: "kg",
+        buyPrice: 80000,
+        sellPrice: 95000,
+        createdAt: "2026-04-20T10:00:00.000Z",
+        updatedAt: "2026-04-20T11:00:00.000Z"
+      }
+    ],
+    inventory: [
+      {
+        localId: "inv_1",
+        deviceId: "dev_1",
+        productId: "prd_1",
+        date: "2026-04-20",
+        unit: "kg",
+        startQuantity: 12.5,
+        currentQuantity: 10.25,
+        lockedProfit: -5000,
+        createdAt: "2026-04-20T10:00:00.000Z",
+        updatedAt: "2026-04-20T11:00:00.000Z"
+      }
+    ]
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.success && result.data.products?.[0]?.unit, "kg");
+});
+
+run("sync validation still rejects quantities finer than 1 gram", () => {
+  const result = syncPayloadSchema.safeParse({
+    inventory: [
+      {
+        localId: "inv_1",
+        deviceId: "dev_1",
+        productId: "prd_1",
+        date: "2026-04-20",
+        startQuantity: 12.55555,
+        currentQuantity: 10,
+        createdAt: "2026-04-20T10:00:00.000Z",
+        updatedAt: "2026-04-20T11:00:00.000Z"
+      }
+    ]
+  });
+  assert.equal(result.success, false);
 });
 
 run("normalizePhone strips formatting and keeps digits", () => {

@@ -10,6 +10,7 @@ import { snapshotService } from "../snapshots/snapshot.service";
 import { aggregateSnapshot } from "../snapshots/snapshot.logic";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
+import { normalizeUnit, roundMoney, roundQty } from "../../utils/quantity";
 import { env } from "../../config/env";
 
 type SyncInput = {
@@ -152,18 +153,19 @@ export class SyncService {
               const storedSellPrice = Number(entry.sellPrice ?? 0);
               const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(product?.buyPrice ?? 0);
               const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number(product?.sellPrice ?? 0);
-              const newSold = Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0);
+              const newSold = roundQty(Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0));
               const lockedSold = Number(entry.lockedSold ?? 0);
               const lockedRevenue = Number(entry.lockedRevenue ?? 0);
               const lockedProfit = Number(entry.lockedProfit ?? 0);
               return {
                 productId: entry.productId,
                 productName: product?.name ?? entry.productName ?? "",
-                sold: lockedSold + newSold,
+                unit: normalizeUnit(product?.unit ?? entry.unit),
+                sold: roundQty(lockedSold + newSold),
                 buyPrice,
                 sellPrice,
-                revenue: lockedRevenue + newSold * sellPrice,
-                profit: lockedProfit + newSold * (sellPrice - buyPrice)
+                revenue: roundMoney(lockedRevenue + newSold * sellPrice),
+                profit: roundMoney(lockedProfit + newSold * (sellPrice - buyPrice))
               };
             });
 
