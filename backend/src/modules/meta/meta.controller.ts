@@ -1,12 +1,9 @@
-import { env } from "../../config/env";
+import { getLatestMobileRelease } from "./latest-release";
 
 export const metaController = {
-  getAppVersion() {
+  async getAppVersion() {
     return {
-      mobile: {
-        latest: env.MOBILE_LATEST_VERSION,
-        downloadUrl: env.MOBILE_DOWNLOAD_URL
-      }
+      mobile: await getLatestMobileRelease(),
     };
-  }
+  },
 };

@@ -35,23 +35,19 @@ const envSchema = z.object({
   CLICK_SERVICE_ID: z.string().trim().optional(),
   CLICK_SECRET_KEY: z.string().trim().optional(),
 
-  // Mobile has no store/GitHub-releases feed to check against (it ships as
-  // a direct EAS build link, not a Play Store listing), so — unlike the
-  // desktop app, which reads dilb3k/hisvex-landing's GitHub releases
-  // directly — its "is a new version out" check goes through this backend
-  // instead. Bump these two on every mobile release; no redeploy needed,
-  // just an env var update on the host.
+  // Fallback for /meta/app-version, which the mobile UpdateAvailableModal
+  // polls. It normally reads dilb3k/hisvex-mobile's releases at request time
+  // (see modules/meta/latest-release.ts) — these two only answer when GitHub
+  // is unreachable or rate-limiting us.
   //
-  // These defaults are hand-synced with two OTHER places — a mobile release
-  // isn't done until all three agree, or media-project-mobile's
-  // UpdateAvailableModal.tsx will fire against a stale/wrong target:
-  //   1. media-project-mobile/app.json + package.json "version"
-  //   2. hisvex-landing/src/App.tsx's MOBILE_APK_VERSION / MOBILE_APK_URL
-  //   3. right here (and the actual env vars on the backend host — these
-  //      defaults only apply when the host doesn't override them)
-  MOBILE_LATEST_VERSION: z.string().trim().default("1.0.3"),
+  // They used to BE the source of truth, hand-synced across three places, and
+  // predictably went stale: they still said 1.0.3 while 1.1.0 was published.
+  // Keep them pointing at a real, installable release so the fallback is
+  // never worse than silence, but publishing the GitHub release is what
+  // actually ships an update now.
+  MOBILE_LATEST_VERSION: z.string().trim().default("1.1.0"),
   MOBILE_DOWNLOAD_URL: z.string().trim().default(
-    "https://expo.dev/artifacts/eas/OXdSYNmSRwWSgTaXUxDJgOf9APsEuzmVKhfpMxtnhA8.apk"
+    "https://github.com/dilb3k/hisvex-mobile/releases/latest"
   ),
 });
 
