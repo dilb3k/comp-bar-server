@@ -18,12 +18,22 @@ const RELEASES_API =
   "https://api.github.com/repos/dilb3k/hisvex-mobile/releases/latest";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 4000;
+
+// A failed lookup is cached too — otherwise every request retries a dead
+// endpoint — but for far less time, because caching a failure for the full
+// ten minutes is what made the first deploy on a cold container serve the
+// fallback URL long after GitHub was reachable again.
+const FAILURE_TTL_MS = 30 * 1000;
+
+// 4s was too tight: the very first request after a cold start races the
+// container still warming up, and losing that race poisoned the cache.
+const FETCH_TIMEOUT_MS = 8000;
 
 type Release = { latest: string; downloadUrl: string };
 
 let cached: Release | null = null;
 let cachedAt = 0;
+let cachedIsFallback = false;
 let inFlight: Promise<Release> | null = null;
 
 const fallback = (): Release => ({
@@ -63,16 +73,18 @@ const fetchLatest = async (): Promise<Release> => {
 };
 
 export const getLatestMobileRelease = async (): Promise<Release> => {
-  const fresh = cached && Date.now() - cachedAt < CACHE_TTL_MS;
-  if (fresh && cached) return cached;
+  const ttl = cachedIsFallback ? FAILURE_TTL_MS : CACHE_TTL_MS;
+  if (cached && Date.now() - cachedAt < ttl) return cached;
 
   // Collapse concurrent misses into one upstream request, so a burst of app
   // launches after a cache expiry does not spend the whole rate-limit budget.
   if (!inFlight) {
+    const fallbackUrl = fallback().downloadUrl;
     inFlight = fetchLatest()
       .then((release) => {
         cached = release;
         cachedAt = Date.now();
+        cachedIsFallback = release.downloadUrl === fallbackUrl;
         return release;
       })
       .finally(() => {
