@@ -1,0 +1,36 @@
+[Unit]
+Description=Hisvex Telegram bot
+After=network-online.target hisvex-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hisvex
+Group=hisvex
+WorkingDirectory=/opt/hisvex/bot
+EnvironmentFile=/etc/hisvex/bot.env
+ExecStart=/usr/bin/node dist/index.js
+
+# The bot long-polls Telegram, so it is the service most exposed to transient
+# network failures — and the one Render charged $7/month for, because a free
+# web service is only kept alive by inbound HTTP and nothing ever calls a
+# poller. On this box it costs nothing and simply gets restarted.
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+MemoryMax=512M
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/hisvex/bot
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hisvex-bot
+
+[Install]
+WantedBy=multi-user.target

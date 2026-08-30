@@ -1,0 +1,43 @@
+[Unit]
+Description=Hisvex API
+Documentation=https://github.com/dilb3k/hisvex-mobile
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hisvex
+Group=hisvex
+WorkingDirectory=/opt/hisvex/api
+EnvironmentFile=/etc/hisvex/api.env
+ExecStart=/usr/bin/node backend/dist/server.js
+
+# Render restarted crashed services for us; nothing does here unless systemd
+# is told to. RestartSec spaces the attempts out so a service that cannot
+# reach Mongo does not spin at full speed, and StartLimit* stops an endlessly
+# crash-looping deploy from masking the real error in the journal.
+Restart=always
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+# The Ampere A1 free shape has 24 GB, so the 450 MB heap cap the Render start
+# script needed is gone. This ceiling only exists to keep a leak from taking
+# the bot and sshd down with it.
+MemoryMax=2G
+
+# Filesystem is read-only apart from what the app genuinely writes to.
+# ProtectSystem=strict also hides /etc/hisvex from the process — the env file
+# is already read by systemd before the sandbox applies, so that is fine.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/hisvex/api
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hisvex-api
+
+[Install]
+WantedBy=multi-user.target
