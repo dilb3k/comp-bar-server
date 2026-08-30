@@ -18,7 +18,7 @@
 #
 services:
   - type: web
-    name: hisvex-prod-api
+    name: hisvex-api
     runtime: node
     plan: free
     region: oregon
