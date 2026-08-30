@@ -1,0 +1,84 @@
+# Render Blueprint — recreates this API on a fresh Render workspace.
+#
+# Written after the whole workspace was suspended over one unpaid $7 invoice
+# and the production API went down with ~14 unrelated hobby services. The
+# point of keeping this in the repo is that standing the service back up
+# somewhere else is "New > Blueprint > pick this repo", not twenty minutes of
+# clicking through forms while production is down.
+#
+# Every secret is `sync: false`, which makes Render prompt for it instead of
+# storing it here. Two of them MUST be copied from the old service rather
+# than generated fresh:
+#
+#   MONGODB_URL  — the same Atlas cluster, or the new API talks to an empty
+#                  database and every shop sees their inventory vanish.
+#   JWT_SECRET   — tokens are signed with it. A new value silently logs out
+#                  every phone, desktop and browser currently signed in.
+#                  JWT_REFRESH_SECRET has the same property.
+#
+services:
+  - type: web
+    name: hisvex-prod-api
+    runtime: node
+    plan: free
+    region: oregon
+    branch: master
+    healthCheckPath: /api/health
+
+    # --include=dev is deliberate. typescript lives in devDependencies, and
+    # npm omits those when NODE_ENV=production — which it is, three lines
+    # below. Without this the build fails with "tsc: not found".
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+
+      # Secrets — Render asks for these when the blueprint is applied.
+      - key: MONGODB_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+
+      # Optional integrations. Leave blank to keep them off; the code fails
+      # closed rather than open when they are unset.
+      - key: BOT_INTERNAL_SECRET
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: CLICK_MERCHANT_ID
+        sync: false
+      - key: CLICK_SERVICE_ID
+        sync: false
+      - key: CLICK_SECRET_KEY
+        sync: false
+
+      # Non-secret behaviour. These match the code's own defaults; they are
+      # spelled out so the running config is visible in the repo instead of
+      # only in a dashboard nobody can read during an outage.
+      - key: CLIENT_URL
+        value: "*"
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: REFRESH_TOKEN_EXPIRES_IN
+        value: 30d
+      - key: BUSINESS_DAY_START_HOUR
+        value: "6"
+      - key: TIMEZONE_OFFSET
+        value: "300"
+      - key: MIGRATION_ENABLED
+        value: "false"
+      - key: ALLOW_PUBLIC_REGISTER
+        value: "true"
+
+      # MOBILE_LATEST_VERSION / MOBILE_DOWNLOAD_URL are intentionally absent.
+      # /meta/app-version reads the GitHub release feed now, and the env vars
+      # are only its offline fallback — setting them here would just recreate
+      # the stale-version problem they used to cause.
