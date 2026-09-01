@@ -1,3 +1,9 @@
+import {
+  pickAsset,
+  resolveLatestRelease,
+  type ReleaseAsset,
+} from "./github-release";
+
 /**
  * The desktop version and installer links the landing page advertises.
  *
@@ -7,24 +13,18 @@
  * the page silently falls back to a version constant baked into its bundle —
  * so a freshly published release could stay invisible to a real user while
  * looking perfectly current to whoever tested it. Serving the lookup from here
- * turns one call per visitor into one call per ten minutes, from a single IP.
- *
- * Assets are returned by name rather than reconstructed from the version, so a
- * renamed or missing installer shows up as a missing link instead of a link
- * that 404s.
+ * turns one call per visitor into one call per ten minutes, from a single IP,
+ * with a redirect-based second path for when even that IP is over the cap
+ * (see github-release.ts — in production it always is).
  */
-const RELEASES_API =
-  "https://api.github.com/repos/dilb3k/hisvex-desktop/releases/latest";
-
-const RELEASES_PAGE = "https://github.com/dilb3k/hisvex-desktop/releases/latest";
+const REPO = "dilb3k/hisvex-desktop";
+const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const FAILURE_TTL_MS = 30 * 1000;
-const FETCH_TIMEOUT_MS = 8000;
 
 export type DesktopRelease = {
   latest: string;
-  /** Absent when that platform's installer is not attached to the release. */
   windows?: string;
   windowsPortable?: string;
   macArm?: string;
@@ -43,51 +43,40 @@ let inFlight: Promise<DesktopRelease> | null = null;
 // Deliberately version-less: a fallback that names a version would be the
 // exact stale-number problem this module exists to remove. GitHub's /latest
 // page always redirects to whatever is actually current.
-const fallback = (): DesktopRelease => ({
-  latest: "",
+const fallback = (): DesktopRelease => ({ latest: "", releasesUrl: RELEASES_PAGE });
+
+const assetUrl = (version: string, file: string) =>
+  `https://github.com/${REPO}/releases/download/v${version}/${file}`;
+
+/**
+ * Asset URLs, preferring the names the release actually published.
+ *
+ * When the version came from the redirect path there is no asset list, so the
+ * URLs are rebuilt from electron-builder's naming convention — the same names
+ * the release workflow produces (.github/workflows/release.yml).
+ */
+const build = (version: string, assets: ReleaseAsset[]): DesktopRelease => ({
+  latest: version,
+  windows:
+    pickAsset(assets, (n) => n.startsWith("hisvex-setup") && n.endsWith(".exe")) ??
+    assetUrl(version, `Hisvex-Setup-${version}.exe`),
+  windowsPortable:
+    pickAsset(assets, (n) => n.includes("portable") && n.endsWith(".exe")) ??
+    assetUrl(version, `Hisvex-Portable-${version}.exe`),
+  macArm:
+    pickAsset(assets, (n) => n.includes("arm64") && n.endsWith(".dmg")) ??
+    assetUrl(version, `Hisvex-${version}-arm64.dmg`),
+  macIntel:
+    pickAsset(assets, (n) => n.includes("x64") && n.endsWith(".dmg")) ??
+    assetUrl(version, `Hisvex-${version}-x64.dmg`),
+  linuxAppImage:
+    pickAsset(assets, (n) => n.endsWith(".appimage")) ??
+    assetUrl(version, `Hisvex-${version}.AppImage`),
+  linuxDeb:
+    pickAsset(assets, (n) => n.endsWith(".deb")) ??
+    assetUrl(version, `hisvex-desktop_${version}_amd64.deb`),
   releasesUrl: RELEASES_PAGE,
 });
-
-const pick = (
-  assets: Array<{ name?: string; browser_download_url?: string }>,
-  match: (name: string) => boolean,
-): string | undefined =>
-  assets.find((a) => a.name && match(a.name.toLowerCase()))?.browser_download_url;
-
-const fetchLatest = async (): Promise<DesktopRelease> => {
-  try {
-    const res = await fetch(RELEASES_API, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "hisvex-backend",
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return fallback();
-
-    const body = (await res.json()) as {
-      tag_name?: string;
-      assets?: Array<{ name?: string; browser_download_url?: string }>;
-    };
-
-    const latest = String(body.tag_name ?? "").replace(/^v/i, "").trim();
-    const assets = body.assets ?? [];
-    if (!latest || assets.length === 0) return fallback();
-
-    return {
-      latest,
-      windows: pick(assets, (n) => n.startsWith("hisvex-setup") && n.endsWith(".exe")),
-      windowsPortable: pick(assets, (n) => n.includes("portable") && n.endsWith(".exe")),
-      macArm: pick(assets, (n) => n.includes("arm64") && n.endsWith(".dmg")),
-      macIntel: pick(assets, (n) => n.includes("x64") && n.endsWith(".dmg")),
-      linuxAppImage: pick(assets, (n) => n.endsWith(".appimage")),
-      linuxDeb: pick(assets, (n) => n.endsWith(".deb")),
-      releasesUrl: RELEASES_PAGE,
-    };
-  } catch {
-    return fallback();
-  }
-};
 
 export const getLatestDesktopRelease = async (): Promise<DesktopRelease> => {
   const ttl = cachedIsFallback ? FAILURE_TTL_MS : CACHE_TTL_MS;
@@ -96,7 +85,9 @@ export const getLatestDesktopRelease = async (): Promise<DesktopRelease> => {
   // Collapse concurrent misses into one upstream request, so a burst of page
   // loads after a cache expiry does not spend the whole rate-limit budget.
   if (!inFlight) {
-    inFlight = fetchLatest()
+    inFlight = resolveLatestRelease(REPO)
+      .then(({ tag, assets }) => (tag ? build(tag, assets) : fallback()))
+      .catch(fallback)
       .then((release) => {
         cached = release;
         cachedAt = Date.now();

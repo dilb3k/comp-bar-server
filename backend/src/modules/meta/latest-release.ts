@@ -1,4 +1,5 @@
 import { env } from "../../config/env";
+import { pickAsset, resolveLatestRelease } from "./github-release";
 
 /**
  * The version the mobile app compares itself against on launch.
@@ -10,12 +11,14 @@ import { env } from "../../config/env";
  * not. Reading the release feed instead makes publishing the release the
  * single act that ships an update.
  *
- * The env vars remain as the fallback: if GitHub is unreachable or rate-limits
- * us (60 requests/hour for unauthenticated callers, hence the cache), the
- * endpoint still answers with something valid rather than failing.
+ * The lookup goes through github-release.ts, which tries the API and then a
+ * plain github.com redirect. That second path is not a nicety: measured in
+ * production, api.github.com answers 403 to this host every time (60
+ * requests/hour, per IP, on a shared one), so the API-only version of this
+ * silently served the env fallback — a phone was being told 1.1.0 with a
+ * download link pointing at the releases page rather than an APK.
  */
-const RELEASES_API =
-  "https://api.github.com/repos/dilb3k/hisvex-mobile/releases/latest";
+const REPO = "dilb3k/hisvex-mobile";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -25,9 +28,6 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 // fallback URL long after GitHub was reachable again.
 const FAILURE_TTL_MS = 30 * 1000;
 
-// 4s was too tight: the very first request after a cold start races the
-// container still warming up, and losing that race poisoned the cache.
-const FETCH_TIMEOUT_MS = 8000;
 
 type Release = { latest: string; downloadUrl: string };
 
@@ -42,34 +42,17 @@ const fallback = (): Release => ({
 });
 
 const fetchLatest = async (): Promise<Release> => {
-  try {
-    const res = await fetch(RELEASES_API, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "hisvex-backend",
-      },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return fallback();
+  const { tag, assets } = await resolveLatestRelease(REPO);
+  if (!tag) return fallback();
 
-    const body = (await res.json()) as {
-      tag_name?: string;
-      assets?: Array<{ name?: string; browser_download_url?: string }>;
-    };
+  // Prefer the APK the release actually published; when the version came from
+  // the redirect path there is no asset list, so rebuild the URL from the
+  // naming convention the release uses.
+  const apk =
+    pickAsset(assets, (n) => n.endsWith(".apk")) ??
+    `https://github.com/${REPO}/releases/download/v${tag}/Hisvex-${tag}.apk`;
 
-    const tag = String(body.tag_name ?? "").replace(/^v/i, "").trim();
-    const apk = (body.assets ?? []).find((a) =>
-      a.name?.toLowerCase().endsWith(".apk")
-    );
-
-    // A release with no APK attached is not a usable answer — a phone told to
-    // update to a version it cannot download is worse than being told nothing.
-    if (!tag || !apk?.browser_download_url) return fallback();
-
-    return { latest: tag, downloadUrl: apk.browser_download_url };
-  } catch {
-    return fallback();
-  }
+  return { latest: tag, downloadUrl: apk };
 };
 
 export const getLatestMobileRelease = async (): Promise<Release> => {
