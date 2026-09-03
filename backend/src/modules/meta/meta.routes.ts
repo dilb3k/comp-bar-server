@@ -20,9 +20,13 @@ router.get(
   "/app-version",
   publicCors,
   asyncHandler(async (_req, res) => {
-    // Short shared-cache hint: the values change only when a release is
-    // published, and the module-level cache behind this is 10 minutes anyway.
-    res.set("Cache-Control", "public, max-age=300");
+    // Deliberately short. The module-level cache behind this is 10 minutes,
+    // so a browser hint of 5 minutes on top of it meant a freshly published
+    // release could take a quarter of an hour to show up on the marketing
+    // site — and "the page still shows the old version" is the exact problem
+    // this endpoint was built to end. Re-asking costs a few hundred bytes and
+    // never reaches GitHub, so the ceiling is worth far more than the saving.
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     res.json({
       success: true,
       data: await metaController.getAppVersion()
