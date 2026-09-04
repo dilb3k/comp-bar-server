@@ -93,13 +93,43 @@ export class SyncService {
       });
     }
 
+    // Same 100-product cap product.service.ts's create() enforces for the REST
+    // path, applied here too. Without this a 'bor' tier admin could go offline,
+    // add far more than 100 products on desktop, and have all of them sync —
+    // the cap existed on paper but had a second, unguarded door.
+    //
+    // Only genuinely NEW products count against it: an edit to a product that
+    // already made it to the server (rename, price change, restock) must never
+    // be blocked by a cap meant to limit how many exist, and a batch mixes
+    // both freely. Existing localIds are resolved once up front so each item
+    // can be classified without a query per item, and the running count walks
+    // the batch in the order it arrived — same "first come, first kept" rule
+    // a sequence of individual REST calls would have produced.
+    let allowedProducts = processedProducts;
+    if (actor.tier === "bor" && processedProducts.length > 0) {
+      const incomingLocalIds = processedProducts.map((item) => item.localId as string);
+      const existingLocalIds = await productRepository.findExistingLocalIds(actor.userId, incomingLocalIds);
+      let runningCount = await productRepository.countActive(actor.userId);
+      const allowed: typeof processedProducts = [];
+      for (const item of processedProducts) {
+        const isNew = !existingLocalIds.has(item.localId as string);
+        if (!isNew || runningCount < 100) {
+          if (isNew) runningCount += 1;
+          allowed.push(item);
+        } else {
+          rejected.push({ entity: "product", localId: item.localId as string, reason: "PRODUCT_LIMIT_EXCEEDED" });
+        }
+      }
+      allowedProducts = allowed;
+    }
+
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
         // NOTE: these must run sequentially (not via Promise.all) — the MongoDB
         // driver does not support concurrent operations sharing one ClientSession;
         // running them in parallel is undefined behaviour per the driver docs.
-        for (const item of processedProducts) {
+        for (const item of allowedProducts) {
           await productRepository.upsertLastWriteWins(actor.userId, item as any, session);
         }
 
@@ -194,7 +224,7 @@ export class SyncService {
           await snapshotRepository.upsertLastWriteWins(actor.userId, snapshotData as any, session);
         }
 
-        const totalChanges = processedProducts.length + validInventory.length + validSnapshots.length;
+        const totalChanges = allowedProducts.length + validInventory.length + validSnapshots.length;
         if (totalChanges > 0) {
           await auditService.log({
             ownerAdminId: actor.userId,
@@ -202,7 +232,7 @@ export class SyncService {
             entityType: "sync",
             entityId: `batch-${Date.now()}`,
             after: {
-              products: processedProducts.length,
+              products: allowedProducts.length,
               inventory: validInventory.length,
               snapshots: validSnapshots.length,
               rejected: rejected.length
@@ -261,9 +291,9 @@ export class SyncService {
       const trimmedInventory = serverInventory.slice(0, limit);
       const trimmedSnapshots = serverSnapshots.slice(0, limit);
 
-      if (processedProducts.length > 0 || validInventory.length > 0 || validSnapshots.length > 0) {
+      if (allowedProducts.length > 0 || validInventory.length > 0 || validSnapshots.length > 0) {
         telegramReportService.reportSync(actor, {
-          products: processedProducts.length,
+          products: allowedProducts.length,
           inventory: validInventory.length,
           snapshots: validSnapshots.length,
           lastSyncAt: payload.lastSyncAt
@@ -272,7 +302,7 @@ export class SyncService {
 
       return {
         accepted: {
-          products: processedProducts.length,
+          products: allowedProducts.length,
           inventory: validInventory.length,
           snapshots: validSnapshots.length
         },

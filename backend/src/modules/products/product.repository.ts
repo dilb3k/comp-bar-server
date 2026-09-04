@@ -97,6 +97,18 @@ export class ProductRepository {
     return query;
   }
 
+  // Which of these localIds already exist for this owner — used to tell an
+  // offline-queued *new* product apart from an edit to one that already made
+  // it to the server, so a tier's product cap (see sync.service.ts) can be
+  // applied to the former without blocking the latter.
+  async findExistingLocalIds(ownerAdminId: string, localIds: string[], session?: any): Promise<Set<string>> {
+    if (localIds.length === 0) return new Set();
+    let query = ProductModel.find({ ownerAdminId, localId: { $in: localIds } }).select("localId");
+    if (session) query = query.session(session);
+    const docs = await query;
+    return new Set(docs.map((d: any) => d.localId));
+  }
+
   async findByBarcode(ownerAdminId: string, barcode: string, session?: any) {
     const query = ProductModel.findOne({ ownerAdminId, barcodes: barcode });
     if (session) query.session(session);

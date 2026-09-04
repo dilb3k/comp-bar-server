@@ -1,6 +1,6 @@
 {
   "name": "bar-backend",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Offline-first cashier backend with sync and multi-tenant support",
   "main": "backend/dist/server.js",
   "scripts": {
