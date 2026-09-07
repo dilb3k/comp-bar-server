@@ -24,8 +24,15 @@ import { botRoutes, clickWebhookRoutes } from "./modules/payments";
 const LOCAL_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
+  // Expo's web preview (`expo start --web`) serves from 8081 — missing here
+  // meant every authenticated call (Authorization header triggers a CORS
+  // preflight) failed cross-origin while testing media-project-mobile in a
+  // browser, even though the same calls work fine from the native app
+  // (CORS is a browser-only restriction, native fetch ignores it).
+  "http://localhost:8081",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:5173",
+  "http://127.0.0.1:8081",
   "null"
 ];
 const DEFAULT_PRODUCTION_ORIGINS = ["https://hisvex-web.vercel.app"];
