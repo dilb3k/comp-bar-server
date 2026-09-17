@@ -9,13 +9,13 @@ export type PlanDuration = 1 | 6 | 12;
 export const PRICING: Record<PlanTier, Record<PlanDuration, number>> = {
   bor: {
     1: 44_000,
-    6: 248_160,
-    12: 464_640,
+    6: 237_600,
+    12: 422_400,
   },
   pro: {
     1: 99_000,
-    6: 558_360,
-    12: 1_045_440,
+    6: 534_600,
+    12: 950_400,
   },
 };
 
