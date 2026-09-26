@@ -54,4 +54,8 @@ export const inventoryController = {
   async dashboard(req: Request, res: Response) {
     return sendSuccess(res, await inventoryService.getDashboard(requireAuth(req)));
   },
+
+  async preview(req: Request, res: Response) {
+    return sendSuccess(res, await inventoryService.getPreview(requireAuth(req)));
+  },
 };

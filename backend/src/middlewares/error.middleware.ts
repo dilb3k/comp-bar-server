@@ -36,7 +36,8 @@ export function errorMiddleware(
       success: false,
       error: {
         message: translateMessage(error.message, lang),
-        details: error.details ?? null
+        details: error.details ?? null,
+        code: error.code ?? null
       }
     });
   }

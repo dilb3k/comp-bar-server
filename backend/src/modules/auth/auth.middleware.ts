@@ -47,7 +47,7 @@ export function authenticate(options?: { allowStale?: boolean }) {
       const tokenSession = payload.sessionId;
       const validSession = activeId ? tokenSession === activeId : !tokenSession;
       if (!allowStale && !validSession) {
-        return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401));
+        return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED"));
       }
 
     // Never blocks the request and never fails it — this is a best-effort

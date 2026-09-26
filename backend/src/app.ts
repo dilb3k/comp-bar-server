@@ -15,6 +15,7 @@ import { healthRoutes } from "./modules/health/health.routes";
 import { metaRoutes } from "./modules/meta/meta.routes";
 import { debtorRoutes } from "./modules/debtors/debtor.routes";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes";
+import { inventoryPreviewRoutes } from "./modules/inventory/inventory-preview.routes";
 import { productRoutes } from "./modules/products/product.routes";
 import { productImageRoutes } from "./modules/products/product-image.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
@@ -95,6 +96,7 @@ export function createApp() {
   app.use("/api/products", authenticate(), productRoutes);
   app.use("/api/debtors", authenticate(), debtorRoutes);
   app.use("/api/inventory", authenticate(), inventoryRoutes);
+  app.use("/api/inventory-preview", authenticate({ allowStale: true }), inventoryPreviewRoutes);
   app.use("/api/snapshots", authenticate(), snapshotRoutes);
   app.use("/api/sync", authenticate(), syncRoutes);
   app.use("/api/subscriptions", authenticate(), subscriptionRoutes);

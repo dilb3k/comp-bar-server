@@ -234,7 +234,7 @@ export class AuthService {
     // Session was replaced by another login → this refresh token is dead.
     const activeId = (user as any).activeSessionId;
     if (activeId ? decoded.sessionId !== activeId : decoded.sessionId) {
-      throw new AppError("Sessiya tugatildi. Boshqa qurilmadan kirilgan. Qayta kiring.", 401);
+      throw new AppError("Sessiya tugatildi. Boshqa qurilmadan kirilgan. Qayta kiring.", 401, undefined, "SESSION_REPLACED");
     }
 
     await subscriptionService.refreshExpiredSubscriptions();

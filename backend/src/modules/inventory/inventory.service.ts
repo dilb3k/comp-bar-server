@@ -851,6 +851,28 @@ export class InventoryService {
       snapshot,
     };
   }
+
+  /**
+   * Read-only, minimal-field product/stock snapshot for the
+   * allowStale-authenticated preview route: a device whose session was
+   * replaced elsewhere (see auth.middleware's SESSION_REPLACED) can still
+   * hit this with its old token to glance at stock while stuck on the
+   * phone-verification screen. Deliberately excludes buy price / profit —
+   * nothing a normal cashier view wouldn't already show.
+   */
+  async getPreview(actor: AuthUser) {
+    const businessHour = getEffectiveHour(actor);
+    const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
+    const { items } = await this.getByDate(actor, today, today);
+
+    return items.map((item: any) => ({
+      productId: item.productId,
+      name: item.name,
+      unit: item.unit,
+      sellPrice: toNumber(item.sellPrice),
+      currentQuantity: toNumber(item.currentQuantity),
+    }));
+  }
 }
 
 export const inventoryService = new InventoryService();
