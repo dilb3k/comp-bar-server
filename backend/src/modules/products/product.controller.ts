@@ -72,5 +72,14 @@ export const productController = {
     await productService.remove(requireAuth(req), String(req.params.id));
     const state = await rebuildTodayState(requireAuth(req));
     return sendSuccess(res, { ...state });
+  },
+
+  async uploadImage(req: Request, res: Response) {
+    const file = req.file;
+    if (!file) {
+      throw new AppError("image file is required (multipart field name: image)", 422);
+    }
+    const product = await productService.setImageFromUpload(requireAuth(req), String(req.params.id), file);
+    return sendSuccess(res, { product });
   }
 };

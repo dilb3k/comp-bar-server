@@ -12,6 +12,7 @@ import {
   approvePaymentSchema,
   rejectPaymentSchema,
   createClickPendingSchema,
+  subscriptionIdParamsSchema,
 } from "./payment.validation";
 
 // Everything here is for the hisvex-bot service only — guarded by botAuth
@@ -28,7 +29,11 @@ router.post("/link-telegram", validateRequest({ body: linkTelegramSchema }), asy
 router.get("/lookup-by-telegram/:telegramId", asyncHandler(botController.lookupByTelegramId));
 router.get("/subscription/:userId", asyncHandler(botController.subscriptionStatus));
 router.get("/expiring-soon", asyncHandler(botController.expiringSoon));
-router.post("/expiring-soon/:subscriptionId/mark-reminded", asyncHandler(botController.markReminderSent));
+router.post(
+  "/expiring-soon/:subscriptionId/mark-reminded",
+  validateRequest({ params: subscriptionIdParamsSchema }),
+  asyncHandler(botController.markReminderSent)
+);
 
 router.post(
   "/payments/manual",

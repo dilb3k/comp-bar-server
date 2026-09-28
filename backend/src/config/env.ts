@@ -18,7 +18,10 @@ const envSchema = z.object({
   BOT_TOKEN: z.string().trim().min(1).optional(),
   TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   MIGRATION_ENABLED: z.coerce.boolean().default(false),
-  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(true),
+  // Defaults closed. Self-serve signup is a real feature some deployments
+  // want, but it must be an explicit choice, not something a fresh prod
+  // deploy inherits silently. See the hard production check below.
+  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(false),
 
   // Shared secret the hisvex-bot service presents (X-Bot-Secret header) to
   // call the internal /api/bot/* routes. Optional here so the backend can
@@ -49,6 +52,22 @@ const envSchema = z.object({
   MOBILE_DOWNLOAD_URL: z.string().trim().default(
     "https://github.com/dilb3k/hisvex-mobile/releases/latest"
   ),
+
+  // Cloudflare R2 (S3-compatible) product image storage. All five optional
+  // here, mirroring the Click integration: isR2Enabled() gates every upload
+  // path, so a dev environment without R2 keys falls back to the legacy
+  // Mongo-stored image (see modules/products/product-image.ts) instead of
+  // crashing. Production has no such fallback — the hard check below
+  // refuses to boot without all five, the same way it refuses to boot
+  // without JWT_REFRESH_SECRET.
+  R2_ACCOUNT_ID: z.string().trim().optional(),
+  R2_ACCESS_KEY_ID: z.string().trim().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().trim().optional(),
+  R2_BUCKET_NAME: z.string().trim().optional(),
+  // Public base URL product image links are built from (either R2's own
+  // public bucket URL or a custom domain in front of it) — no trailing
+  // slash required, lib/r2.ts strips one if present.
+  R2_PUBLIC_URL: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -78,17 +97,39 @@ if (parsed.data.NODE_ENV === "development" && !parsed.data.JWT_REFRESH_SECRET) {
   );
 }
 
-// ALLOW_PUBLIC_REGISTER defaults to true (self-serve signup may be
-// intentional); it is not force-checked like JWT_REFRESH_SECRET. Still, an
-// operator deploying to production should consciously decide this rather
-// than inherit the default silently — warn (don't block boot) when it was
-// left unset in production. Check the raw env var (not the coerced/defaulted
-// value) so an explicit `ALLOW_PUBLIC_REGISTER=true` doesn't warn.
-if (parsed.data.NODE_ENV === "production" && process.env.ALLOW_PUBLIC_REGISTER === undefined) {
-  console.warn(
-    "ALLOW_PUBLIC_REGISTER is not set in production — defaulting to true (public self-registration is open). " +
-      "Set ALLOW_PUBLIC_REGISTER=false explicitly if that's not intended."
+// ALLOW_PUBLIC_REGISTER now defaults to false and is force-checked the same
+// way JWT_REFRESH_SECRET is: open self-registration in production is refused
+// outright rather than merely warned about, because every admin account
+// beyond the bootstrap superAdmin is meant to be created deliberately via
+// POST /api/auth/admins (superAdmin-only), not discovered by a stranger
+// hitting /register. An operator who genuinely wants public signup in
+// production is asking this codebase to do something it now considers
+// misconfiguration, not a supported mode.
+if (parsed.data.NODE_ENV === "production" && parsed.data.ALLOW_PUBLIC_REGISTER) {
+  console.error(
+    "ALLOW_PUBLIC_REGISTER=true is not allowed in production. Admin accounts are created via " +
+      "POST /api/auth/admins (superAdmin-only); leave this unset/false and remove it from the environment."
   );
+  process.exit(1);
+}
+
+const R2_VARS = [
+  "R2_ACCOUNT_ID",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "R2_BUCKET_NAME",
+  "R2_PUBLIC_URL",
+] as const;
+
+if (parsed.data.NODE_ENV === "production") {
+  const missing = R2_VARS.filter((key) => !parsed.data[key]);
+  if (missing.length > 0) {
+    console.error(
+      `Missing required R2 configuration in production: ${missing.join(", ")}. ` +
+        "Product image uploads have no base64/Mongo fallback in production — configure R2 or the server won't boot."
+    );
+    process.exit(1);
+  }
 }
 
 export const env = {

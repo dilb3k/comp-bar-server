@@ -7,12 +7,28 @@ import { createLocalId } from "../../utils/ids";
 import { getBusinessDateFromTimestamp, getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
 import { normalizeQuantity, normalizeUnit, roundQty } from "../../utils/quantity";
 import { telegramReportService } from "../../services/telegram-report.service";
+import { deleteImage, isR2Enabled, keyFromPublicUrl, uploadImage } from "../../lib/r2";
+import { buildImageKey, processImageToWebp } from "../../utils/image-processing";
 import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
-import { normalizeProductImage, processAndStoreProductImage } from "./product-image";
+import { normalizeProductImage, processProductImageInput, type ProcessedProductImageFields } from "./product-image";
 import { productRepository } from "./product.repository";
+
+const UPLOAD_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+
+// Best-effort cleanup of the R2 object a product's image is being replaced
+// or cleared with — never blocks or fails the caller's request over it,
+// mirroring how telegramReportService calls are fired without awaiting.
+function cleanupReplacedImage(previousImageUrl: string | null | undefined, nextImageUrl: string | null | undefined) {
+  if (!previousImageUrl || previousImageUrl === nextImageUrl) return;
+  const key = keyFromPublicUrl(previousImageUrl);
+  if (!key) return;
+  deleteImage(key).catch((error) => {
+    console.error("[product] failed to delete replaced R2 image", error);
+  });
+}
 
 type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt"> & {
   localId?: string;
@@ -39,12 +55,21 @@ export class ProductService {
 
   async create(actor: AuthUser, payload: CreateProductInput) {
     const timestamp = payload.createdAt ? new Date(payload.createdAt) : new Date();
-    const normalizedImage = normalizeProductImage(payload.image);
-    let storedImage: string | undefined;
-    try {
-      storedImage = await processAndStoreProductImage(normalizedImage);
-    } catch {
-      storedImage = normalizedImage;
+
+    // imageUrl explicitly present (including null) wins outright — it means
+    // the client already uploaded via POST /:id/image (or is echoing a value
+    // back) and this create shouldn't reprocess the legacy `image` field at
+    // all. Otherwise fall back to the legacy path.
+    let imageFields: ProcessedProductImageFields;
+    if ((payload as any).imageUrl !== undefined) {
+      imageFields = { imageUrl: (payload as any).imageUrl ?? undefined };
+    } else {
+      const normalizedImage = normalizeProductImage(payload.image);
+      try {
+        imageFields = await processProductImageInput(normalizedImage);
+      } catch {
+        imageFields = normalizedImage ? { image: normalizedImage } : {};
+      }
     }
 
     // The unit decides what a quantity may even look like, so resolve it
@@ -102,7 +127,8 @@ export class ProductService {
               buyPrice: payload.buyPrice,
               sellPrice: payload.sellPrice,
               displayIndex,
-              image: storedImage ?? "",
+              image: imageFields.image ?? "",
+              imageUrl: imageFields.imageUrl ?? null,
               barcodes: payload.barcodes,
               createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
               updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
@@ -188,12 +214,29 @@ export class ProductService {
     );
     const nextBuyPrice = payload.buyPrice ?? (product as any).buyPrice;
     const nextSellPrice = payload.sellPrice ?? (product as any).sellPrice;
-    const normalizedImage = normalizeProductImage(payload.image);
-    let storedImage: string | undefined;
-    try {
-      storedImage = await processAndStoreProductImage(normalizedImage);
-    } catch {
-      storedImage = normalizedImage;
+
+    const previousImageUrl = (product as any).imageUrl as string | null | undefined;
+    let nextImage: string | undefined;
+    let nextImageUrl: string | null | undefined;
+
+    if ((payload as any).imageUrl !== undefined) {
+      // Client already uploaded via POST /:id/image (or is clearing the
+      // image with an explicit null) — take it as-is, don't touch `image`.
+      nextImage = (product as any).image ?? "";
+      nextImageUrl = (payload as any).imageUrl ?? null;
+    } else if (payload.image !== undefined) {
+      const normalizedImage = normalizeProductImage(payload.image);
+      try {
+        const processed = await processProductImageInput(normalizedImage);
+        nextImage = processed.image ?? "";
+        nextImageUrl = processed.imageUrl ?? null;
+      } catch {
+        nextImage = normalizedImage ?? (product as any).image ?? "";
+        nextImageUrl = previousImageUrl ?? null;
+      }
+    } else {
+      nextImage = (product as any).image ?? "";
+      nextImageUrl = previousImageUrl ?? null;
     }
 
     if (nextSellPrice < nextBuyPrice) {
@@ -207,10 +250,8 @@ export class ProductService {
       unit: nextUnit,
       buyPrice: nextBuyPrice,
       sellPrice: nextSellPrice,
-      image:
-        payload.image !== undefined
-          ? storedImage ?? (product as any).image ?? ""
-          : (product as any).image ?? "",
+      image: nextImage,
+      imageUrl: nextImageUrl,
       updatedAt
     };
 
@@ -352,6 +393,8 @@ export class ProductService {
       });
 
       if (updatedProduct) {
+        cleanupReplacedImage(previousImageUrl, (updatedProduct as any).imageUrl);
+
         telegramReportService.reportProductUpdated(actor, {
           localId: (updatedProduct as any).localId,
           name: (updatedProduct as any).name,
@@ -474,12 +517,50 @@ export class ProductService {
 
     await productRepository.deleteById(actor.userId, product._id?.toString() || (product as any).id);
 
+    cleanupReplacedImage((product as any).imageUrl, null);
+
     telegramReportService.reportProductDeleted(actor, {
       localId: (product as any).localId,
       name: (product as any).name
     });
 
     return product;
+  }
+
+  /**
+   * Sets/replaces a product's photo from a raw uploaded file (multipart
+   * POST /api/products/:id/image) — the new, preferred path over embedding
+   * base64 in a create/update JSON body. Compresses to WebP, uploads to R2,
+   * and cleans up the object it replaces (if any).
+   */
+  async setImageFromUpload(actor: AuthUser, identifier: string, file: { buffer: Buffer; mimetype: string }) {
+    if (!UPLOAD_MIME_TYPES.includes(file.mimetype.toLowerCase())) {
+      throw new AppError("Unsupported image type", 422);
+    }
+    if (!isR2Enabled()) {
+      throw new AppError("Image storage is not configured", 503);
+    }
+
+    const product = await this.getByIdentifier(actor, identifier);
+    const previousImageUrl = (product as any).imageUrl as string | null | undefined;
+
+    const processed = await processImageToWebp(file.buffer);
+    const key = buildImageKey(processed.hash);
+    const imageUrl = await uploadImage(processed.buffer, key, processed.contentType);
+
+    const updated = await productRepository.updateById(
+      actor.userId,
+      (product as any)._id.toString(),
+      { imageUrl, updatedAt: new Date() },
+    );
+
+    if (!updated) {
+      throw new AppError("Product not found", 404);
+    }
+
+    cleanupReplacedImage(previousImageUrl, imageUrl);
+
+    return updated;
   }
 
   isVisibleForBusinessDate(

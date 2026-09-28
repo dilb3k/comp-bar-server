@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
-import { processAndStoreProductImage } from "../products/product-image";
+import { processProductImageInput } from "../products/product-image";
 import { productRepository } from "../products/product.repository";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
 import { snapshotService } from "../snapshots/snapshot.service";
@@ -42,15 +42,20 @@ export class SyncService {
 
     const processedProducts = await Promise.all(
       products.map(async (item) => {
-        let storedImage: string | undefined;
+        // A synced item that doesn't touch its image at all must not wipe an
+        // imageUrl set via POST /:id/image on another device — only include
+        // the key when processing actually produced something for it.
+        let imageFields: { image?: string; imageUrl?: string } = {};
         try {
-          storedImage = await processAndStoreProductImage(item.image as string | undefined);
+          imageFields = await processProductImageInput(item.image as string | undefined);
         } catch {
-          storedImage = item.image as string | undefined;
+          const raw = item.image as string | undefined;
+          imageFields = raw ? { image: raw } : {};
         }
         return {
           ...item,
-          image: storedImage ?? (item.image as string | undefined),
+          image: imageFields.image ?? "",
+          ...(imageFields.imageUrl !== undefined ? { imageUrl: imageFields.imageUrl } : {}),
           createdAt: new Date(item.createdAt),
           updatedAt: new Date(item.updatedAt)
         };

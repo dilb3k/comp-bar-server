@@ -16,7 +16,17 @@ export interface IProduct {
   unit: ProductUnit;
   buyPrice: number;
   sellPrice: number;
+  // Legacy: either a sha256 hash resolved through GET /api/products/image/:hash
+  // (backed by the product_images collection) or a raw external URL. New
+  // images no longer write here — see imageUrl. Kept read-only-by-convention
+  // so products created before the R2 migration keep resolving their photo.
   image: string;
+  // Current image location: a Cloudflare R2 URL (or an external URL passed
+  // through unprocessed). Null/absent means "no image" for products created
+  // after this field was introduced, or "look at the legacy `image` field"
+  // for products migrated by migrations/backfill-product-images-to-r2.migration.ts
+  // that haven't been picked up yet.
+  imageUrl?: string | null;
   displayIndex: number;
   barcodes?: string[];
   createdAt?: Date | string;
@@ -70,9 +80,15 @@ const productSchema = new Schema<IProduct>(
       min: 0,
       default: 0
     },
+    // Legacy image storage — see IProduct.image above. Left in place
+    // (deprecated, not removed) so pre-R2 products keep resolving.
     image: {
       type: String,
       default: ""
+    },
+    imageUrl: {
+      type: String,
+      default: null
     },
     displayIndex: {
       type: Number,

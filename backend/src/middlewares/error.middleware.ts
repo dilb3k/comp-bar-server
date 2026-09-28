@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
+import multer from "multer";
 
 import { AppError } from "../utils/app-error";
 import { detectLanguage, translateMessage } from "../utils/i18n";
@@ -26,6 +27,21 @@ export function errorMiddleware(
       success: false,
       error: {
         message: translateMessage("Duplicate value", lang),
+        details: null
+      }
+    });
+  }
+
+  // Raised by imageUpload (multer) when the raw upload exceeds its size cap
+  // or a client sends more files/fields than the route expects. Without this
+  // branch it would fall through to the generic 500 below — a client error
+  // reported as a server error.
+  if (error instanceof multer.MulterError) {
+    const statusCode = error.code === "LIMIT_FILE_SIZE" ? 413 : 422;
+    return res.status(statusCode).json({
+      success: false,
+      error: {
+        message: translateMessage(error.message, lang),
         details: null
       }
     });

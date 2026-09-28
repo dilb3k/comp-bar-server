@@ -6,6 +6,10 @@ import { AppError } from "../../utils/app-error";
 
 const router = Router();
 
+// LEGACY (deprecated) — serves images written before the R2 migration.
+// New products carry their photo URL directly on `imageUrl`
+// (Product.imageUrl, an R2 URL) and never need this route. Kept so old
+// products' `image` hashes keep resolving.
 router.get(
   "/image/:hash",
   imageLimiter,

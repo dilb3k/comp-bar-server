@@ -60,11 +60,24 @@ services:
       - key: CLICK_SECRET_KEY
         sync: false
 
+      # Required in production — env.ts refuses to boot without all five.
+      # Create the bucket + API token in the Cloudflare dashboard first.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+
       # Non-secret behaviour. These match the code's own defaults; they are
       # spelled out so the running config is visible in the repo instead of
       # only in a dashboard nobody can read during an outage.
       - key: CLIENT_URL
-        value: "*"
+        value: "https://hisvex-web.vercel.app"
       - key: JWT_EXPIRES_IN
         value: 7d
       - key: REFRESH_TOKEN_EXPIRES_IN
@@ -76,7 +89,7 @@ services:
       - key: MIGRATION_ENABLED
         value: "false"
       - key: ALLOW_PUBLIC_REGISTER
-        value: "true"
+        value: "false"
 
       # MOBILE_LATEST_VERSION / MOBILE_DOWNLOAD_URL are intentionally absent.
       # /meta/app-version reads the GitHub release feed now, and the env vars

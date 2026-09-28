@@ -25,6 +25,7 @@ const syncedProductSchema = z.object({
   buyPrice: z.number().positive("buyPrice must be > 0"),
   sellPrice: z.number().positive("sellPrice must be > 0"),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
+  imageUrl: z.string().url().nullable().optional(),
   displayIndex: z.number().int().min(1).optional(),
   barcodes: z.array(z.string().trim().min(1)).optional(),
   createdAt: z.string().datetime(),

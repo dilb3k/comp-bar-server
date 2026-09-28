@@ -21,6 +21,7 @@ function buildProductRecord(payload: ProductPayload) {
     sellPrice: payload.sellPrice ?? 0,
     displayIndex: payload.displayIndex ?? 1,
     ...(hasOwn(payload, "image") ? { image: payload.image ?? "" } : {}),
+    ...(hasOwn(payload, "imageUrl") ? { imageUrl: payload.imageUrl ?? null } : {}),
     ...(hasOwn(payload, "barcodes") ? { barcodes: Array.isArray(payload.barcodes) ? payload.barcodes.filter(Boolean) : undefined } : {}),
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt
@@ -40,6 +41,7 @@ function buildProductUpdate(payload: ProductPayload) {
   if ("sellPrice" in payload) update.sellPrice = payload.sellPrice;
   if ("displayIndex" in payload) update.displayIndex = payload.displayIndex;
   if (hasOwn(payload, "image")) update.image = payload.image;
+  if (hasOwn(payload, "imageUrl")) update.imageUrl = payload.imageUrl ?? null;
   if (hasOwn(payload, "barcodes")) update.barcodes = Array.isArray(payload.barcodes) ? payload.barcodes.filter(Boolean) : [];
 
   return update;

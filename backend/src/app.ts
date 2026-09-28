@@ -55,7 +55,11 @@ function resolveAllowedOrigins(clientUrl: string, nodeEnv: string): string[] | b
       `[security] CLIENT_URL is "*" or unset in production. CORS restricted to: ${origins.join(", ")}. Set CLIENT_URL on the host to override.`
     );
   }
-  return [...new Set([...origins, ...LOCAL_ORIGINS])];
+  // LOCAL_ORIGINS (including the "null" origin used by Expo web preview /
+  // sandboxed contexts) is a development convenience only — it must never
+  // widen the production whitelist, since "null" is trivially spoofable
+  // from a sandboxed iframe and would defeat the whitelist entirely.
+  return [...new Set(origins)];
 }
 
 export function createApp() {

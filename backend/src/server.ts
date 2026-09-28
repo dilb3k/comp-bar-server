@@ -11,6 +11,7 @@ import { migrateLegacyProductRecords } from "./modules/products/product.migratio
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.migration";
 import { migrateProductBarcodeUniqueIndex } from "./modules/migrations/product-barcode-unique-index.migration";
+import { migrateProductImagesToR2 } from "./modules/migrations/backfill-product-images-to-r2.migration";
 import { subscriptionService } from "./modules/subscriptions/subscription.service";
 
 process.on("unhandledRejection", (reason) => {
@@ -40,6 +41,7 @@ async function bootstrap() {
   if (env.MIGRATION_ENABLED) {
     await migrateSplitCollections();
     await migrateLegacyProductRecords();
+    await migrateProductImagesToR2();
   }
 
   // Real fix for a long-standing gap: subscription expiry used to only be

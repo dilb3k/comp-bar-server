@@ -31,7 +31,13 @@ const productBaseSchema = z.object({
   unit: unitSchema.optional(),
   buyPrice: z.number().positive("buyPrice must be > 0"),
   sellPrice: z.number().positive("sellPrice must be > 0"),
+  // Legacy: base64 data URL (processed into R2 or, in dev without R2, the
+  // legacy Mongo store), a pre-existing hash, or an external URL.
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
+  // Preferred going forward: the URL a prior POST /:id/image upload
+  // returned, echoed back unchanged (a create/update doesn't reprocess it).
+  // Pass null explicitly to clear an existing image.
+  imageUrl: z.string().url().nullable().optional(),
   barcodes: z.array(z.string().trim()).optional(),
   displayIndex: z.number().int().min(1).optional(),
   createdAt: isoDateTime,

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
+import { imageUpload } from "../../middlewares/upload.middleware";
 import {
   createProductSchema,
   productIdentifierParamsSchema,
@@ -52,6 +53,17 @@ router.delete(
   "/:id",
   validateRequest({ params: productIdentifierParamsSchema }),
   asyncHandler(productController.remove)
+);
+
+// Preferred path for setting/replacing a product's photo: multipart file
+// upload instead of embedding base64 in the JSON body above. Field name
+// must be "image". Compresses to WebP and stores it in R2 — see
+// product.service.ts#setImageFromUpload.
+router.post(
+  "/:id/image",
+  validateRequest({ params: productIdentifierParamsSchema }),
+  imageUpload.single("image"),
+  asyncHandler(productController.uploadImage)
 );
 
 export const productRoutes = router;

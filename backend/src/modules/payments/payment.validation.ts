@@ -32,3 +32,7 @@ export const rejectPaymentSchema = z.object({
 });
 
 export const createClickPendingSchema = createManualPaymentSchema;
+
+export const subscriptionIdParamsSchema = z.object({
+  subscriptionId: z.string().trim().min(1),
+});

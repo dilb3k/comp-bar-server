@@ -4,7 +4,7 @@ import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
 import { authorize } from "../auth/auth.middleware";
 import { subscriptionController } from "./subscription.controller";
-import { activateSubscriptionSchema } from "./subscription.validation";
+import { activateSubscriptionSchema, userIdParamsSchema } from "./subscription.validation";
 
 // authenticate() is already applied when this router is mounted in app.ts
 // (`app.use("/api/subscriptions", authenticate(), subscriptionRoutes)`),
@@ -22,6 +22,7 @@ router.post(
 router.post(
   "/deactivate/:userId",
   authorize("superAdmin"),
+  validateRequest({ params: userIdParamsSchema }),
   asyncHandler(subscriptionController.deactivate)
 );
 
