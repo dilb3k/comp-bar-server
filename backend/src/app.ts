@@ -22,7 +22,14 @@ import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
 import { botRoutes, clickWebhookRoutes } from "./modules/payments";
 
-const LOCAL_ORIGINS = [
+// A literal http://localhost:PORT origin can only be sent by a browser
+// actually talking to a server on that machine's own loopback interface — a
+// remote attacker's page cannot make a victim's browser forge it (the
+// browser fills in the real Origin, unspoofable from page JS). Safe to allow
+// in production too: it only ever matches someone's own local dev server
+// (Vite/Next/Expo) hitting the live API while developing against it, never a
+// request that actually originated from the internet.
+const LOCALHOST_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
   // Expo's web preview (`expo start --web`) serves from 8081 — missing here
@@ -34,8 +41,11 @@ const LOCAL_ORIGINS = [
   "http://127.0.0.1:3000",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:8081",
-  "null"
 ];
+// Unlike a localhost origin, "null" IS trivially forgeable remotely (any
+// sandboxed iframe or data: URI gets it, from any site) — it must never be
+// in the production whitelist, dev convenience or not.
+const SPOOFABLE_DEV_ORIGINS = ["null"];
 const DEFAULT_PRODUCTION_ORIGINS = ["https://hisvex-web.vercel.app"];
 
 function resolveAllowedOrigins(clientUrl: string, nodeEnv: string): string[] | boolean {
@@ -46,7 +56,9 @@ function resolveAllowedOrigins(clientUrl: string, nodeEnv: string): string[] | b
     .filter((origin) => origin !== "*");
 
   if (nodeEnv !== "production") {
-    return explicit.length > 0 ? [...new Set([...explicit, ...LOCAL_ORIGINS])] : true;
+    return explicit.length > 0
+      ? [...new Set([...explicit, ...LOCALHOST_ORIGINS, ...SPOOFABLE_DEV_ORIGINS])]
+      : true;
   }
 
   const origins = explicit.length > 0 ? explicit : DEFAULT_PRODUCTION_ORIGINS;
@@ -55,11 +67,7 @@ function resolveAllowedOrigins(clientUrl: string, nodeEnv: string): string[] | b
       `[security] CLIENT_URL is "*" or unset in production. CORS restricted to: ${origins.join(", ")}. Set CLIENT_URL on the host to override.`
     );
   }
-  // LOCAL_ORIGINS (including the "null" origin used by Expo web preview /
-  // sandboxed contexts) is a development convenience only — it must never
-  // widen the production whitelist, since "null" is trivially spoofable
-  // from a sandboxed iframe and would defeat the whitelist entirely.
-  return [...new Set(origins)];
+  return [...new Set([...origins, ...LOCALHOST_ORIGINS])];
 }
 
 export function createApp() {
