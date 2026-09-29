@@ -23,7 +23,13 @@ export const registerSchema = z.object({
 export const createAdminSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters"),
   password: z.string().min(6, "password must be at least 6 characters"),
-  phone_number: z.string().trim().optional(),
+  // Required, not optional — this is the only value loginWithPhoneSchema's
+  // check has anything to compare against. An admin created without one
+  // silently disables the "another device is already signed in, confirm
+  // your phone" protection for that whole account (phoneVerificationRequired
+  // short-circuits to false with no phone_number on file), on every
+  // platform, not just one.
+  phone_number: z.string().trim().min(7, "phone_number is required"),
   tier: z.enum(["tekin", "bor", "pro"]).optional(),
   isPayed: z.boolean().optional(),
   durationMonths: z.coerce.number().int().min(1).max(12).optional(),

@@ -256,7 +256,7 @@ export class AuthService {
     actor: AuthUser,
     payload: {
       username: string;
-      phone_number?: string;
+      phone_number: string;
       password: string;
       tier?: "tekin" | "bor" | "pro";
       isPayed?: boolean;
