@@ -4,3 +4,9 @@ dist
 .DS_Store
 coverage
 *.log
+
+# tesseract.js's Node cache default: it downloads *.traineddata to the
+# process's cwd on first worker creation (confirmed locally — a plain
+# `createWorker("eng")` wrote a ~5MB eng.traineddata straight into this
+# repo's root). See utils/ocr.ts for the full runtime implication.
+*.traineddata

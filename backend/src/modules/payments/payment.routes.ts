@@ -3,12 +3,14 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
 import { botAuth } from "../../middlewares/bot-auth.middleware";
+import { imageUpload } from "../../middlewares/upload.middleware";
 import { botController } from "./payment.controller";
 import {
   lookupUserSchema,
   linkTelegramSchema,
   createManualPaymentSchema,
   attachReceiptSchema,
+  cardDetailsSchema,
   approvePaymentSchema,
   rejectPaymentSchema,
   createClickPendingSchema,
@@ -42,8 +44,17 @@ router.post(
 );
 router.post(
   "/payments/:paymentId/receipt",
+  // multer first: it's what actually parses a multipart body into
+  // req.body/req.file — validateRequest below would see an empty req.body
+  // otherwise (express.json() in app.ts only parses application/json).
+  imageUpload.single("receipt"),
   validateRequest({ body: attachReceiptSchema }),
   asyncHandler(botController.attachReceipt)
+);
+router.post(
+  "/payments/:paymentId/card-details",
+  validateRequest({ body: cardDetailsSchema }),
+  asyncHandler(botController.submitCardDetails)
 );
 router.post(
   "/payments/:paymentId/approve",

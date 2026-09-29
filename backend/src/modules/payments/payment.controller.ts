@@ -44,7 +44,21 @@ export const botController = {
   },
 
   async attachReceipt(req: Request, res: Response) {
-    const payment = await paymentService.attachReceipt(String(req.params.paymentId), req.body.receiptFileId);
+    const file = req.file;
+    if (!file) {
+      throw new AppError("receipt image file is required (multipart field name: receipt)", 422);
+    }
+    const result = await paymentService.attachReceipt(String(req.params.paymentId), req.body.receiptFileId, file);
+    return sendSuccess(res, result);
+  },
+
+  // Screenshot-free flow — see payment.service.ts#submitCardDetails.
+  async submitCardDetails(req: Request, res: Response) {
+    const payment = await paymentService.submitCardDetails(
+      String(req.params.paymentId),
+      req.body.cardNumber,
+      req.body.fullName
+    );
     return sendSuccess(res, payment);
   },
 
@@ -57,12 +71,12 @@ export const botController = {
   },
 
   async rejectPayment(req: Request, res: Response) {
-    const payment = await paymentService.rejectPayment(
+    const result = await paymentService.rejectPayment(
       String(req.params.paymentId),
       req.body.rejectedByTelegramId,
       req.body.reason
     );
-    return sendSuccess(res, payment);
+    return sendSuccess(res, result);
   },
 
   async listByUser(req: Request, res: Response) {

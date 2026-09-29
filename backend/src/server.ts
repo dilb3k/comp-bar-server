@@ -13,6 +13,9 @@ import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.m
 import { migrateProductBarcodeUniqueIndex } from "./modules/migrations/product-barcode-unique-index.migration";
 import { migrateProductImagesToR2 } from "./modules/migrations/backfill-product-images-to-r2.migration";
 import { subscriptionService } from "./modules/subscriptions/subscription.service";
+import { paymentService } from "./modules/payments/payment.service";
+import { telegramReportService } from "./services/telegram-report.service";
+import { warmUpOcr } from "./utils/ocr";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
@@ -53,6 +56,51 @@ async function bootstrap() {
     subscriptionService.refreshExpiredSubscriptions().catch((error) => {
       console.error("refreshExpiredSubscriptions cron failed", error);
     });
+  });
+
+  // Second layer of defense behind OCR auto-provisioning (see
+  // payment.service.ts#attachReceipt): a "provisioned" payment nobody
+  // confirmed within 48h has its tier taken back automatically, the same
+  // way an admin's Reject would. OCR alone can't catch a forged screenshot
+  // — this bounds how long a forged one can ride on a granted tier before a
+  // human (or this cron) closes the window. Hourly, same cadence as the
+  // subscription-expiry cron above.
+  cron.schedule("0 * * * *", () => {
+    paymentService
+      .autoExpireProvisionedPayments()
+      .then((expired) => {
+        if (expired.length === 0) return;
+
+        console.log(
+          `[autoExpireProvisionedPayments] auto-rejected ${expired.length} unconfirmed payment(s): ` +
+            expired.map((p) => `${p.paymentId} (user ${p.userId}, ${p.tier})`).join(", "),
+        );
+
+        // Best-effort — this is the same ops-monitoring channel product/
+        // inventory events already report to (BOT_TOKEN/TELEGRAM_CHAT_ID),
+        // not the separate hisvex-bot admin-approval chat (that bot owns
+        // its own Telegram session and isn't reachable from here). Silence
+        // here just means the log line above is the only record, not that
+        // anything downstream failed.
+        telegramReportService.dispatch({
+          title: "To'lov(lar) avtomatik bekor qilindi (48 soat, admin tasdiqlamadi)",
+          lines: expired.map(
+            (p) => `Payment ${p.paymentId} | user ${p.userId} | ${p.tier} | ${p.amount} so'm`,
+          ),
+        });
+      })
+      .catch((error) => {
+        console.error("autoExpireProvisionedPayments cron failed", error);
+      });
+  });
+
+  // Pays the OCR worker's first-use cost (traineddata fetch, see ocr.ts) at
+  // boot instead of on whichever admin's receipt upload happens to be first
+  // after a cold start. Not awaited — a slow/unreachable fetch here must
+  // never delay the health check or block startup; a receipt uploaded
+  // before this resolves just falls through to the same lazy getWorker().
+  warmUpOcr().catch((error) => {
+    console.error("OCR worker warm-up failed (will retry lazily on first receipt upload):", error);
   });
 
   const app = createApp();

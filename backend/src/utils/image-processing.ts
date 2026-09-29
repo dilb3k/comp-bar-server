@@ -45,3 +45,11 @@ export async function processImageToWebp(input: Buffer): Promise<ProcessedImage>
 export function buildImageKey(hash: string): string {
   return `products/${hash}.webp`;
 }
+
+// Same R2 bucket, separate prefix — payment.service.ts's receipt uploads
+// reuse this module's compression rather than duplicating it, but receipts
+// and product photos are different data (payment evidence vs. catalog
+// images) and shouldn't share a keyspace.
+export function buildReceiptImageKey(hash: string): string {
+  return `receipts/${hash}.webp`;
+}

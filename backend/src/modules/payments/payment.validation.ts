@@ -36,3 +36,10 @@ export const createClickPendingSchema = createManualPaymentSchema;
 export const subscriptionIdParamsSchema = z.object({
   subscriptionId: z.string().trim().min(1),
 });
+
+// Screenshot-free flow (POST /api/bot/payments/:paymentId/card-details) —
+// no OCR runs on this path, so validation here is just shape, not content.
+export const cardDetailsSchema = z.object({
+  cardNumber: z.string().trim().min(8).max(25).regex(/^[\d\s]+$/, "cardNumber must contain only digits and spaces"),
+  fullName: z.string().trim().min(2).max(200),
+});

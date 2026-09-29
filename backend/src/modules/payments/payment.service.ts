@@ -1,10 +1,15 @@
 import crypto from "node:crypto";
 
 import { AppError } from "../../utils/app-error";
+import { isR2Enabled, uploadImage } from "../../lib/r2";
+import { buildReceiptImageKey, processImageToWebp } from "../../utils/image-processing";
+import { extractTransactionRef, parseReceiptAmount, runOcr } from "../../utils/ocr";
 import { authRepository } from "../auth/auth.repository";
 import { subscriptionService } from "../subscriptions/subscription.service";
 import { PaymentModel, type PaymentTier } from "./payment.model";
 import { PRICING } from "./payment.constants";
+
+const PROVISION_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 export class PaymentService {
   // ---- Manual card-transfer flow ----
@@ -33,11 +38,115 @@ export class PaymentService {
     return payment.toJSON();
   }
 
-  async attachReceipt(paymentId: string, receiptFileId: string) {
+  // OCR-assisted receipt intake: hashes the screenshot to block reuse,
+  // reads the amount off it, and — if that amount matches exactly — grants
+  // the tier immediately ("provisioned") pending a human confirming the
+  // same screenshot later (see approveManualPayment/rejectPayment below,
+  // and the 48h auto-expire cron in server.ts for what happens if nobody
+  // does). A screenshot that doesn't OCR-match stays "pending" exactly like
+  // before this feature existed — an admin reviews it manually, same as a
+  // payment submitted through the card-details flow.
+  async attachReceipt(paymentId: string, receiptFileId: string, file: { buffer: Buffer; mimetype: string }) {
     const payment = await PaymentModel.findById(paymentId);
     if (!payment) throw new AppError("Payment not found", 404);
     if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
+
+    if (!isR2Enabled()) {
+      throw new AppError("Image storage is not configured", 503);
+    }
+
+    // Hash the ORIGINAL bytes, before any compression — sharp's WebP output
+    // isn't guaranteed byte-identical across runs/versions, so hashing the
+    // re-encoded image could let the same screenshot slip through twice
+    // with a different hash each time. Cheap (no sharp/OCR yet), so this
+    // runs first and fails fast on a duplicate before spending CPU on
+    // either.
+    const receiptHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+
+    const duplicate = await PaymentModel.findOne({
+      receiptHash,
+      _id: { $ne: payment._id },
+    });
+    if (duplicate) {
+      throw new AppError("Bu chek allaqachon boshqa to'lov uchun ishlatilgan", 409);
+    }
+
+    // OCR runs on the ORIGINAL bytes (WebP re-compression can blur small
+    // receipt text enough to hurt recognition), while compression for R2
+    // storage happens independently — both operate on the same input, run
+    // concurrently since neither depends on the other's result.
+    const [ocrText, processed] = await Promise.all([
+      runOcr(file.buffer).catch((error) => {
+        console.error("[attachReceipt] OCR failed, receipt stays pending for manual review", error);
+        return "";
+      }),
+      processImageToWebp(file.buffer),
+    ]);
+
+    const { extractedAmount, matched } = parseReceiptAmount(ocrText, payment.amount);
+    const transactionRef = extractTransactionRef(ocrText);
+
+    const receiptImageUrl = await uploadImage(
+      processed.buffer,
+      buildReceiptImageKey(receiptHash),
+      processed.contentType,
+    );
+
     payment.receiptFileId = receiptFileId;
+    payment.receiptImageUrl = receiptImageUrl;
+    payment.receiptHash = receiptHash;
+    payment.ocr = {
+      extractedAmount,
+      extractedText: ocrText ? ocrText.slice(0, 500) : null,
+      transactionRef,
+      amountMatched: matched,
+    };
+
+    let provisioned = false;
+
+    if (matched) {
+      const now = new Date();
+      payment.status = "provisioned";
+      payment.provisionedAt = now;
+      payment.provisionExpiresAt = new Date(now.getTime() + PROVISION_WINDOW_MS);
+      await payment.save();
+
+      try {
+        await subscriptionService.activateFromPayment(
+          payment.userId,
+          payment.tier,
+          payment.durationMonths,
+          `bot-ocr-provisional:${payment._id}`,
+        );
+        provisioned = true;
+      } catch (error) {
+        // Activation failed after we'd already marked this "provisioned" —
+        // don't leave it claiming a tier that was never actually granted.
+        // Falling back to "pending" means an admin can still approve it
+        // manually (see approveManualPayment's pending branch).
+        payment.status = "pending";
+        payment.provisionedAt = null;
+        payment.provisionExpiresAt = null;
+        await payment.save();
+        console.error("[attachReceipt] OCR auto-provision activation failed, reverted to pending", error);
+      }
+    } else {
+      await payment.save();
+    }
+
+    return { payment: payment.toJSON(), provisioned };
+  }
+
+  // Screenshot-free flow: the user couldn't produce a screenshot, so they
+  // type in the card they sent from + their name instead. No OCR runs on
+  // this path — status stays "pending" for an admin to review by hand
+  // against their own bank statement.
+  async submitCardDetails(paymentId: string, cardNumber: string, fullName: string) {
+    const payment = await PaymentModel.findById(paymentId);
+    if (!payment) throw new AppError("Payment not found", 404);
+    if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
+
+    payment.senderCardDetails = { cardNumber, fullName };
     await payment.save();
     return payment.toJSON();
   }
@@ -45,6 +154,27 @@ export class PaymentService {
   async approveManualPayment(paymentId: string, approvedByTelegramId: string) {
     const payment = await PaymentModel.findById(paymentId);
     if (!payment) throw new AppError("Payment not found", 404);
+
+    if (payment.status === "provisioned") {
+      // The tier was already granted when OCR matched the amount (see
+      // attachReceipt) — this tap is the human sign-off, not a second
+      // activation. Calling activateFromPayment again here would extend
+      // the subscription a second time for one payment.
+      const claimed = await PaymentModel.findOneAndUpdate(
+        { _id: payment._id, status: "provisioned" },
+        {
+          $set: {
+            status: "completed",
+            approvedBy: `bot:${approvedByTelegramId}`,
+            approvedAt: new Date(),
+          },
+        },
+        { new: true },
+      );
+      const result = claimed ?? (await PaymentModel.findById(payment._id)) ?? payment;
+      return result.toJSON();
+    }
+
     if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
 
     // Same read-then-write race as completeClickPayment used to have, human
@@ -92,13 +222,23 @@ export class PaymentService {
   async rejectPayment(paymentId: string, rejectedByTelegramId: string, reason?: string) {
     const payment = await PaymentModel.findById(paymentId);
     if (!payment) throw new AppError("Payment not found", 404);
-    if (payment.status !== "pending") throw new AppError("Payment is not pending", 400);
 
-    // Same atomic-claim reasoning as approveManualPayment above — no
-    // activation call to roll back here, so a plain conditional update
-    // (rather than a full findOneAndUpdate+catch) is enough.
+    if (payment.status !== "pending" && payment.status !== "provisioned") {
+      throw new AppError("Payment is not pending", 400);
+    }
+
+    // A "provisioned" payment already has its tier granted (see
+    // attachReceipt) — rejecting it must take that back. A "pending" one
+    // never got anything, so rejecting it is a no-op on the subscription.
+    const wasProvisioned = payment.status === "provisioned";
+
+    // Same atomic-claim reasoning as approveManualPayment above — claim
+    // whichever of the two states this payment was actually read in, so a
+    // concurrent request that already moved it away is detected as a lost
+    // race rather than silently reapplying a downgrade someone else already
+    // handled.
     const claimed = await PaymentModel.findOneAndUpdate(
-      { _id: payment._id, status: "pending" },
+      { _id: payment._id, status: payment.status },
       {
         $set: {
           status: "rejected",
@@ -112,10 +252,23 @@ export class PaymentService {
 
     if (!claimed) {
       const latest = await PaymentModel.findById(payment._id);
-      return (latest ?? payment).toJSON();
+      return { payment: (latest ?? payment).toJSON(), wasDowngraded: false };
     }
 
-    return claimed.toJSON();
+    let wasDowngraded = false;
+    if (wasProvisioned) {
+      try {
+        await subscriptionService.deactivateFromPayment(claimed.userId, `bot-reject:${rejectedByTelegramId}`);
+        wasDowngraded = true;
+      } catch (error) {
+        // The rejection itself already landed either way — log and leave
+        // this for an operator to fix by hand rather than blocking the
+        // reject over a downgrade failure.
+        console.error("[rejectPayment] failed to downgrade after rejecting a provisioned payment", error);
+      }
+    }
+
+    return { payment: claimed.toJSON(), wasDowngraded };
   }
 
   async getByUserId(userId: string) {
@@ -300,6 +453,67 @@ export class PaymentService {
       tier,
       subscriptionEndDate: subscription?.endDate ?? null,
     };
+  }
+
+  // Second layer of defense behind OCR for the trust window attachReceipt
+  // opens: a "provisioned" payment nobody confirmed within 48h gets its
+  // tier taken back automatically, the same way an admin's Reject would.
+  // Called hourly by a cron in server.ts. Claims each payment individually
+  // (rather than a single updateMany) so a payment an admin approves/rejects
+  // in the middle of this run is left alone instead of raced.
+  async autoExpireProvisionedPayments(): Promise<
+    Array<{ paymentId: string; userId: string; tier: PaymentTier; amount: number }>
+  > {
+    const now = new Date();
+    const overdue = await PaymentModel.find({
+      status: "provisioned",
+      provisionExpiresAt: { $lt: now },
+    });
+
+    const expired: Array<{ paymentId: string; userId: string; tier: PaymentTier; amount: number }> = [];
+
+    for (const payment of overdue) {
+      const claimed = await PaymentModel.findOneAndUpdate(
+        { _id: payment._id, status: "provisioned" },
+        {
+          $set: {
+            status: "rejected",
+            rejectedReason: "Auto-expired: not confirmed by admin within 48h",
+            approvedBy: "cron:auto-expire",
+            approvedAt: now,
+          },
+        },
+        { new: true },
+      );
+
+      // Lost the race to an admin who approved/rejected this in the
+      // meantime — whatever they did already stands, nothing more to do.
+      if (!claimed) continue;
+
+      try {
+        await subscriptionService.deactivateFromPayment(claimed.userId, "cron-auto-expire");
+      } catch (error) {
+        console.error(
+          `[autoExpireProvisionedPayments] downgrade failed for user ${claimed.userId} (payment ${claimed._id})`,
+          error,
+        );
+        // The payment itself is already "rejected" — leaving isPayed as-is
+        // means the tier lingers until the next run tries again (this query
+        // only matches status:"provisioned", so a fix has to happen by hand
+        // or by re-running deactivateFromPayment directly) rather than a
+        // silently half-applied state with no record of what's still owed.
+        continue;
+      }
+
+      expired.push({
+        paymentId: claimed._id.toString(),
+        userId: claimed.userId,
+        tier: claimed.tier,
+        amount: claimed.amount,
+      });
+    }
+
+    return expired;
   }
 }
 

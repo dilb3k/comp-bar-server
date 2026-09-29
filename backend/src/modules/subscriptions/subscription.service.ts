@@ -99,6 +99,36 @@ export class SubscriptionService {
     return subscription.toJSON();
   }
 
+  // System-context counterpart to deactivate() above, the same relationship
+  // activateFromPayment has to activate() — called when a "provisioned"
+  // (OCR-trusted, not yet admin-confirmed) payment gets rejected, either by
+  // an admin tap or by the 48h auto-expire cron, and the tier granted on
+  // trust has to come back off. No superAdmin AuthUser exists in either
+  // caller, so this takes a plain userId + a source string for the audit
+  // log instead.
+  async deactivateFromPayment(userId: string, source: string) {
+    const user = await authRepository.findById(userId);
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
+    await this.deactivateExisting(userId);
+
+    await authRepository.updateAdmin(userId, { isPayed: false });
+
+    await auditService.log({
+      ownerAdminId: userId,
+      action: "UPDATE",
+      entityType: "subscription",
+      entityId: `subscription-${userId}`,
+      after: { tier: "tekin", active: false, source },
+      source: "bot",
+      createdBy: source,
+    });
+
+    return { deactivated: true };
+  }
+
   async deactivate(actor: AuthUser, userId: string) {
     if (actor.role !== "superAdmin") {
       throw new AppError("Only superAdmin can manage subscriptions", 403);
