@@ -7,6 +7,9 @@ import { subscriptionService } from "../subscriptions/subscription.service";
 import { computeTier, SubscriptionModel } from "../subscriptions/subscription.model";
 import { authRepository } from "./auth.repository";
 import { UserModel } from "./user.model";
+import { SessionChallengeModel } from "./session-challenge.model";
+import { sendOtpViaTelegram } from "./otp-telegram";
+import { alertService } from "../../services/alert.service";
 import { ProductModel as ProductMongooseModel } from "../products/product.model";
 import { InventoryEntryModel } from "../inventory/inventory.model";
 import { DailySnapshotModel as SnapshotMongooseModel } from "../snapshots/snapshot.model";
@@ -15,6 +18,8 @@ import { AuditEventModel } from "../audit/audit.model";
 import type { AuthUser } from "./auth.types";
 import {
   createSessionId,
+  generateOtpCode,
+  hashOtp,
   maskPhone,
   normalizePhone,
   phoneVerificationRequired,
@@ -23,6 +28,9 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "./auth.utils";
+
+const OTP_TTL_MS = 3 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 3;
 
 export class AuthService {
   private async issueSession(user: any) {
@@ -119,10 +127,41 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    // Account already has an active session on another device. Require the
-    // account owner's phone number to confirm identity before taking over —
-    // unless this device already verified the phone before (trusted device).
+    // Account already has an active session on another device. Require
+    // out-of-band confirmation before taking over it — unless this device
+    // already verified once before (trusted device).
     if (phoneVerificationRequired(user, deviceId)) {
+      const telegramId = (user as any).telegramId as string | null | undefined;
+
+      // Real OTP path — only possible for a user who has linked Telegram
+      // (via hisvex-bot's /start), since a bot can only DM someone who has
+      // started a conversation with it and no SMS gateway exists in this
+      // codebase. Falls back to the older "re-type your own phone number"
+      // check below for everyone else, unchanged from before this feature.
+      if (telegramId) {
+        const code = generateOtpCode();
+        const challenge = await SessionChallengeModel.create({
+          userId: user._id.toString(),
+          otpHash: hashOtp(code),
+          deviceId: deviceId ?? null,
+          expiresAt: new Date(Date.now() + OTP_TTL_MS),
+        });
+
+        const sent = await sendOtpViaTelegram(telegramId, code);
+        if (sent) {
+          return {
+            requiresVerification: true,
+            verificationType: "PHONE_OTP",
+            sessionChallengeId: challenge._id.toString(),
+            message: "Akkaunt boshqa qurilmada faol. Davom etish uchun Telegramga yuborilgan kodni tasdiqlang.",
+          };
+        }
+        // Telegram send failed (bot blocked, transient API error, ...) —
+        // don't strand the user with a challenge id that can never be
+        // fulfilled; clean it up and fall through to the phone-retype path.
+        await SessionChallengeModel.deleteOne({ _id: challenge._id });
+      }
+
       return {
         needsPhoneVerification: true,
         maskedPhone: maskPhone(user.phone_number),
@@ -188,6 +227,78 @@ export class AuthService {
     };
   }
 
+  // Completes the OTP path login() started above. Atomic claim on both the
+  // attempt-increment (wrong code) and the consume (right code) so two
+  // concurrent verify calls for the same challenge (a retried request,
+  // double-tap) can't each count as a fresh attempt against the 3-try limit
+  // or both succeed in issuing a session.
+  async verifySessionChallenge(sessionChallengeId: string, otpCode: string, deviceId?: string) {
+    const challenge = await SessionChallengeModel.findById(sessionChallengeId);
+
+    if (!challenge || challenge.consumed || challenge.expiresAt.getTime() < Date.now()) {
+      throw new AppError("Kod muddati tugagan yoki yaroqsiz. Qaytadan kiring.", 410);
+    }
+
+    if (challenge.attempts >= OTP_MAX_ATTEMPTS) {
+      throw new AppError("Urinishlar soni tugadi. Qaytadan kiring.", 429);
+    }
+
+    if (hashOtp(otpCode) !== challenge.otpHash) {
+      const updated = await SessionChallengeModel.findOneAndUpdate(
+        { _id: challenge._id, consumed: false },
+        { $inc: { attempts: 1 } },
+        { new: true },
+      );
+      const attemptsLeft = Math.max(0, OTP_MAX_ATTEMPTS - (updated?.attempts ?? challenge.attempts + 1));
+      if (attemptsLeft <= 0) {
+        throw new AppError("Urinishlar soni tugadi. Qaytadan kiring.", 429);
+      }
+      throw new AppError(`Kod noto'g'ri. Qolgan urinishlar: ${attemptsLeft}`, 401);
+    }
+
+    const claimed = await SessionChallengeModel.findOneAndUpdate(
+      { _id: challenge._id, consumed: false },
+      { $set: { consumed: true } },
+      { new: true },
+    );
+    if (!claimed) {
+      // Lost a race to a concurrent verify of the same (correct) code —
+      // whichever call landed first already has a live session for this
+      // user; this one has nothing left to do.
+      throw new AppError("Bu kod allaqachon ishlatilgan.", 409);
+    }
+
+    const user = await authRepository.findById(challenge.userId);
+    if (!user || !user.isActive) {
+      throw new AppError("User not found", 404);
+    }
+
+    // Verified — trust this device going forward (matches
+    // loginWithPhoneVerification's existing behavior) and take over the
+    // session. issueSession() overwrites activeSessionId, which is exactly
+    // what makes the old device's next authenticated request fail with
+    // SESSION_REPLACED (auth.middleware.ts) — no separate "kick" step
+    // needed.
+    await this.addVerifiedDevice(user._id.toString(), deviceId ?? challenge.deviceId);
+
+    await subscriptionService.refreshExpiredSubscriptions();
+
+    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(user.role, isPayed, activeSub);
+
+    const sessionId = await this.issueSession(user);
+    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
+
+    alertService.reportSessionTakeover({ username: (user as any).username });
+
+    return {
+      token: signAccessToken(authUser),
+      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
+    };
+  }
+
   async logout(userId: string, sessionId?: string) {
     const user = await authRepository.findById(userId);
 
@@ -234,7 +345,7 @@ export class AuthService {
     // Session was replaced by another login → this refresh token is dead.
     const activeId = (user as any).activeSessionId;
     if (activeId ? decoded.sessionId !== activeId : decoded.sessionId) {
-      throw new AppError("Sessiya tugatildi. Boshqa qurilmadan kirilgan. Qayta kiring.", 401, undefined, "SESSION_REPLACED");
+      throw new AppError("Boshqa qurilmadan kirish tasdiqlangani sababli ushbu sessiya yakunlandi.", 401, undefined, "SESSION_REPLACED");
     }
 
     await subscriptionService.refreshExpiredSubscriptions();

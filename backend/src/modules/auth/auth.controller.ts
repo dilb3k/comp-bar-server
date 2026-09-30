@@ -42,6 +42,15 @@ export const authController = {
     return sendSuccess(res, result);
   },
 
+  async verifySessionChallenge(req: Request, res: Response) {
+    const result = await authService.verifySessionChallenge(
+      req.body.sessionChallengeId,
+      req.body.otpCode,
+      req.body.deviceId
+    );
+    return sendSuccess(res, result);
+  },
+
   async logout(req: Request, res: Response) {
     const actor = requireAuth(req);
     await authService.logout(actor.userId, actor.sessionId);

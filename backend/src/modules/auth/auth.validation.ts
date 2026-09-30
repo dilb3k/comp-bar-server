@@ -13,6 +13,12 @@ export const loginWithPhoneSchema = z.object({
   deviceId: z.string().trim().min(1).max(128).optional(),
 });
 
+export const verifySessionChallengeSchema = z.object({
+  sessionChallengeId: z.string().trim().min(1, "sessionChallengeId is required"),
+  otpCode: z.string().trim().regex(/^\d{6}$/, "otpCode must be 6 digits"),
+  deviceId: z.string().trim().min(1).max(128).optional(),
+});
+
 export const registerSchema = z.object({
   username: z.string().trim().min(3, "username must be at least 3 characters"),
   password: z.string().min(6, "password must be at least 6 characters"),

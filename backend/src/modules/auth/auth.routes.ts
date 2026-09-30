@@ -6,7 +6,7 @@ import { validateRequest } from "../../middlewares/validate.middleware";
 import { authLimiter } from "../../middlewares/rate-limit.middleware";
 import { authController } from "./auth.controller";
 import { authenticate, authorize } from "./auth.middleware";
-import { createAdminSchema, loginSchema, loginWithPhoneSchema, refreshSchema, registerSchema, updateAdminSchema, updateMeSchema } from "./auth.validation";
+import { createAdminSchema, loginSchema, loginWithPhoneSchema, refreshSchema, registerSchema, updateAdminSchema, updateMeSchema, verifySessionChallengeSchema } from "./auth.validation";
 
 const router = Router();
 
@@ -40,6 +40,13 @@ router.post(
   authLimiter,
   validateRequest({ body: loginWithPhoneSchema }),
   asyncHandler(authController.loginWithPhoneVerification)
+);
+
+router.post(
+  "/verify-session-challenge",
+  authLimiter,
+  validateRequest({ body: verifySessionChallengeSchema }),
+  asyncHandler(authController.verifySessionChallenge)
 );
 
 router.post(

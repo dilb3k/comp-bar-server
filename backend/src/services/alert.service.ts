@@ -4,7 +4,7 @@ import { env } from "../config/env";
 // separate from telegram-report.service.ts's business-event reports (new
 // product, sale, sync) so an incident storm never buries, or gets buried by,
 // normal traffic in the same chat.
-export type AlertType = "failover" | "failover_recovered" | "db_error" | "critical_error";
+export type AlertType = "failover" | "failover_recovered" | "db_error" | "critical_error" | "session_takeover";
 
 // "Har 2-3 daqiqada ko'pi bilan 1 marta": a flapping DB connection or a
 // crash-looping route would otherwise fire one Telegram message per failed
@@ -58,9 +58,9 @@ class AlertService {
   // Never throws and never awaited by callers — an alert failing to send
   // must not affect the request/error path that triggered it. Silently
   // drops the alert (logged, not thrown) when a type is being throttled.
-  private dispatch(type: AlertType, title: string, lines: Array<string | undefined>): void {
+  private dispatch(type: AlertType, title: string, lines: Array<string | undefined>, options?: { noThrottle?: boolean }): void {
     if (!this.isEnabled()) return;
-    if (this.shouldThrottle(type)) {
+    if (!options?.noThrottle && this.shouldThrottle(type)) {
       console.warn(`[alertService] throttled (${type}): ${title}`);
       return;
     }
@@ -95,6 +95,20 @@ class AlertService {
       `${escapeHtml(input.server)} qayta faol, trafik unga qaytdi`,
       input.reportedBy ? `Xabar bergan: ${input.reportedBy}` : undefined,
     ]);
+  }
+
+  // Each occurrence is a distinct, meaningful event (a real account takeover
+  // just happened) rather than repeated noise from one ongoing incident —
+  // unlike the other alert types, this is never throttled: a shop owner
+  // switching devices twice in five minutes deserves two notifications, not
+  // one suppressed silently.
+  reportSessionTakeover(input: { username: string }): void {
+    this.dispatch(
+      "session_takeover",
+      "🔐 Yangi qurilmadan kirish tasdiqlandi",
+      [`Foydalanuvchi: ${escapeHtml(input.username)}`, "Avvalgi sessiya to'xtatildi."],
+      { noThrottle: true },
+    );
   }
 
   reportDbError(message: string): void {

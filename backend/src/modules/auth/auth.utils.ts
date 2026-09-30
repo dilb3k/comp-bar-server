@@ -75,3 +75,18 @@ export function shouldClearActiveSession(user: { activeSessionId?: string | null
   if (!sessionId) return false;
   return user.activeSessionId === sessionId;
 }
+
+// crypto.randomInt is CSPRNG-backed (unlike Math.random) — this is a login
+// security control, not a UI nonce.
+export function generateOtpCode(): string {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+}
+
+// Never store the plaintext code — only what's needed to check a guess
+// against it. SHA-256 (not bcrypt) is deliberate: a 6-digit space is small
+// enough that the real defense is the 3-attempt lockout + short TTL below,
+// not a slow hash — bcrypt here would just add latency to every verify call
+// for no real security gain against an attacker limited to 3 guesses.
+export function hashOtp(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
