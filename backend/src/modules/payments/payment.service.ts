@@ -55,6 +55,17 @@ export class PaymentService {
       throw new AppError("Image storage is not configured", 503);
     }
 
+    // Nothing below this point (OCR, R2 upload) is guarded against a second
+    // concurrent call for the same paymentId — a double-tapped "send" in the
+    // bot, or a retried upload, both plausibly land two attachReceipt calls
+    // close together for one payment. Without a claim, both would read
+    // status:"pending", both run OCR/R2, and if both OCR-match, both would
+    // call activateFromPayment — creating two Subscription rows for one
+    // payment (subscription.service.ts has no uniqueness constraint against
+    // that). The actual claim happens once at the end via one atomic
+    // findOneAndUpdate; this only starts the (expensive, side-effect-only)
+    // work.
+
     // Hash the ORIGINAL bytes, before any compression — sharp's WebP output
     // isn't guaranteed byte-identical across runs/versions, so hashing the
     // re-encoded image could let the same screenshot slip through twice
@@ -92,49 +103,71 @@ export class PaymentService {
       processed.contentType,
     );
 
-    payment.receiptFileId = receiptFileId;
-    payment.receiptImageUrl = receiptImageUrl;
-    payment.receiptHash = receiptHash;
-    payment.ocr = {
+    const ocr = {
       extractedAmount,
       extractedText: ocrText ? ocrText.slice(0, 500) : null,
       transactionRef,
       amountMatched: matched,
     };
+    const now = new Date();
+
+    // The actual claim: atomic on this one document, conditioned on the
+    // status this function itself observed at the top still holding. If a
+    // second concurrent call already moved it away from "pending" (its own
+    // claim landed first), this matches nothing and `claimed` comes back
+    // null — the loser bails out below without ever calling
+    // activateFromPayment, instead of both callers racing into it.
+    const claimed = await PaymentModel.findOneAndUpdate(
+      { _id: payment._id, status: "pending" },
+      {
+        $set: {
+          receiptFileId,
+          receiptImageUrl,
+          receiptHash,
+          ocr,
+          ...(matched
+            ? { status: "provisioned", provisionedAt: now, provisionExpiresAt: new Date(now.getTime() + PROVISION_WINDOW_MS) }
+            : {}),
+        },
+      },
+      { new: true },
+    );
+
+    if (!claimed) {
+      throw new AppError("Bu to'lov allaqachon ko'rib chiqilgan yoki chek biriktirilgan", 409);
+    }
 
     let provisioned = false;
 
     if (matched) {
-      const now = new Date();
-      payment.status = "provisioned";
-      payment.provisionedAt = now;
-      payment.provisionExpiresAt = new Date(now.getTime() + PROVISION_WINDOW_MS);
-      await payment.save();
-
       try {
         await subscriptionService.activateFromPayment(
-          payment.userId,
-          payment.tier,
-          payment.durationMonths,
-          `bot-ocr-provisional:${payment._id}`,
+          claimed.userId,
+          claimed.tier,
+          claimed.durationMonths,
+          `bot-ocr-provisional:${claimed._id}`,
         );
         provisioned = true;
       } catch (error) {
-        // Activation failed after we'd already marked this "provisioned" —
-        // don't leave it claiming a tier that was never actually granted.
-        // Falling back to "pending" means an admin can still approve it
-        // manually (see approveManualPayment's pending branch).
-        payment.status = "pending";
-        payment.provisionedAt = null;
-        payment.provisionExpiresAt = null;
-        await payment.save();
+        // Activation failed after the claim already marked this
+        // "provisioned" — don't leave it claiming a tier that was never
+        // actually granted. Falling back to "pending" means an admin can
+        // still approve it manually (see approveManualPayment's pending
+        // branch). Conditioned on status:"provisioned" for the same reason
+        // as the claim above — if this payment was somehow already moved on
+        // (e.g. the 48h auto-expire cron, vanishingly unlikely this soon but
+        // not impossible under clock skew), don't stomp on that.
+        const reverted = await PaymentModel.findOneAndUpdate(
+          { _id: claimed._id, status: "provisioned" },
+          { $set: { status: "pending", provisionedAt: null, provisionExpiresAt: null } },
+          { new: true },
+        );
+        if (reverted) Object.assign(claimed, reverted.toObject());
         console.error("[attachReceipt] OCR auto-provision activation failed, reverted to pending", error);
       }
-    } else {
-      await payment.save();
     }
 
-    return { payment: payment.toJSON(), provisioned };
+    return { payment: claimed.toJSON(), provisioned };
   }
 
   // Screenshot-free flow: the user couldn't produce a screenshot, so they

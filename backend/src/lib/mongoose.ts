@@ -12,7 +12,15 @@ export async function connectDatabase() {
 
   try {
     await mongoose.connect(primaryUrl, {
-      maxPoolSize: 5,
+      // Several endpoints (sales, startDay, bulkUpdateCurrent, product
+      // create/update, sync) hold a session/transaction open across multiple
+      // sequential round trips each — with only 5 connections, roughly 6+
+      // shops ringing up sales at the same moment already starts queuing
+      // requests for a free connection, well before MongoDB Atlas itself is
+      // under any real load. 20 is still conservative against Atlas's own
+      // per-tier connection ceiling (raise further if metrics show pool
+      // exhaustion under real traffic).
+      maxPoolSize: 20,
       serverSelectionTimeoutMS: 5000,
     });
     console.log("Connected to primary MongoDB");

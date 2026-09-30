@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
@@ -72,69 +74,91 @@ export class SnapshotService {
       throw new AppError("Past business days cannot be edited", 409);
     }
 
-    const [entries, products] = await Promise.all([
-      inventoryRepository.findByDate(actor.userId, payload.date),
-      productRepository.findAllByOwner(actor.userId),
-    ]);
+    // This recomputes the whole day's totals from current inventory state
+    // and overwrites the snapshot document wholesale — not an increment. Run
+    // outside a transaction, two concurrent callers for the same owner+date
+    // (two devices on one account, or a batch of offline-sync writes landing
+    // close together) can each read-compute-write out of order: whichever
+    // finishes its write last simply wins, even if the other one's read saw
+    // more complete data. The one that read first (over)writes last, and its
+    // stale, incomplete totals silently clobber the correct ones — a real
+    // sale drops out of totalRevenue/totalProfit until the next unrelated
+    // mutation happens to recompute it again. A transaction closes this: a
+    // write conflict on the snapshot document aborts the losing attempt and
+    // mongoose's withTransaction re-runs it from a fresh read that now sees
+    // the other one's committed change.
+    const session = await mongoose.startSession();
+    let snapshot: any;
+    try {
+      snapshot = await session.withTransaction(async () => {
+        const [entries, products] = await Promise.all([
+          inventoryRepository.findByDate(actor.userId, payload.date, session),
+          productRepository.findAllByOwner(actor.userId, session),
+        ]);
 
-    const visibleProducts = products.filter((p) =>
-      productService.isVisibleForBusinessDate(p as any, payload.date, getEffectiveHour(actor)),
-    );
+        const visibleProducts = products.filter((p) =>
+          productService.isVisibleForBusinessDate(p as any, payload.date, getEffectiveHour(actor)),
+        );
 
-    const entryMap = new Map(entries.map((e) => [e.productId, e]));
+        const entryMap = new Map(entries.map((e) => [e.productId, e]));
 
-    const derivedItems = visibleProducts.map((product) => {
-      const inventory =
-        entryMap.get((product as any).localId) ??
-        deriveMissingInventoryEntry(product.toJSON() as any, payload.date);
+        const derivedItems = visibleProducts.map((product) => {
+          const inventory =
+            entryMap.get((product as any).localId) ??
+            deriveMissingInventoryEntry(product.toJSON() as any, payload.date);
 
-      // Value sold units at the price locked into the inventory entry (the
-      // price in effect when the day started), falling back to the current
-      // product price only when the entry has none. This must match the
-      // sync derivation and buildInventoryResponse so a day's revenue/profit
-      // is identical regardless of which code path computes the snapshot.
-      const storedBuyPrice = Number((inventory as any).buyPrice ?? 0);
-      const storedSellPrice = Number((inventory as any).sellPrice ?? 0);
-      const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number((product as any).buyPrice ?? 0);
-      const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number((product as any).sellPrice ?? 0);
+          // Value sold units at the price locked into the inventory entry (the
+          // price in effect when the day started), falling back to the current
+          // product price only when the entry has none. This must match the
+          // sync derivation and buildInventoryResponse so a day's revenue/profit
+          // is identical regardless of which code path computes the snapshot.
+          const storedBuyPrice = Number((inventory as any).buyPrice ?? 0);
+          const storedSellPrice = Number((inventory as any).sellPrice ?? 0);
+          const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number((product as any).buyPrice ?? 0);
+          const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number((product as any).sellPrice ?? 0);
 
-      return buildSnapshotItem({
-        productId: (product as any).localId,
-        productName: String((product as any).name),
-        unit: (product as any).unit ?? (inventory as any).unit,
-        startQuantity: Number((inventory as any).startQuantity),
-        currentQuantity: Number((inventory as any).currentQuantity),
-        buyPrice,
-        sellPrice,
-        lockedRevenue: Number((inventory as any).lockedRevenue ?? 0),
-        lockedProfit: Number((inventory as any).lockedProfit ?? 0),
-        lockedSold: Number((inventory as any).lockedSold ?? 0),
+          return buildSnapshotItem({
+            productId: (product as any).localId,
+            productName: String((product as any).name),
+            unit: (product as any).unit ?? (inventory as any).unit,
+            startQuantity: Number((inventory as any).startQuantity),
+            currentQuantity: Number((inventory as any).currentQuantity),
+            buyPrice,
+            sellPrice,
+            lockedRevenue: Number((inventory as any).lockedRevenue ?? 0),
+            lockedProfit: Number((inventory as any).lockedProfit ?? 0),
+            lockedSold: Number((inventory as any).lockedSold ?? 0),
+          });
+        });
+
+        const items = derivedItems;
+        const totals = aggregateSnapshot(derivedItems);
+
+        const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
+
+        return snapshotRepository.upsertByDate(
+          actor.userId,
+          payload.date,
+          payload.deviceId ?? "server",
+          {
+            localId:
+              payload.localId ??
+              `snapshot-${payload.date}-${payload.deviceId ?? "server"}`,
+            deviceId: payload.deviceId ?? "server",
+            date: payload.date,
+            totalRevenue: totals.totalRevenue,
+            totalProfit: totals.totalProfit,
+            totalSoldItems: totals.totalSoldItems,
+            items,
+            createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
+            updatedAt: now,
+          },
+          session,
+        );
       });
-    });
-
-    const items = derivedItems;
-    const totals = aggregateSnapshot(derivedItems);
-
-    const now = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
-
-    const snapshot = await snapshotRepository.upsertByDate(
-      actor.userId,
-      payload.date,
-      payload.deviceId ?? "server",
-      {
-        localId:
-          payload.localId ??
-          `snapshot-${payload.date}-${payload.deviceId ?? "server"}`,
-        deviceId: payload.deviceId ?? "server",
-        date: payload.date,
-        totalRevenue: totals.totalRevenue,
-        totalProfit: totals.totalProfit,
-        totalSoldItems: totals.totalSoldItems,
-        items,
-        createdAt: payload.createdAt ? new Date(payload.createdAt) : now,
-        updatedAt: now,
-      },
-    );
+    } finally {
+      await session.endSession();
+    }
 
     telegramReportService.reportSnapshotSaved(actor, {
       date: payload.date,

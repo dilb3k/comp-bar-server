@@ -12,7 +12,7 @@ import { buildImageKey, processImageToWebp } from "../../utils/image-processing"
 import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
-import { getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
+import { calculateSold, getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
 import { normalizeProductImage, processProductImageInput, type ProcessedProductImageFields } from "./product-image";
 import { productRepository } from "./product.repository";
 
@@ -208,6 +208,15 @@ export class ProductService {
     // Switching a product to "dona" must also make its existing stock
     // countable — otherwise a 2.5 kg product silently keeps a half piece.
     const nextUnit = normalizeUnit(payload.unit ?? (product as any).unit);
+    // Whether the caller actually meant to set a new stock count (a restock/
+    // correction) vs. is just editing something else (name, price, image)
+    // and the request happens to carry the product's quantity along too —
+    // matters below: `product` here was read before today's inventory entry
+    // is re-read fresh inside the transaction, so falling back to it as
+    // "the new quantity" for an edit that never touched quantity would
+    // silently overwrite whatever a concurrent sale already did to today's
+    // *authoritative* InventoryEntry.currentQuantity with this stale number.
+    const quantityExplicitlyChanged = payload.quantity !== undefined;
     const nextQuantity = normalizeQuantity(
       Number(payload.quantity ?? (product as any).quantity ?? 0),
       nextUnit,
@@ -246,7 +255,6 @@ export class ProductService {
     const updatePayload: Record<string, unknown> = {
       deviceId: payload.deviceId ?? (product as any).deviceId,
       name: payload.name ?? (product as any).name,
-      quantity: nextQuantity,
       unit: nextUnit,
       buyPrice: nextBuyPrice,
       sellPrice: nextSellPrice,
@@ -254,6 +262,15 @@ export class ProductService {
       imageUrl: nextImageUrl,
       updatedAt
     };
+
+    // Same staleness hazard as the inventory-entry branch below: `nextQuantity`
+    // falls back to the pre-transaction `product.quantity` read when this edit
+    // never touched quantity at all, and writing that number back would
+    // silently undo a concurrent sale's decrement to the top-level stock
+    // count. Only include it when the caller actually meant to change it.
+    if (quantityExplicitlyChanged) {
+      updatePayload.quantity = nextQuantity;
+    }
 
     if (payload.displayIndex !== undefined) {
       updatePayload.displayIndex = payload.displayIndex;
@@ -306,11 +323,28 @@ export class ProductService {
         const inventoryEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today, session);
 
         if (inventoryEntry) {
-          const adjusted = getAdjustedInventoryQuantities(
-            inventoryEntry.startQuantity,
-            inventoryEntry.currentQuantity,
-            nextQuantity
-          );
+          // Only actually re-derive start/current quantity when the caller
+          // explicitly asked to change the stock count (a restock/manual
+          // correction) — `inventoryEntry` here is read fresh inside this
+          // transaction, but `nextQuantity` falls back to the *stale*
+          // pre-transaction `product` read when quantity wasn't part of
+          // this edit at all, and feeding that stale number into
+          // getAdjustedInventoryQuantities would silently overwrite
+          // whatever a concurrent sale already did to today's currentQuantity
+          // (see the comment on quantityExplicitlyChanged above). An edit
+          // that never touched quantity must leave both figures exactly as
+          // the fresh entry already has them.
+          const adjusted = quantityExplicitlyChanged
+            ? getAdjustedInventoryQuantities(
+                inventoryEntry.startQuantity,
+                inventoryEntry.currentQuantity,
+                nextQuantity
+              )
+            : {
+                soldSoFar: calculateSold(inventoryEntry.startQuantity, inventoryEntry.currentQuantity),
+                startQuantity: inventoryEntry.startQuantity,
+                currentQuantity: inventoryEntry.currentQuantity,
+              };
 
           const oldSellPrice = Number((inventoryEntry as any).sellPrice ?? 0);
           const oldBuyPrice = Number((inventoryEntry as any).buyPrice ?? 0);
