@@ -21,6 +21,7 @@ import { productImageRoutes } from "./modules/products/product-image.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
 import { botRoutes, clickWebhookRoutes } from "./modules/payments";
+import { opsRoutes } from "./modules/ops";
 
 // A literal http://localhost:PORT origin can only be sent by a browser
 // actually talking to a server on that machine's own loopback interface — a
@@ -113,6 +114,7 @@ export function createApp() {
   app.use("/api/sync", authenticate(), syncRoutes);
   app.use("/api/subscriptions", authenticate(), subscriptionRoutes);
   app.use("/api/stats", authenticate(), statsRoutes);
+  app.use("/api/ops", authenticate(), opsRoutes);
 
   // hisvex-bot integration: its own auth (shared secret, not a user JWT —
   // see bot-auth.middleware.ts), and Click's webhook (signature-verified

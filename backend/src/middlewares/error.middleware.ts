@@ -4,6 +4,7 @@ import multer from "multer";
 
 import { AppError } from "../utils/app-error";
 import { detectLanguage, translateMessage } from "../utils/i18n";
+import { alertService } from "../services/alert.service";
 
 function getLang(req: Request): string {
   return detectLanguage(req.headers["accept-language"]);
@@ -48,6 +49,14 @@ export function errorMiddleware(
   }
 
   if (error instanceof AppError) {
+    if (error.statusCode >= 500) {
+      alertService.reportCriticalError({
+        statusCode: error.statusCode,
+        method: req.method,
+        path: req.path,
+        message: error.message,
+      });
+    }
     return res.status(error.statusCode).json({
       success: false,
       error: {
@@ -72,6 +81,12 @@ export function errorMiddleware(
   // debugging, but never leak raw internals (stack traces, DB/file paths,
   // library error text) to the client — return a generic, safe message.
   console.error("Unhandled error:", error);
+  alertService.reportCriticalError({
+    statusCode: 500,
+    method: req.method,
+    path: req.path,
+    message: error instanceof Error ? error.message : "Unknown error",
+  });
 
   return res.status(500).json({
     success: false,

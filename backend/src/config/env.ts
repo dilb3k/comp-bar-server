@@ -17,6 +17,13 @@ const envSchema = z.object({
   REFRESH_TOKEN_EXPIRES_IN: z.string().default("30d"),
   BOT_TOKEN: z.string().trim().min(1).optional(),
   TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
+  // Separate from TELEGRAM_CHAT_ID above (business events: new product, sale,
+  // sync) — this is the ops channel for infrastructure alerts (failover, DB
+  // errors, 5xx crashes). Same BOT_TOKEN, different chat, so ops noise never
+  // buries a business-event report or vice versa. Falls back to
+  // TELEGRAM_CHAT_ID when unset so a deploy that hasn't configured a separate
+  // ops chat yet still gets alerted somewhere rather than silently nowhere.
+  ALERT_TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   MIGRATION_ENABLED: z.coerce.boolean().default(false),
   // Defaults closed. Self-serve signup is a real feature some deployments
   // want, but it must be an explicit choice, not something a fresh prod

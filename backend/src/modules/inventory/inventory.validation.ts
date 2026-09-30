@@ -78,16 +78,24 @@ const bulkCurrentItemSchema = z.object({
   note: z.string().optional().default("")
 });
 
+// Optional, client-generated (a UUID, in practice) and opaque to the server —
+// the same value resubmitted for this admin gets the original response back
+// instead of applying the mutation again. See idempotency.service.ts. A
+// client that never sets it just gets the old no-dedup behavior.
+const idempotencyKeySchema = z.string().trim().min(1).max(100).optional();
+
 export const inventoryStartDaySchema = z.object({
   date: dayKeySchema.optional(),
   deviceId: z.string().trim().min(1),
-  items: z.array(inventoryItemSchema).min(1)
+  items: z.array(inventoryItemSchema).min(1),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 export const inventoryBulkCurrentSchema = z.object({
   date: dayKeySchema.optional(),
   deviceId: z.string().trim().min(1),
-  items: z.array(bulkCurrentItemSchema).min(1)
+  items: z.array(bulkCurrentItemSchema).min(1),
+  idempotencyKey: idempotencyKeySchema,
 });
 
 const salesLineItemSchema = z.object({
@@ -115,4 +123,5 @@ export const inventorySalesSchema = z.object({
   date: dayKeySchema.optional(),
   deviceId: z.string().trim().min(1),
   lines: z.array(salesLineItemSchema).min(1),
+  idempotencyKey: idempotencyKeySchema,
 });

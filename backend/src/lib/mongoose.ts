@@ -1,6 +1,7 @@
 ﻿import mongoose from "mongoose";
 
 import { env } from "../config/env";
+import { alertService } from "../services/alert.service";
 
 export async function connectDatabase() {
   mongoose.set("strictQuery", true);
@@ -27,9 +28,14 @@ export async function connectDatabase() {
 
     mongoose.connection.on("disconnected", () => {
       console.warn("MongoDB disconnected");
+      alertService.reportDbError("Ulanish uzildi (disconnected) — qayta ulanishga harakat qilinmoqda.");
     });
     mongoose.connection.on("error", (err) => {
       console.error("MongoDB connection error:", err.message);
+      alertService.reportDbError(err.message);
+    });
+    mongoose.connection.on("reconnected", () => {
+      console.log("MongoDB reconnected");
     });
 
     return;

@@ -53,6 +53,8 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: ALERT_TELEGRAM_CHAT_ID
+        sync: false
       - key: CLICK_MERCHANT_ID
         sync: false
       - key: CLICK_SERVICE_ID

@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
 import { sendSuccess } from "../../utils/response";
+import { withIdempotency } from "../idempotency/idempotency.service";
 import { inventoryService } from "./inventory.service";
 
 function requireAuth(req: Request) {
@@ -40,15 +41,33 @@ export const inventoryController = {
   },
 
   async startDay(req: Request, res: Response) {
-    return sendSuccess(res, await inventoryService.startDay(requireAuth(req), req.body), 201);
+    const auth = requireAuth(req);
+    const { idempotencyKey, ...payload } = req.body;
+    const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
+      status: 201,
+      data: await inventoryService.startDay(auth, payload),
+    }));
+    return sendSuccess(res, data, status);
   },
 
   async bulkCurrent(req: Request, res: Response) {
-    return sendSuccess(res, await inventoryService.bulkUpdateCurrent(requireAuth(req), req.body));
+    const auth = requireAuth(req);
+    const { idempotencyKey, ...payload } = req.body;
+    const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
+      status: 200,
+      data: await inventoryService.bulkUpdateCurrent(auth, payload),
+    }));
+    return sendSuccess(res, data, status);
   },
 
   async sales(req: Request, res: Response) {
-    return sendSuccess(res, await inventoryService.sales(requireAuth(req), req.body));
+    const auth = requireAuth(req);
+    const { idempotencyKey, ...payload } = req.body;
+    const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
+      status: 200,
+      data: await inventoryService.sales(auth, payload),
+    }));
+    return sendSuccess(res, data, status);
   },
 
   async dashboard(req: Request, res: Response) {
