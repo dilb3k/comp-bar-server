@@ -22,8 +22,8 @@ const syncedProductSchema = z.object({
   name: z.string().trim().min(1),
   quantity: syncedQuantitySchema,
   unit: z.enum(PRODUCT_UNITS).optional(),
-  buyPrice: z.number().positive("buyPrice must be > 0"),
-  sellPrice: z.number().positive("sellPrice must be > 0"),
+  buyPrice: z.number().min(0, "buyPrice must be >= 0"),
+  sellPrice: z.number().min(0, "sellPrice must be >= 0"),
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
   imageUrl: z.string().url().nullable().optional(),
   displayIndex: z.number().int().min(1).optional(),
@@ -84,8 +84,8 @@ const syncedSnapshotSchema = z.object({
       productName: z.string().trim().min(1),
       unit: z.enum(PRODUCT_UNITS).optional(),
       sold: syncedQuantitySchema,
-      buyPrice: z.number().positive().optional(),
-      sellPrice: z.number().positive().optional(),
+      buyPrice: z.number().min(0).optional(),
+      sellPrice: z.number().min(0).optional(),
       revenue: z.number().min(0),
       profit: z.number()
     })

@@ -29,8 +29,12 @@ const productBaseSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   quantity: quantitySchema,
   unit: unitSchema.optional(),
-  buyPrice: z.number().positive("buyPrice must be > 0"),
-  sellPrice: z.number().positive("sellPrice must be > 0"),
+  // >= 0, not > 0 — a promotional/giveaway product genuinely priced at 0 is
+  // a real thing (see resolveLockedPrice in utils/quantity.ts for the
+  // corresponding read-side fix, which stopped treating a stored 0 as
+  // "unset").
+  buyPrice: z.number().min(0, "buyPrice must be >= 0"),
+  sellPrice: z.number().min(0, "sellPrice must be >= 0"),
   // Legacy: base64 data URL (processed into R2 or, in dev without R2, the
   // legacy Mongo store), a pre-existing hash, or an external URL.
   image: z.string().optional().transform((value) => normalizeProductImage(value)),
@@ -71,8 +75,8 @@ export const updateProductSchema = productBaseSchema.partial().extend({
   name: z.string().trim().min(1).optional(),
   quantity: quantitySchema.optional(),
   unit: unitSchema.optional(),
-  buyPrice: z.number().positive().optional(),
-  sellPrice: z.number().positive().optional()
+  buyPrice: z.number().min(0).optional(),
+  sellPrice: z.number().min(0).optional()
 }).superRefine((value, ctx) => {
   if (
     value.buyPrice !== undefined &&

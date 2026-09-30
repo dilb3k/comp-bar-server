@@ -1,6 +1,8 @@
 import { Schema, model, models } from "mongoose";
 import bcrypt from "bcryptjs";
 
+import { normalizePhone } from "./auth.utils";
+
 const SALT_WORK_FACTOR = 10;
 
 const userSchema = new Schema(
@@ -15,6 +17,17 @@ const userSchema = new Schema(
       type: String,
       trim: true,
       default: "",
+    },
+    // Digits-only mirror of phone_number, kept in sync by the pre-save hook
+    // below. findByPhone (bot /start linking, phone-verification login) used
+    // to load every active admin into memory and scan them in JS to tolerate
+    // phone_number's formatting differences (+998, spaces, dashes) — fine at
+    // a handful of admins, a full-collection load on every lookup at real
+    // scale. Indexed so that lookup is a direct query instead.
+    phoneDigits: {
+      type: String,
+      default: "",
+      index: true,
     },
     password: {
       type: String,
@@ -114,6 +127,13 @@ userSchema.pre("save", async function (next) {
   } catch (error: any) {
     next(error);
   }
+});
+
+userSchema.pre("save", function (next) {
+  if (this.isModified("phone_number")) {
+    this.phoneDigits = normalizePhone(this.phone_number);
+  }
+  next();
 });
 
 userSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {

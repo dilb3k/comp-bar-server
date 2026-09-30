@@ -15,8 +15,32 @@ import { inventoryRepository } from "../inventory/inventory.repository";
 import { calculateSold, getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
 import { normalizeProductImage, processProductImageInput, type ProcessedProductImageFields } from "./product-image";
 import { productRepository } from "./product.repository";
+import { ProductCreationLockModel } from "./product-creation-lock.model";
 
 const UPLOAD_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+
+// See product-creation-lock.model.ts for why this exists instead of a
+// persistent counter. Serializes concurrent "create product" calls for the
+// same owner so the 100-product cap's count-check+insert can't race; every
+// other owner's creates are unaffected (the lock is per-owner, not global).
+export async function withProductCreationLock<T>(ownerAdminId: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    await ProductCreationLockModel.create({ _id: ownerAdminId });
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      throw new AppError("Boshqa so'rov hozir mahsulot qo'shmoqda — bir necha soniyadan so'ng qayta urinib ko'ring", 409);
+    }
+    throw error;
+  }
+
+  try {
+    return await fn();
+  } finally {
+    await ProductCreationLockModel.deleteOne({ _id: ownerAdminId }).catch(() => {
+      // TTL index (15s) is the backstop if this somehow fails — not fatal.
+    });
+  }
+}
 
 // Best-effort cleanup of the R2 object a product's image is being replaced
 // or cleared with — never blocks or fails the caller's request over it,
@@ -84,7 +108,7 @@ export class ProductService {
 
     const session = await mongoose.startSession();
     try {
-      const product = await session.withTransaction(async () => {
+      const runCreate = () => session.withTransaction(async () => {
         if (actor.tier === "bor") {
           const activeCount = await productRepository.countActive(actor.userId, session);
           if (activeCount >= 100) {
@@ -184,6 +208,9 @@ export class ProductService {
 
         return p;
       });
+
+      const product =
+        actor.tier === "bor" ? await withProductCreationLock(actor.userId, runCreate) : await runCreate();
 
       telegramReportService.reportProductCreated(actor, {
         localId: (product as any).localId,

@@ -15,13 +15,17 @@ export async function connectDatabase() {
     await mongoose.connect(primaryUrl, {
       // Several endpoints (sales, startDay, bulkUpdateCurrent, product
       // create/update, sync) hold a session/transaction open across multiple
-      // sequential round trips each — with only 5 connections, roughly 6+
-      // shops ringing up sales at the same moment already starts queuing
-      // requests for a free connection, well before MongoDB Atlas itself is
-      // under any real load. 20 is still conservative against Atlas's own
-      // per-tier connection ceiling (raise further if metrics show pool
-      // exhaustion under real traffic).
-      maxPoolSize: 20,
+      // sequential round trips each. Sized for ~1000 concurrent shop-owner
+      // requests without turning MongoDB Atlas's own per-tier connection
+      // ceiling into the bottleneck instead — raise further only after
+      // confirming Atlas's own plan allows more (a shared/free tier caps
+      // total connections well below what a busy paid tier allows).
+      maxPoolSize: 50,
+      // Keeps this many connections warm even when idle, so the first
+      // requests after a quiet period (this app's usual traffic pattern —
+      // shops open, ring up sales in bursts, go quiet) don't each pay a
+      // fresh TCP+TLS handshake to Atlas before their query even starts.
+      minPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
     });
     console.log("Connected to primary MongoDB");

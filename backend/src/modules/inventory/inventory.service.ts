@@ -17,6 +17,7 @@ import {
   formatQuantity,
   normalizeUnit,
   qtyGreaterThan,
+  resolveLockedPrice,
   roundMoney,
   roundQty,
   type ProductUnit,
@@ -99,10 +100,8 @@ function buildInventoryResponse(product: any, inventory: any) {
   const inventoryJson =
     typeof inventory?.toJSON === "function" ? inventory.toJSON() : inventory;
 
-  const storedBuyPrice = toNumber(inventoryJson?.buyPrice ?? 0);
-  const storedSellPrice = toNumber(inventoryJson?.sellPrice ?? 0);
-  const effectiveBuyPrice = storedBuyPrice > 0 ? storedBuyPrice : toNumber(productJson?.buyPrice || 0);
-  const effectiveSellPrice = storedSellPrice > 0 ? storedSellPrice : toNumber(productJson?.sellPrice || 0);
+  const effectiveBuyPrice = resolveLockedPrice(inventoryJson?.buyPrice, toNumber(productJson?.buyPrice ?? 0));
+  const effectiveSellPrice = resolveLockedPrice(inventoryJson?.sellPrice, toNumber(productJson?.sellPrice ?? 0));
 
   const metrics = calculateInventoryMetrics({
     startQuantity: toNumber(inventoryJson?.startQuantity ?? 0),

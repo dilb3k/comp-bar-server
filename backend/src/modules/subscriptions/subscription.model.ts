@@ -64,6 +64,19 @@ const subscriptionSchema = new Schema<ISubscription>(
 subscriptionSchema.index({ userId: 1, isActive: 1 });
 subscriptionSchema.index({ endDate: 1, isActive: 1 });
 
+// The real backstop against two active subscriptions for one user: the
+// application-level "find existing, extend or create" flow in
+// subscription.service.ts already avoids this in the common case, but two
+// payments completing within the same read-write window (a Click webhook and
+// an OCR auto-provision, say) could otherwise both pass their own "no active
+// subscription yet" check before either commits. A partial unique index
+// enforces it at the database level regardless of how many app instances or
+// concurrent requests are racing — MongoDB itself rejects the second insert.
+subscriptionSchema.index(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { isActive: true }, name: "idx_one_active_subscription_per_user" },
+);
+
 export const SubscriptionModel =
   models.Subscription ?? model<ISubscription>("Subscription", subscriptionSchema);
 

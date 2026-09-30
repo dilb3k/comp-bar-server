@@ -11,6 +11,7 @@ import { migrateLegacyProductRecords } from "./modules/products/product.migratio
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
 import { migrateFixDisplayIndex } from "./modules/migrations/fix-display-index.migration";
 import { migrateProductBarcodeUniqueIndex } from "./modules/migrations/product-barcode-unique-index.migration";
+import { migrateBackfillPhoneDigits } from "./modules/migrations/backfill-phone-digits.migration";
 import { migrateProductImagesToR2 } from "./modules/migrations/backfill-product-images-to-r2.migration";
 import { subscriptionService } from "./modules/subscriptions/subscription.service";
 import { paymentService } from "./modules/payments/payment.service";
@@ -40,6 +41,11 @@ async function bootstrap() {
   // (idempotent, safe — detects pre-existing duplicate barcodes and skips
   // without touching data if any are found; see migration file for details).
   await migrateProductBarcodeUniqueIndex();
+
+  // Always backfill — cheap once caught up (matches nothing after the first
+  // run), and findByPhone's new indexed lookup needs it for any admin
+  // created before this field existed.
+  await migrateBackfillPhoneDigits();
 
   if (env.MIGRATION_ENABLED) {
     await migrateSplitCollections();

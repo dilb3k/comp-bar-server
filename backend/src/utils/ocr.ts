@@ -8,9 +8,23 @@ import { createWorker, type Worker } from "tesseract.js";
 // is cached so concurrent first-callers await the same in-flight creation
 // instead of racing to create two.
 let workerPromise: Promise<Worker> | null = null;
+// Consecutive failure count + a cooldown window — a burst of receipt
+// uploads landing while the traineddata fetch is down (see the NOTE at the
+// bottom of this file) would otherwise each independently retry and each
+// pay a full network-timeout wait. Capped at 60s so a real recovery is
+// still noticed reasonably quickly.
+let consecutiveFailures = 0;
+let cooldownUntil = 0;
 
 async function getWorker(): Promise<Worker> {
   if (!workerPromise) {
+    const now = Date.now();
+    if (now < cooldownUntil) {
+      throw new Error(
+        `OCR worker unavailable (${consecutiveFailures} consecutive failures) — retrying after ${new Date(cooldownUntil).toISOString()}`,
+      );
+    }
+
     workerPromise = (async () => {
       // "eng" only — receipts only need digits, and Tesseract's digit
       // recognition doesn't depend on the receipt's actual language (Uzbek/
@@ -31,7 +45,29 @@ async function getWorker(): Promise<Worker> {
       // pulled out of the correctly-recognized text afterward — see
       // parseReceiptAmount/extractTransactionRef below.
       return worker;
-    })();
+    })().catch((error) => {
+      // Real fix for a real bug: `workerPromise` used to stay set to this
+      // same rejected promise forever — `if (!workerPromise)` is false for a
+      // rejected-but-non-null promise, so every later attachReceipt() call
+      // failed immediately with no retry until the whole process restarted,
+      // silently forcing every subsequent user's receipt to manual admin
+      // review indefinitely. Resetting it here means the very next
+      // getWorker() call (the next receipt upload, once past the cooldown)
+      // tries again fresh instead of replaying this same failure forever.
+      workerPromise = null;
+      consecutiveFailures += 1;
+      cooldownUntil = Date.now() + Math.min(60_000, 2 ** consecutiveFailures * 1000);
+      throw error;
+    });
+
+    workerPromise.then(() => {
+      consecutiveFailures = 0;
+      cooldownUntil = 0;
+    }).catch(() => {
+      // Already handled above — this second .catch exists only so the
+      // unhandled-rejection warning Node prints for the first .then()'s
+      // implicit rejection pass-through doesn't fire.
+    });
   }
   return workerPromise;
 }

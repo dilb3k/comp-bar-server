@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
+import { resolveLockedPrice } from "../../utils/quantity";
 import {
   assertNotFutureDayKey,
   assertPaidRangeAllowed,
@@ -112,10 +113,8 @@ export class SnapshotService {
           // product price only when the entry has none. This must match the
           // sync derivation and buildInventoryResponse so a day's revenue/profit
           // is identical regardless of which code path computes the snapshot.
-          const storedBuyPrice = Number((inventory as any).buyPrice ?? 0);
-          const storedSellPrice = Number((inventory as any).sellPrice ?? 0);
-          const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number((product as any).buyPrice ?? 0);
-          const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number((product as any).sellPrice ?? 0);
+          const buyPrice = resolveLockedPrice((inventory as any).buyPrice, Number((product as any).buyPrice ?? 0));
+          const sellPrice = resolveLockedPrice((inventory as any).sellPrice, Number((product as any).sellPrice ?? 0));
 
           return buildSnapshotItem({
             productId: (product as any).localId,

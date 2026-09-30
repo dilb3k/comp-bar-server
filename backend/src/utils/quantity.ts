@@ -71,3 +71,21 @@ export function formatQuantity(value: number, unit: ProductUnit = DEFAULT_UNIT):
   const text = unit === "kg" ? String(Number(rounded.toFixed(QTY_DECIMALS))) : String(rounded);
   return `${text} ${unit}`;
 }
+
+/**
+ * Resolves a "locked-in" price field (an InventoryEntry's buyPrice/sellPrice
+ * at the moment it was written) against the current product's price as a
+ * fallback — used when an entry is a virtual/derived one (no real document
+ * exists yet for today, see deriveMissingInventoryEntry) and therefore never
+ * had a price of its own recorded.
+ *
+ * Checks *presence* (a real Mongoose document's price field is always a
+ * number, schema default 0), not magnitude (`> 0`) — a saved entry that
+ * genuinely recorded a price of exactly 0 (a promotional/giveaway day) is a
+ * real, meaningful value, not "missing". Only a value that was never stored
+ * at all (undefined/null, which only a derived/virtual entry produces) falls
+ * back to the product's current price.
+ */
+export function resolveLockedPrice(stored: unknown, fallback: number): number {
+  return typeof stored === "number" && Number.isFinite(stored) ? stored : fallback;
+}

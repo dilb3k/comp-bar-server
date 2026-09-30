@@ -16,8 +16,11 @@ export class AuthRepository {
   async findByPhone(phone: string) {
     const digits = normalizePhone(phone);
     if (digits.length < 6) return null;
-    const admins = await UserModel.find({ role: "admin", isActive: true });
-    return admins.find((u) => normalizePhone(u.phone_number) === digits) ?? null;
+    // Direct indexed lookup on phoneDigits (kept in sync by user.model.ts's
+    // pre-save hook) — used to load every active admin into memory and scan
+    // them in JS for this, a full-collection load on every bot /start link
+    // or phone-verification login at real admin-count scale.
+    return UserModel.findOne({ role: "admin", isActive: true, phoneDigits: digits });
   }
 
   async findByTelegramId(telegramId: string) {

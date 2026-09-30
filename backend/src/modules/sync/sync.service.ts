@@ -5,12 +5,13 @@ import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
 import { processProductImageInput } from "../products/product-image";
 import { productRepository } from "../products/product.repository";
+import { withProductCreationLock } from "../products/product.service";
 import { snapshotRepository } from "../snapshots/snapshot.repository";
 import { snapshotService } from "../snapshots/snapshot.service";
 import { aggregateSnapshot } from "../snapshots/snapshot.logic";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
-import { normalizeUnit, roundMoney, roundQty } from "../../utils/quantity";
+import { normalizeUnit, resolveLockedPrice, roundMoney, roundQty } from "../../utils/quantity";
 import { env } from "../../config/env";
 
 type SyncInput = {
@@ -111,26 +112,40 @@ export class SyncService {
     // the batch in the order it arrived — same "first come, first kept" rule
     // a sequence of individual REST calls would have produced.
     let allowedProducts = processedProducts;
-    if (actor.tier === "bor" && processedProducts.length > 0) {
-      const incomingLocalIds = processedProducts.map((item) => item.localId as string);
-      const existingLocalIds = await productRepository.findExistingLocalIds(actor.userId, incomingLocalIds);
-      let runningCount = await productRepository.countActive(actor.userId);
-      const allowed: typeof processedProducts = [];
-      for (const item of processedProducts) {
-        const isNew = !existingLocalIds.has(item.localId as string);
-        if (!isNew || runningCount < 100) {
-          if (isNew) runningCount += 1;
-          allowed.push(item);
-        } else {
-          rejected.push({ entity: "product", localId: item.localId as string, reason: "PRODUCT_LIMIT_EXCEEDED" });
-        }
-      }
-      allowedProducts = allowed;
-    }
+    // Whether this call needs the same-owner lock at all — see
+    // product-creation-lock.model.ts. Only new products (not edits to ones
+    // that already exist) count against the cap and are worth serializing
+    // for; an inventory-only or edit-only sync never touches this path.
+    const mustGuardProductCap = actor.tier === "bor" && processedProducts.length > 0;
 
     const session = await mongoose.startSession();
     try {
-      await session.withTransaction(async () => {
+      const runSync = () => session.withTransaction(async () => {
+        // Re-checked here, *inside* the lock (when mustGuardProductCap holds
+        // one) rather than before it: reading the count and filtering
+        // allowedProducts before acquiring the lock would leave the same gap
+        // this lock exists to close — a second concurrent sync could read
+        // the same stale count before the first one's inserts commit. Cheap
+        // no-op for a pro tier / edit-only / inventory-only sync (the
+        // `actor.tier === "bor" && processedProducts.length > 0` guard is
+        // unchanged from before).
+        if (mustGuardProductCap) {
+          const incomingLocalIds = processedProducts.map((item) => item.localId as string);
+          const existingLocalIds = await productRepository.findExistingLocalIds(actor.userId, incomingLocalIds, session);
+          let runningCount = await productRepository.countActive(actor.userId, session);
+          const allowed: typeof processedProducts = [];
+          for (const item of processedProducts) {
+            const isNew = !existingLocalIds.has(item.localId as string);
+            if (!isNew || runningCount < 100) {
+              if (isNew) runningCount += 1;
+              allowed.push(item);
+            } else {
+              rejected.push({ entity: "product", localId: item.localId as string, reason: "PRODUCT_LIMIT_EXCEEDED" });
+            }
+          }
+          allowedProducts = allowed;
+        }
+
         // NOTE: these must run sequentially (not via Promise.all) — the MongoDB
         // driver does not support concurrent operations sharing one ClientSession;
         // running them in parallel is undefined behaviour per the driver docs.
@@ -184,10 +199,8 @@ export class SyncService {
               const product = productMap.get(entry.productId);
               // Effective price = entry's locked-in price when > 0, else current
               // product price. Matches snapshot.service and buildInventoryResponse.
-              const storedBuyPrice = Number(entry.buyPrice ?? 0);
-              const storedSellPrice = Number(entry.sellPrice ?? 0);
-              const buyPrice = storedBuyPrice > 0 ? storedBuyPrice : Number(product?.buyPrice ?? 0);
-              const sellPrice = storedSellPrice > 0 ? storedSellPrice : Number(product?.sellPrice ?? 0);
+              const buyPrice = resolveLockedPrice(entry.buyPrice, Number(product?.buyPrice ?? 0));
+              const sellPrice = resolveLockedPrice(entry.sellPrice, Number(product?.sellPrice ?? 0));
               const newSold = roundQty(Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0));
               const lockedSold = Number(entry.lockedSold ?? 0);
               const lockedRevenue = Number(entry.lockedRevenue ?? 0);
@@ -247,6 +260,12 @@ export class SyncService {
           });
         }
       });
+
+      if (mustGuardProductCap) {
+        await withProductCreationLock(actor.userId, runSync);
+      } else {
+        await runSync();
+      }
 
       // Same rationale as the Product.quantity mirroring above: the dedicated
       // /inventory/sales REST endpoint recomputes that day's DailySnapshot

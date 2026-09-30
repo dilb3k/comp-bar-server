@@ -4,6 +4,21 @@ import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
 import { SubscriptionModel, computeTier, type ISubscription, type SubscriptionTier } from "./subscription.model";
 
+// Adds calendar months without JS Date's end-of-month overflow bug: plain
+// `setMonth` on Jan 31 + 1 month lands on Mar 3 (January has no Feb 31 to
+// land on, so it rolls over), silently handing out a few extra days
+// depending purely on which day of the month a purchase happened to land on.
+// Clamps to the target month's actual last day instead.
+function addMonthsClamped(date: Date, months: number): Date {
+  const result = new Date(date);
+  const targetMonth = result.getMonth() + months;
+  result.setMonth(targetMonth);
+  if (result.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+    result.setDate(0); // rolls back to the last day of the intended month
+  }
+  return result;
+}
+
 export class SubscriptionService {
   async activate(actor: AuthUser, userId: string, tier: "bor" | "pro", durationMonths: number = 1) {
     if (actor.role !== "superAdmin") {
@@ -22,34 +37,13 @@ export class SubscriptionService {
       durationMonths = 1;
     }
 
-    const now = new Date();
-    const endDate = new Date(now);
-    endDate.setMonth(endDate.getMonth() + durationMonths);
-
-    await this.deactivateExisting(userId);
-
-    const subscription = await SubscriptionModel.create({
+    return this.activateOrExtend({
       userId,
       tier,
-      startDate: now,
-      endDate,
-      isActive: true,
+      durationMonths: durationMonths as 1 | 6 | 12,
       activatedBy: actor.userId,
-    });
-
-    await authRepository.updateAdmin(userId, { isPayed: true });
-
-    await auditService.log({
-      ownerAdminId: userId,
-      action: "UPDATE",
-      entityType: "subscription",
-      entityId: `subscription-${userId}`,
-      after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString() },
       source: "rest",
-      createdBy: actor.userId,
     });
-
-    return subscription.toJSON();
   }
 
   // Same core effect as activate() above, but callable from a trusted
@@ -69,34 +63,102 @@ export class SubscriptionService {
       throw new AppError("Cannot manage superAdmin subscription", 400);
     }
 
-    const now = new Date();
-    const endDate = new Date(now);
-    endDate.setMonth(endDate.getMonth() + durationMonths);
+    return this.activateOrExtend({ userId, tier, durationMonths, activatedBy: source, source: "bot" });
+  }
 
-    await this.deactivateExisting(userId);
+  // Shared by activate()/activateFromPayment(): if the user already has an
+  // active subscription, extend it from the LATER of (now, its current
+  // endDate) instead of the old behavior of deactivating it and starting a
+  // fresh one from `now` — an early renewal used to silently discard
+  // whatever time was left already paid for. If there's no active
+  // subscription (or a race takes it away between the read and the write
+  // below), falls through to creating one; the schema's partial unique index
+  // on {userId, isActive:true} is the real backstop if two of these run
+  // concurrently for the same user — one create loses with E11000 and this
+  // retries as an extend against whichever one won.
+  private async activateOrExtend(input: {
+    userId: string;
+    tier: "bor" | "pro";
+    durationMonths: 1 | 6 | 12;
+    activatedBy: string;
+    source: "rest" | "bot";
+  }) {
+    const { userId, tier, durationMonths, activatedBy, source } = input;
 
-    const subscription = await SubscriptionModel.create({
-      userId,
-      tier,
-      startDate: now,
-      endDate,
-      isActive: true,
-      activatedBy: source,
-    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const now = new Date();
+      const existing = await SubscriptionModel.findOne({ userId, isActive: true });
 
-    await authRepository.updateAdmin(userId, { isPayed: true });
+      if (existing) {
+        const base = existing.endDate > now ? existing.endDate : now;
+        const newEndDate = addMonthsClamped(base, durationMonths);
+        const updated = await SubscriptionModel.findOneAndUpdate(
+          { _id: existing._id, isActive: true },
+          { $set: { tier, endDate: newEndDate, activatedBy } },
+          { new: true },
+        );
 
-    await auditService.log({
-      ownerAdminId: userId,
-      action: "UPDATE",
-      entityType: "subscription",
-      entityId: `subscription-${userId}`,
-      after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString(), source },
-      source: "bot",
-      createdBy: source,
-    });
+        if (updated) {
+          await authRepository.updateAdmin(userId, { isPayed: true });
+          await auditService.log({
+            ownerAdminId: userId,
+            action: "UPDATE",
+            entityType: "subscription",
+            entityId: `subscription-${userId}`,
+            after: {
+              tier,
+              durationMonths,
+              extended: true,
+              previousEndDate: existing.endDate.toISOString(),
+              endDate: newEndDate.toISOString(),
+              source,
+            },
+            source,
+            createdBy: activatedBy,
+          });
+          return updated.toJSON();
+        }
+        // Lost a race — the subscription we just read got deactivated
+        // between the find and this update. Loop and re-read fresh state.
+        continue;
+      }
 
-    return subscription.toJSON();
+      try {
+        const endDate = addMonthsClamped(now, durationMonths);
+        const subscription = await SubscriptionModel.create({
+          userId,
+          tier,
+          startDate: now,
+          endDate,
+          isActive: true,
+          activatedBy,
+        });
+
+        await authRepository.updateAdmin(userId, { isPayed: true });
+
+        await auditService.log({
+          ownerAdminId: userId,
+          action: "UPDATE",
+          entityType: "subscription",
+          entityId: `subscription-${userId}`,
+          after: { tier, durationMonths, startDate: now.toISOString(), endDate: endDate.toISOString(), source },
+          source,
+          createdBy: activatedBy,
+        });
+
+        return subscription.toJSON();
+      } catch (error: any) {
+        if (error?.code === 11000) {
+          // Another request created the active subscription between our
+          // check above and this insert — loop once more to extend it
+          // instead of erroring out.
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new AppError("Could not activate subscription — please try again", 409);
   }
 
   // System-context counterpart to deactivate() above, the same relationship
