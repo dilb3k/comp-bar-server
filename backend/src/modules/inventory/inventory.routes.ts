@@ -1,3 +1,6 @@
+import { applyInventoryOperation } from "./operation.service";
+import { inventoryOperationSchema } from "./inventory.validation";
+import { sendSuccess } from "../../utils/response";
 import { Router } from "express";
 
 import { validateRequest } from "../../middlewares/validate.middleware";
@@ -12,6 +15,10 @@ import {
 } from "./inventory.validation";
 
 const router = Router();
+router.post("/operations", validateRequest({ body: inventoryOperationSchema }), asyncHandler(async (req, res) => {
+  const result = await applyInventoryOperation(req.auth!, req.body);
+  return sendSuccess(res, result.data, result.status);
+}));
 
 router.get(
   "/",

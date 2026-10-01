@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/transaction";
 import { normalizeUnit } from "../../utils/quantity";
 import { InventoryEntryModel } from "./inventory.model";
 
@@ -38,7 +39,7 @@ export class InventoryRepository {
       ownerAdminId,
       date,
     }).sort({ createdAt: 1 });
-    if (session) query = query.session(session);
+    if (session ?? currentSession()) query = query.session(session ?? currentSession()!);
     return query;
   }
 
@@ -46,7 +47,7 @@ export class InventoryRepository {
     return InventoryEntryModel.find({
       ownerAdminId,
       date: { $gte: from, $lte: to },
-    }).sort({ date: 1, createdAt: 1 });
+    }).sort({ date: 1, createdAt: 1 }).session(currentSession()??null);
   }
 
   async findByDateRange(ownerAdminId: string, from?: string, to?: string) {
@@ -61,7 +62,7 @@ export class InventoryRepository {
       filter.date = dateFilter;
     }
 
-    return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 });
+    return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 }).session(currentSession()??null);
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
@@ -78,7 +79,7 @@ export class InventoryRepository {
       productId,
       date
     });
-    if (session) query = query.session(session);
+    if (session ?? currentSession()) query = query.session(session ?? currentSession()!);
     return query;
   }
 
@@ -124,6 +125,7 @@ export class InventoryRepository {
     return InventoryEntryModel.updateMany(
       { ownerAdminId, productId, productName: "" },
       { $set: { productName } },
+      { session: currentSession() },
     );
   }
 
@@ -142,7 +144,7 @@ export class InventoryRepository {
         { productId: record.productId, date: record.date }
       ]
     });
-    if (session) query = query.session(session);
+    if (session ?? currentSession()) query = query.session(session ?? currentSession()!);
     const existing = await query;
 
     if (!existing) {

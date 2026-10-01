@@ -42,31 +42,37 @@ export const inventoryController = {
 
   async startDay(req: Request, res: Response) {
     const auth = requireAuth(req);
-    const { idempotencyKey, ...payload } = req.body;
+    const { idempotencyKey: bodyKey, ...payload } = req.body;
+    const idempotencyKey=req.get("Idempotency-Key")??bodyKey;
     const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
       status: 201,
       data: await inventoryService.startDay(auth, payload),
-    }));
+    }), { operation: "inventory.startDay", payload });
     return sendSuccess(res, data, status);
   },
 
   async bulkCurrent(req: Request, res: Response) {
     const auth = requireAuth(req);
-    const { idempotencyKey, ...payload } = req.body;
+    const { idempotencyKey: bodyKey, ...payload } = req.body;
+    const idempotencyKey=req.get("Idempotency-Key")??bodyKey;
     const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
       status: 200,
       data: await inventoryService.bulkUpdateCurrent(auth, payload),
-    }));
+    }), { operation: "inventory.bulkUpdateCurrent", payload });
     return sendSuccess(res, data, status);
   },
 
   async sales(req: Request, res: Response) {
     const auth = requireAuth(req);
-    const { idempotencyKey, ...payload } = req.body;
+    const { idempotencyKey: bodyKey, ...payload } = req.body;
+    const idempotencyKey=req.get("Idempotency-Key")??bodyKey;
+    if (payload.lines.some((line: any) => line.expectedBuyPrice === undefined || line.expectedUnit === undefined || line.expectedStockEpoch === undefined)) {
+      throw new AppError("Update client to submit the sale cost, unit and stock baseline", 409, undefined, "CLIENT_UPGRADE_REQUIRED");
+    }
     const { status, data } = await withIdempotency(auth.userId, idempotencyKey, async () => ({
       status: 200,
       data: await inventoryService.sales(auth, payload),
-    }));
+    }), { operation: "inventory.sales", payload });
     return sendSuccess(res, data, status);
   },
 

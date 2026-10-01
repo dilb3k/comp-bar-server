@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+import { assertBaseVersion } from "../../lib/versioning";
+import { transactionScope, afterCommit, currentRevision, withReadSnapshot } from "../../lib/transaction";
 
 import { env } from "../../config/env";
 import { AppError } from "../../utils/app-error";
@@ -74,6 +75,7 @@ type StartDayInput = {
   deviceId: string;
   items: Array<{
     productId: string;
+    baseVersion?: number;
     startQuantity: number;
     currentQuantity?: number;
     note?: string;
@@ -88,6 +90,7 @@ type BulkCurrentInput = {
   deviceId: string;
   items: Array<{
     productId: string;
+    baseVersion?: number;
     currentQuantity: number;
     lineRevenue?: number;
     note?: string;
@@ -131,7 +134,7 @@ function buildInventoryResponse(product: any, inventory: any) {
 }
 
 export class InventoryService {
-  private getAllowedDate(actor: AuthUser, date?: string) {
+  private getAllowedDate(actor: AuthUser, date?: string, allowHistorical = false) {
     const businessHour = getEffectiveHour(actor);
     const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
     const targetDate = date ?? currentBusinessDate;
@@ -142,7 +145,7 @@ export class InventoryService {
       "Inventory cannot be created for a future date",
     );
 
-    if (isPastBusinessDate(targetDate, currentBusinessDate)) {
+    if (!allowHistorical && isPastBusinessDate(targetDate, currentBusinessDate)) {
       throw new AppError("Past business days cannot be edited", 409);
     }
 
@@ -150,16 +153,17 @@ export class InventoryService {
   }
 
   async getByDate(actor: AuthUser, from?: string, to?: string) {
+    return withReadSnapshot(()=>this.readByDate(actor,from,to));
+  }
+
+  private async readByDate(actor: AuthUser, from?: string, to?: string) {
     assertPaidRangeAllowed(actor, from, to);
 
-    const [entries, products] = await Promise.all([
-      inventoryRepository.findByDateRange(actor.userId, from, to),
-      productRepository.findAllByOwner(actor.userId),
-    ]);
+    const entries = await inventoryRepository.findByDateRange(actor.userId,from,to);
+    const products = await productRepository.findAllByOwner(actor.userId);
 
     const productMap = new Map(products.map((product) => [product.localId, product]));
     const productsWithInventory = new Set<string>();
-    const backfillOps: Promise<unknown>[] = [];
 
     const items = entries.map((entry) => {
       productsWithInventory.add(entry.productId);
@@ -187,21 +191,8 @@ export class InventoryService {
         };
       }
 
-      if (!entry.productName && product.name) {
-        backfillOps.push(
-          InventoryEntryModel.updateOne(
-            { _id: entry._id },
-            { $set: { productName: product.name } },
-          ),
-        );
-      }
-
       return buildInventoryResponse(product, entry);
     });
-
-    if (backfillOps.length > 0) {
-      Promise.all(backfillOps).catch(() => {});
-    }
 
     const isSingleDate = from && to && from === to;
     if (isSingleDate) {
@@ -221,94 +212,19 @@ export class InventoryService {
       summary,
     };
   }
-  async getRange(actor: AuthUser, from: string, to: string) {
-    if (compareDayKeys(from, to) > 0) {
-      throw new AppError("from must be less than or equal to to", 422);
-    }
-
-    // GET /api/inventory/range had no tier check at all, making it a complete
-    // bypass of the same paywall getByDate enforces over the same data.
-    assertPaidRangeAllowed(actor, from, to);
-
-    const [entries, products] = await Promise.all([
-      inventoryRepository.findRange(actor.userId, from, to),
-      productRepository.findAllByOwner(actor.userId),
-    ]);
-
-    const productMap = new Map(
-      products.map((product) => [product.localId, product]),
-    );
-    const productsWithInventory = new Set<string>();
-    const backfillOps: Promise<unknown>[] = [];
-
-    const items = entries.map((entry) => {
-      productsWithInventory.add(entry.productId);
-      const product = productMap.get(entry.productId) ?? null;
-
-      if (!product) {
-        const storedBuyPrice = toNumber(entry.buyPrice ?? 0);
-        const storedSellPrice = toNumber(entry.sellPrice ?? 0);
-        return {
-          ...entry.toJSON(),
-          ...calculateInventoryMetrics({
-            startQuantity: toNumber(entry.startQuantity),
-            currentQuantity: toNumber(entry.currentQuantity),
-            buyPrice: storedBuyPrice,
-            sellPrice: storedSellPrice,
-            lockedRevenue: toNumber(entry.lockedRevenue ?? 0),
-            lockedProfit: toNumber(entry.lockedProfit ?? 0),
-            lockedSold: toNumber(entry.lockedSold ?? 0),
-          }),
-          name: entry.productName || "O'chirilgan mahsulot",
-          buyPrice: storedBuyPrice,
-          sellPrice: storedSellPrice,
-          image: "",
-          product: null,
-        };
-      }
-
-      if (!entry.productName && product.name) {
-        backfillOps.push(
-          InventoryEntryModel.updateOne(
-            { _id: entry._id },
-            { $set: { productName: product.name } },
-          ),
-        );
-      }
-
-      return buildInventoryResponse(product, entry);
-    });
-
-    if (backfillOps.length > 0) {
-      Promise.all(backfillOps).catch(() => {});
-    }
-
-    const isSingleDate = from === to;
-    if (isSingleDate) {
-      const businessHour = getEffectiveHour(actor);
-      for (const product of products) {
-        if (!productsWithInventory.has(product.localId) && isProductVisibleOnDate(product, from, businessHour)) {
-          const derived = deriveMissingInventoryEntry(product, from);
-          items.push(buildInventoryResponse(product, derived));
-        }
-      }
-    }
-
-    const summary = aggregateInventoryForRange(items);
-
-    return {
-      items,
-      summary,
-    };
+  async getRange(actor:AuthUser,from:string,to:string) {
+    if(compareDayKeys(from,to)>0) throw new AppError('from must be <= to',422);
+    return this.getByDate(actor,from,to);
   }
 
   async startDay(actor: AuthUser, payload: StartDayInput) {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const results = await session.withTransaction(async () => {
+      const results = await transaction.run(async () => {
         const products = await productRepository.findByIdentifiers(
           actor.userId,
           payload.items.map((item) => item.productId),
@@ -353,6 +269,8 @@ export class InventoryService {
             session,
           );
 
+          assertBaseVersion(existingEntry as any, item.baseVersion);
+
           const entry = await inventoryRepository.upsertByProductAndDateWithSession(
             actor.userId,
             (product as any).localId,
@@ -385,6 +303,7 @@ export class InventoryService {
             (product as any)._id.toString(),
             {
               quantity: currentQuantity,
+              stockEpoch: currentRevision(actor.userId),
               updatedAt: now,
             },
             session,
@@ -411,6 +330,7 @@ export class InventoryService {
             ),
           );
         }
+        await snapshotService.recompute(actor, targetDate, payload.deviceId, items.map(item => item.productId));
         return items;
       });
 
@@ -428,7 +348,7 @@ export class InventoryService {
 
       return results;
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
@@ -436,9 +356,10 @@ export class InventoryService {
     const { targetDate } = this.getAllowedDate(actor, payload.date);
     const now = new Date();
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const results = await session.withTransaction(async () => {
+      const results = await transaction.run(async () => {
         const products = await productRepository.findByIdentifiers(
           actor.userId,
           payload.items.map((item) => item.productId),
@@ -471,6 +392,8 @@ export class InventoryService {
             targetDate,
             session,
           );
+
+          assertBaseVersion(existing as any, item.baseVersion);
 
           const unit = normalizeUnit((product as any).unit);
           const currentQuantity = roundQty(item.currentQuantity);
@@ -552,6 +475,7 @@ export class InventoryService {
             (product as any)._id.toString(),
             {
               quantity: currentQuantity,
+              stockEpoch: currentRevision(actor.userId),
               updatedAt: now,
             },
             session,
@@ -589,6 +513,7 @@ export class InventoryService {
             ),
           );
         }
+        await snapshotService.recompute(actor, targetDate, payload.deviceId, items.map(item => item.productId));
         return items;
       });
 
@@ -604,14 +529,9 @@ export class InventoryService {
         })),
       });
 
-      await snapshotService.createOrUpdate(actor, {
-        date: targetDate,
-        deviceId: payload.deviceId,
-      });
-
       return results;
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
@@ -644,14 +564,17 @@ export class InventoryService {
   async sales(actor: AuthUser, payload: {
     date?: string;
     deviceId: string;
-    lines: Array<{ productId: string; quantity: number; unitPrice?: number; lineRevenue?: number }>;
-  }) {
-    const { targetDate } = this.getAllowedDate(actor, payload.date);
+    lines: Array<{ productId: string; quantity: number; unitPrice?: number; lineRevenue?: number; expectedBuyPrice?: number; expectedUnit?: ProductUnit; expectedStockEpoch?: number }>;
+  }, options: { allowHistorical?: boolean } = {}) {
+    const { targetDate, currentBusinessDate } = this.getAllowedDate(actor, payload.date, options.allowHistorical);
+    const historical = targetDate < currentBusinessDate;
     const now = new Date();
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const items = await session.withTransaction(async () => {
+      let snapshot: any;
+      const items = await transaction.run(async () => {
         const productIds = payload.lines.map((l) => l.productId);
         const products = await productRepository.findByIdentifiers(
           actor.userId,
@@ -683,6 +606,7 @@ export class InventoryService {
             session,
           );
 
+          if (historical && !existing) throw new AppError("Old-day stock baseline needs reconciliation", 409, undefined, "RECONCILIATION_REQUIRED");
           const unit = normalizeUnit((product as any).unit);
           const quantity = roundQty(line.quantity);
           assertQuantityFitsUnit(quantity, unit, (product as any).name);
@@ -695,7 +619,10 @@ export class InventoryService {
             ? toNumber((existing as any).currentQuantity)
             : productQty;
 
-          if (qtyGreaterThan(quantity, currentQty)) {
+          if (!historical && existing && Math.abs(productQty - currentQty) > 0.0005) {
+            throw new AppError("Stock projections disagree; reconciliation required", 409, undefined, "RECONCILIATION_REQUIRED");
+          }
+          if (qtyGreaterThan(quantity, currentQty) || qtyGreaterThan(quantity, productQty)) {
             throw new AppError(
               `Sotilgan miqdor (${formatQuantity(quantity, unit)}) qoldiqdan (${formatQuantity(currentQty, unit)}) ko'p bo'lishi mumkin emas`,
               422,
@@ -704,6 +631,13 @@ export class InventoryService {
 
           const buyPrice = toNumber((existing as any)?.buyPrice ?? product.buyPrice ?? 0);
           const listSellPrice = toNumber((existing as any)?.sellPrice ?? product.sellPrice ?? 0);
+          // Delta sales may commute with other sales/restocks, but never cross
+          // an absolute stock count or silently inherit a different unit/cost.
+          if ((line.expectedBuyPrice !== undefined && roundMoney(line.expectedBuyPrice) !== roundMoney(buyPrice)) ||
+              (line.expectedUnit !== undefined && line.expectedUnit !== unit) ||
+              (line.expectedStockEpoch !== undefined && line.expectedStockEpoch !== Number(product.stockEpoch ?? 0))) {
+            throw new AppError("Stock count, cost or unit changed; reconcile the saved operation", 409, undefined, "RECONCILIATION_REQUIRED");
+          }
 
           // Money for this line. `lineRevenue` wins over `unitPrice` — it is
           // an exact amount, so a hand-typed cart total survives intact where
@@ -761,12 +695,20 @@ export class InventoryService {
             session,
           );
 
-          await productRepository.updateById(
-            actor.userId,
-            (product as any)._id.toString(),
-            { quantity: newCurrent, updatedAt: now },
-            session,
-          );
+          let liveQuantity = newCurrent;
+          if (historical) {
+            const laterFilter = { ownerAdminId: actor.userId, productId: product.localId, date: { $gt: targetDate } };
+            const invalid = await InventoryEntryModel.exists({ ...laterFilter, $or: [
+              { currentQuantity: { $lt: quantity } }, { startQuantity: { $lt: quantity } },
+            ] }).session(session);
+            if (invalid) throw new AppError("Late sale conflicts with later stock; operation retained for review", 409, undefined, "RECONCILIATION_REQUIRED");
+            const laterEntries = await InventoryEntryModel.find(laterFilter).select("date").session(session).lean();
+            await InventoryEntryModel.updateMany(laterFilter, { $inc: { currentQuantity: -quantity, startQuantity: -quantity } }, { session });
+            for (const entry of laterEntries) await snapshotService.recompute(actor, entry.date, payload.deviceId, [product.localId]);
+            liveQuantity = roundQty(productQty - quantity);
+          }
+          await productRepository.updateById(actor.userId, product._id.toString(), { quantity: liveQuantity, updatedAt: now }, session);
+          product.quantity = liveQuantity;
 
           await auditService.log({
             ownerAdminId: actor.userId,
@@ -786,6 +728,7 @@ export class InventoryService {
               // has to answer "what was this actually sold for" without
               // needing the product's price history to reconstruct it.
               revenue: chargedRevenue,
+              buyPrice,
               listRevenue,
               discount: roundMoney(listRevenue - chargedRevenue),
             },
@@ -805,15 +748,9 @@ export class InventoryService {
           );
         }
 
+        snapshot = await snapshotService.recompute(actor, targetDate, payload.deviceId, results.map(item => item.productId));
         return results;
       });
-
-      await snapshotService.createOrUpdate(actor, {
-        date: targetDate,
-        deviceId: payload.deviceId,
-      });
-
-      const snapshot = await snapshotService.getDaily(actor, targetDate);
 
       telegramReportService.reportInventoryUpdated(actor, {
         date: targetDate,
@@ -829,19 +766,21 @@ export class InventoryService {
 
       return { items, snapshot };
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
   async getDashboard(actor: AuthUser) {
+    return withReadSnapshot(()=>this.readDashboard(actor));
+  }
+
+  private async readDashboard(actor:AuthUser) {
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
-    const [products, inventoryResult, snapshot] = await Promise.all([
-      productRepository.findAllByOwner(actor.userId),
-      this.getByDate(actor, today, today),
-      snapshotService.getDaily(actor, today),
-    ]);
+    const products=await productRepository.findAllByOwner(actor.userId);
+    const inventoryResult=await this.getByDate(actor,today,today);
+    const snapshot=await snapshotService.getDaily(actor,today);
 
     return {
       products,

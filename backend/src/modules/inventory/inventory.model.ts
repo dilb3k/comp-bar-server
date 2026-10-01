@@ -1,3 +1,4 @@
+import { serverVersionPlugin } from "../../lib/versioning";
 import { Schema, model, models } from "mongoose";
 
 import { DEFAULT_UNIT, PRODUCT_UNITS, normalizeUnit, type ProductUnit } from "../../utils/quantity";
@@ -147,6 +148,8 @@ inventoryEntrySchema.index(
   { ownerAdminId: 1, updatedAt: 1 },
   { name: "idx_owner_updatedat", background: true }
 );
+
+inventoryEntrySchema.plugin(serverVersionPlugin);
 
 export const InventoryEntryModel =
   models.InventoryEntry ?? model<IInventoryEntry>("InventoryEntry", inventoryEntrySchema);
