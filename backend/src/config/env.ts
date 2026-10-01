@@ -1,7 +1,15 @@
 ﻿import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+if (process.env.NODE_ENV !== "test") dotenv.config();
+
+const envBoolean = z.preprocess((value) => {
+  if (typeof value === "string") {
+    if (value.trim().toLowerCase() === "true") return true;
+    if (value.trim().toLowerCase() === "false") return false;
+  }
+  return value;
+}, z.boolean().default(false));
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -24,11 +32,11 @@ const envSchema = z.object({
   // TELEGRAM_CHAT_ID when unset so a deploy that hasn't configured a separate
   // ops chat yet still gets alerted somewhere rather than silently nowhere.
   ALERT_TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
-  MIGRATION_ENABLED: z.coerce.boolean().default(false),
+  MIGRATION_ENABLED: envBoolean,
   // Defaults closed. Self-serve signup is a real feature some deployments
   // want, but it must be an explicit choice, not something a fresh prod
   // deploy inherits silently. See the hard production check below.
-  ALLOW_PUBLIC_REGISTER: z.coerce.boolean().default(false),
+  ALLOW_PUBLIC_REGISTER: envBoolean,
 
   // Shared secret the hisvex-bot service presents (X-Bot-Secret header) to
   // call the internal /api/bot/* routes. Optional here so the backend can

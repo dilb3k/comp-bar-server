@@ -5,6 +5,7 @@ import cron from "node-cron";
 
 import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
+import {verifyDatabaseReadiness} from './lib/database-readiness';
 import { authService } from "./modules/auth/auth.service";
 import { createApp } from "./app";
 import { migrateLegacyProductRecords } from "./modules/products/product.migration";
@@ -23,35 +24,20 @@ process.on("unhandledRejection", (reason) => {
 });
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
+  process.exit(1);
 });
 
 async function bootstrap() {
   await connectDatabase();
-  const superAdmin = await authService.findSuperAdmin();
-
-  if (superAdmin?._id) {
-    await authService.migrateLegacyOwnership(superAdmin._id.toString());
-  }
-
-  // Always heal the stale unique displayIndex index — idempotent, and it
-  // prevents E11000 errors on product create/sync/reorder.
-  await migrateFixDisplayIndex();
-
-  // Always attempt to roll the products.idx_barcodes index over to unique
-  // (idempotent, safe — detects pre-existing duplicate barcodes and skips
-  // without touching data if any are found; see migration file for details).
-  await migrateProductBarcodeUniqueIndex();
-
-  // Always backfill — cheap once caught up (matches nothing after the first
-  // run), and findByPhone's new indexed lookup needs it for any admin
-  // created before this field existed.
-  await migrateBackfillPhoneDigits();
-
   if (env.MIGRATION_ENABLED) {
+    await migrateFixDisplayIndex();
+    await migrateProductBarcodeUniqueIndex();
+    await migrateBackfillPhoneDigits();
     await migrateSplitCollections();
     await migrateLegacyProductRecords();
     await migrateProductImagesToR2();
   }
+  if(env.NODE_ENV==='production') await verifyDatabaseReadiness();
 
   // Real fix for a long-standing gap: subscription expiry used to only be
   // checked lazily (on a user's next login/me/refresh call), so a lapsed

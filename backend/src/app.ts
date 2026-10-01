@@ -81,14 +81,14 @@ export function createApp() {
   const corsOptions: Record<string, unknown> = {
     origin: origins,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "X-Account-ID", "Idempotency-Key", "X-Client-Protocol"],
     credentials: origins !== true,
     maxAge: 86400
   };
   app.use(cors(corsOptions));
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(express.json({ limit: "20mb" }));
-  app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
+  if(env.NODE_ENV!=="test") app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
   app.use("/api", apiLimiter);
 
   app.get("/", (_req, res) => {
@@ -120,7 +120,7 @@ export function createApp() {
   // see bot-auth.middleware.ts), and Click's webhook (signature-verified
   // inside the controller, no auth header at all — Click calls it directly).
   app.use("/api/bot", botRoutes);
-  app.use("/api/payments/click", clickWebhookRoutes);
+  app.use("/api/payments/click", express.urlencoded({extended:false,limit:"16kb"}), clickWebhookRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
