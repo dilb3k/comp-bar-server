@@ -1,3 +1,4 @@
+import { replyToMutation } from "../idempotency/http-mutation";
 import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
@@ -22,21 +23,21 @@ export const debtorController = {
 
   async create(req: Request, res: Response) {
     const auth = requireAuth(req);
-    return sendSuccess(res, await debtorService.create(auth, req.body), 201);
+    return replyToMutation(req,res,auth.userId,'debtor.create',()=>debtorService.create(auth,req.body),201);
   },
 
   async update(req: Request, res: Response) {
     const auth = requireAuth(req);
-    return sendSuccess(res, await debtorService.update(auth, String(req.params.id), req.body));
+    return replyToMutation(req,res,auth.userId,'debtor.update',()=>debtorService.update(auth,String(req.params.id),req.body));
   },
 
   async adjust(req: Request, res: Response) {
     const auth = requireAuth(req);
-    return sendSuccess(res, await debtorService.adjust(auth, String(req.params.id), req.body));
+    return replyToMutation(req,res,auth.userId,'debtor.adjust',()=>debtorService.adjust(auth,String(req.params.id),req.body));
   },
 
   async remove(req: Request, res: Response) {
     const auth = requireAuth(req);
-    return sendSuccess(res, await debtorService.remove(auth, String(req.params.id)));
+    return replyToMutation(req,res,auth.userId,'debtor.delete',()=>debtorService.remove(auth,String(req.params.id)));
   },
 };

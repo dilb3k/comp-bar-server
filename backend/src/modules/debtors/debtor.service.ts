@@ -1,3 +1,5 @@
+import { currentSession } from "../../lib/transaction";
+import { roundMoney } from "../../utils/quantity";
 import { AppError } from "../../utils/app-error";
 import { DebtorModel } from "./debtor.model";
 import type { AuthUser } from "../auth/auth.types";
@@ -9,7 +11,7 @@ export const debtorService = {
   },
 
   async getById(auth: AuthUser, id: string) {
-    const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId });
+    const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId }).session(currentSession()??null);
     if (!debtor) throw new AppError("Debtor not found", 404);
     return debtor;
   },
@@ -18,7 +20,7 @@ export const debtorService = {
     auth: AuthUser,
     data: { name: string; amount: number; phone?: string; notes?: string }
   ) {
-    const debtor = await DebtorModel.create({
+    const [debtor] = await DebtorModel.create([{
       createdBy: auth.userId,
       name: data.name,
       amount: data.amount,
@@ -27,18 +29,18 @@ export const debtorService = {
       history: data.amount > 0
         ? [{ amount: data.amount, type: "add" as const, date: new Date().toISOString() }]
         : [],
-    });
+    }],{session:currentSession()});
     return debtor;
   },
 
   async update(auth: AuthUser, id: string, data: { name?: string; phone?: string; notes?: string }) {
-    const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId });
+    const debtor = await DebtorModel.findOne({ _id: id, createdBy: auth.userId }).session(currentSession()??null);
     if (!debtor) throw new AppError("Debtor not found", 404);
 
     if (data.name !== undefined) debtor.name = data.name;
     if (data.phone !== undefined) debtor.phone = data.phone;
     if (data.notes !== undefined) debtor.notes = data.notes;
-    await debtor.save();
+    await debtor.save({session:currentSession()});
     return debtor;
   },
 
@@ -47,44 +49,28 @@ export const debtorService = {
     id: string,
     data: { amount: number; type: "add" | "subtract"; note?: string }
   ) {
-    const incAmount = data.type === "add" ? data.amount : -data.amount;
+    const amount=roundMoney(data.amount);
+    if(!Number.isFinite(amount)||amount<=0) throw new AppError("Invalid amount",422);
+    const incAmount = data.type === "add" ? amount : -amount;
 
     const debtor = await DebtorModel.findOneAndUpdate(
-      { _id: id, createdBy: auth.userId },
-      {
-        $inc: { amount: incAmount },
-        $push: {
-          history: {
-            amount: data.amount,
-            type: data.type,
-            note: data.note || "",
-            date: new Date().toISOString(),
-          },
-        },
-      },
-      { new: true }
+      { _id: id, createdBy: auth.userId, ...(data.type==="subtract"?{amount:{$gte:amount}}:{}) },
+      [{$set:{
+        amount:{$round:[{$add:["$amount",incAmount]},2]},
+        history:{$concatArrays:[{$ifNull:["$history",[]]},{$literal:[{
+          amount,type:data.type,note:data.note||"",date:new Date().toISOString(),
+        }]}]},
+      }}],
+      { new: true, session:currentSession() }
     );
 
-    if (!debtor) throw new AppError("Debtor not found", 404);
-
-    if (debtor.amount < 0) {
-      // `id` was already tenant-scoped by the findOneAndUpdate above (which
-      // succeeded, since `debtor` is non-null here) — this filter is
-      // defense-in-depth consistency with every other query in this file,
-      // not a fix for an exploitable gap.
-      const corrected = await DebtorModel.findOneAndUpdate(
-        { _id: id, createdBy: auth.userId, amount: { $lt: 0 } },
-        { $set: { amount: 0 } },
-        { new: true }
-      );
-      return corrected ?? debtor;
-    }
+    if (!debtor) throw new AppError("Debtor not found or subtraction exceeds outstanding debt",422);
 
     return debtor;
   },
 
   async remove(auth: AuthUser, id: string) {
-    const debtor = await DebtorModel.findOneAndDelete({ _id: id, createdBy: auth.userId });
+    const debtor = await DebtorModel.findOneAndDelete({ _id: id, createdBy: auth.userId },{session:currentSession()});
     if (!debtor) throw new AppError("Debtor not found", 404);
     return { deleted: true };
   },
