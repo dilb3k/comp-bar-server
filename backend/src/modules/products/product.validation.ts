@@ -27,6 +27,7 @@ const productBaseSchema = z.object({
   localId: z.string().trim().min(1).optional(),
   deviceId: z.string().trim().min(1),
   name: z.string().trim().min(1, "name is required"),
+  baseVersion: z.number().int().nonnegative().optional(),
   quantity: quantitySchema,
   unit: unitSchema.optional(),
   // >= 0, not > 0 — a promotional/giveaway product genuinely priced at 0 is

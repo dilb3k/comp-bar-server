@@ -1,3 +1,5 @@
+import { replyToMutation } from "../idempotency/http-mutation";
+import { assertBaseVersion } from "../../lib/versioning";
 import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
@@ -16,28 +18,9 @@ function requireAuth(req: Request) {
   return req.auth;
 }
 
-async function rebuildTodayState(actor: any) {
-  const businessHour = getEffectiveHour(actor);
-  const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
-
-  // snapshotService.createOrUpdate recomputes totals across every product +
-  // inventory entry for the tenant and writes the result back to Mongo — too
-  // slow to block a product create/update/restock/remove response on. Kick
-  // it off in the background (it self-logs via telegramReportService and
-  // upserts idempotently, so firing it without awaiting is safe) and answer
-  // the request with the last-persisted snapshot instead, which is a single
-  // cheap indexed read. Worst case the returned snapshot is momentarily
-  // stale until the background write lands (self-heals on the next request).
-  snapshotService.createOrUpdate(actor, { date: today }).catch((err) => {
-    console.error("[rebuildTodayState] background snapshot refresh failed", err);
-  });
-
-  const [products, inventoryResult, snapshot] = await Promise.all([
-    productService.getAll(actor),
-    inventoryService.getByDate(actor, today, today),
-    snapshotService.getDaily(actor, today),
-  ]);
-  return { products, inventory: inventoryResult.items, inventorySummary: inventoryResult.summary, snapshot };
+async function mutationState(req:Request) {
+  // V2 callers refresh projections separately; legacy envelopes remain available.
+  return req.get('X-Client-Protocol')==='2'?{}:inventoryService.getDashboard(requireAuth(req));
 }
 
 export const productController = {
@@ -50,28 +33,25 @@ export const productController = {
     return sendSuccess(res, await productService.getByIdentifier(requireAuth(req), String(req.params.id)));
   },
 
-  async create(req: Request, res: Response) {
-    const product = await productService.create(requireAuth(req), req.body);
-    const state = await rebuildTodayState(requireAuth(req));
-    return sendSuccess(res, { product, ...state }, 201);
+  async create(req:Request,res:Response) {
+    const auth=requireAuth(req);
+    return replyToMutation(req,res,auth.userId,'product.create',async()=>({product:await productService.create(auth,req.body),...await mutationState(req)}),201);
   },
-
-  async update(req: Request, res: Response) {
-    const product = await productService.update(requireAuth(req), String(req.params.id), req.body);
-    const state = await rebuildTodayState(requireAuth(req));
-    return sendSuccess(res, { product, ...state });
+  async update(req:Request,res:Response) {
+    const auth=requireAuth(req);
+    return replyToMutation(req,res,auth.userId,'product.update',async()=>({product:await productService.update(auth,String(req.params.id),req.body),...await mutationState(req)}));
   },
-
-  async restock(req: Request, res: Response) {
-    const product = await productService.restock(requireAuth(req), String(req.params.id), req.body.quantity);
-    const state = await rebuildTodayState(requireAuth(req));
-    return sendSuccess(res, { product, ...state });
+  async restock(req:Request,res:Response) {
+    const auth=requireAuth(req);
+    return replyToMutation(req,res,auth.userId,'product.restock',async()=>({product:await productService.restock(auth,String(req.params.id),req.body.quantity),...await mutationState(req)}));
   },
-
-  async remove(req: Request, res: Response) {
-    await productService.remove(requireAuth(req), String(req.params.id));
-    const state = await rebuildTodayState(requireAuth(req));
-    return sendSuccess(res, { ...state });
+  async remove(req:Request,res:Response) {
+    const auth=requireAuth(req);
+    return replyToMutation(req,res,auth.userId,'product.delete',async()=>{
+      const product=await productService.getByIdentifier(auth,String(req.params.id));
+      assertBaseVersion(product as any,req.body?.baseVersion);
+      await productService.remove(auth,String(req.params.id));return {deleted:true,...await mutationState(req)};
+    });
   },
 
   async uploadImage(req: Request, res: Response) {

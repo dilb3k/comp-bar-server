@@ -1,3 +1,4 @@
+import { serverVersionPlugin } from "../../lib/versioning";
 import { Schema, model, models } from "mongoose";
 
 import { DEFAULT_UNIT, PRODUCT_UNITS, normalizeUnit, type ProductUnit } from "../../utils/quantity";
@@ -13,6 +14,7 @@ export interface IProduct {
   deviceId: string;
   name: string;
   quantity: number;
+  stockEpoch?: number;
   unit: ProductUnit;
   buyPrice: number;
   sellPrice: number;
@@ -56,6 +58,7 @@ const productSchema = new Schema<IProduct>(
       trim: true,
       default: ""
     },
+    stockEpoch: { type: Number, default: 0 },
     quantity: {
       type: Number,
       min: 0,
@@ -178,6 +181,8 @@ productSchema.index(
     partialFilterExpression: { barcodes: { $type: "string" } }
   }
 );
+
+productSchema.plugin(serverVersionPlugin);
 
 export const ProductModel =
   models.Product ?? model<IProduct>("Product", productSchema);

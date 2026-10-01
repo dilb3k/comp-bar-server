@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/transaction";
 import { FilterQuery, Types } from "mongoose";
 
 import { normalizeUnit } from "../../utils/quantity";
@@ -36,6 +37,7 @@ function buildProductUpdate(payload: ProductPayload) {
   if ("updatedAt" in payload) update.updatedAt = payload.updatedAt;
   if ("name" in payload) update.name = payload.name;
   if ("quantity" in payload) update.quantity = payload.quantity;
+  if ("stockEpoch" in payload) update.stockEpoch = payload.stockEpoch;
   if ("unit" in payload) update.unit = normalizeUnit(payload.unit);
   if ("buyPrice" in payload) update.buyPrice = payload.buyPrice;
   if ("sellPrice" in payload) update.sellPrice = payload.sellPrice;
@@ -53,7 +55,7 @@ export class ProductRepository {
       { ownerAdminId },
       { displayIndex: 1, _id: 0 }
     ).sort({ displayIndex: -1 }).limit(1);
-    if (session) query.session(session);
+    if (session ?? currentSession()) query.session(session ?? currentSession()!);
     const maxProduct = await query;
 
     if (maxProduct && maxProduct.displayIndex !== undefined) {
@@ -74,12 +76,12 @@ export class ProductRepository {
     return ProductModel.find(filter).sort({
       displayIndex: 1,
       name: 1
-    });
+    }).session(currentSession()??null);
   }
 
   async findAllByOwner(ownerAdminId: string, session?: any) {
     const query = ProductModel.find({ ownerAdminId }).sort({ updatedAt: 1 });
-    if (session) query.session(session);
+    if (session ?? currentSession()) query.session(session ?? currentSession()!);
     return query;
   }
 
@@ -113,7 +115,7 @@ export class ProductRepository {
 
   async findByBarcode(ownerAdminId: string, barcode: string, session?: any) {
     const query = ProductModel.findOne({ ownerAdminId, barcodes: barcode });
-    if (session) query.session(session);
+    if (session ?? currentSession()) query.session(session ?? currentSession()!);
     return query;
   }
 
@@ -124,7 +126,7 @@ export class ProductRepository {
       orConditions.push({ _id: identifier });
     }
 
-    return ProductModel.findOne({ ownerAdminId, $or: orConditions });
+    return ProductModel.findOne({ ownerAdminId, $or: orConditions }).session(currentSession() ?? null);
   }
 
   async findByLocalIds(ownerAdminId: string, localIds: string[]) {
@@ -144,7 +146,7 @@ export class ProductRepository {
       ownerAdminId,
       $or: orFilters
     });
-    if (session) query.session(session);
+    if (session ?? currentSession()) query.session(session ?? currentSession()!);
     return query;
   }
 
@@ -155,7 +157,7 @@ export class ProductRepository {
 
   async updateById(ownerAdminId: string, id: string, payload: ProductPayload, session?: any) {
     const options: Record<string, unknown> = { new: true, runValidators: true };
-    if (session) options.session = session;
+    if (session ?? currentSession()) options.session = session ?? currentSession();
     return ProductModel.findOneAndUpdate(
       { _id: id, ownerAdminId },
       { $set: buildProductUpdate(payload) },
@@ -165,7 +167,7 @@ export class ProductRepository {
 
   async incrementQuantity(ownerAdminId: string, id: string, delta: number, session?: any) {
     const options: Record<string, unknown> = { new: true };
-    if (session) options.session = session;
+    if (session ?? currentSession()) options.session = session ?? currentSession();
     return ProductModel.findOneAndUpdate(
       { _id: id, ownerAdminId },
       { $inc: { quantity: delta }, $set: { updatedAt: new Date() } },
@@ -174,12 +176,12 @@ export class ProductRepository {
   }
 
   async deleteById(ownerAdminId: string, id: string) {
-    return ProductModel.findOneAndDelete({ _id: id, ownerAdminId });
+    return ProductModel.findOneAndDelete({ _id: id, ownerAdminId }).session(currentSession() ?? null);
   }
 
   async setQuantityByLocalId(ownerAdminId: string, localId: string, quantity: number, session?: any) {
     const options: Record<string, unknown> = { new: true };
-    if (session) options.session = session;
+    if (session ?? currentSession()) options.session = session ?? currentSession();
     return ProductModel.findOneAndUpdate(
       { ownerAdminId, localId },
       { $set: { quantity, updatedAt: new Date() } },

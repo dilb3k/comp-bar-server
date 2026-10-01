@@ -1,4 +1,7 @@
-import mongoose from "mongoose";
+import { ProductTombstoneModel } from "./product-tombstone.model";
+import { assertBaseVersion } from "../../lib/versioning";
+import { snapshotService } from "../snapshots/snapshot.service";
+import { transactionScope, afterCommit, withOwnerTransaction, currentSession, currentRevision } from "../../lib/transaction";
 
 import { env } from "../../config/env";
 import type { Product } from "../../types/domain";
@@ -15,43 +18,16 @@ import { inventoryRepository } from "../inventory/inventory.repository";
 import { calculateSold, getAdjustedInventoryQuantities } from "../inventory/inventory.logic";
 import { normalizeProductImage, processProductImageInput, type ProcessedProductImageFields } from "./product-image";
 import { productRepository } from "./product.repository";
-import { ProductCreationLockModel } from "./product-creation-lock.model";
 
 const UPLOAD_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
-
-// See product-creation-lock.model.ts for why this exists instead of a
-// persistent counter. Serializes concurrent "create product" calls for the
-// same owner so the 100-product cap's count-check+insert can't race; every
-// other owner's creates are unaffected (the lock is per-owner, not global).
-export async function withProductCreationLock<T>(ownerAdminId: string, fn: () => Promise<T>): Promise<T> {
-  try {
-    await ProductCreationLockModel.create({ _id: ownerAdminId });
-  } catch (error: any) {
-    if (error?.code === 11000) {
-      throw new AppError("Boshqa so'rov hozir mahsulot qo'shmoqda — bir necha soniyadan so'ng qayta urinib ko'ring", 409);
-    }
-    throw error;
-  }
-
-  try {
-    return await fn();
-  } finally {
-    await ProductCreationLockModel.deleteOne({ _id: ownerAdminId }).catch(() => {
-      // TTL index (15s) is the backstop if this somehow fails — not fatal.
-    });
-  }
-}
 
 // Best-effort cleanup of the R2 object a product's image is being replaced
 // or cleared with — never blocks or fails the caller's request over it,
 // mirroring how telegramReportService calls are fired without awaiting.
-function cleanupReplacedImage(previousImageUrl: string | null | undefined, nextImageUrl: string | null | undefined) {
-  if (!previousImageUrl || previousImageUrl === nextImageUrl) return;
-  const key = keyFromPublicUrl(previousImageUrl);
-  if (!key) return;
-  deleteImage(key).catch((error) => {
-    console.error("[product] failed to delete replaced R2 image", error);
-  });
+function cleanupReplacedImage(_previousImageUrl: string | null | undefined, _nextImageUrl: string | null | undefined) {
+  // Assets may be referenced by another product, a pending offline operation,
+  // or history. Reclamation belongs to a separately verified reference-aware
+  // retention job, never a client-supplied URL in a product mutation.
 }
 
 type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt"> & {
@@ -60,7 +36,7 @@ type CreateProductInput = Omit<Product, "id" | "createdAt" | "updatedAt"> & {
   updatedAt?: string;
 };
 
-type UpdateProductInput = Partial<CreateProductInput>;
+type UpdateProductInput = Partial<CreateProductInput> & { baseVersion?: number };
 
 export class ProductService {
   async getAll(actor: AuthUser, search?: string) {
@@ -78,7 +54,7 @@ export class ProductService {
   }
 
   async create(actor: AuthUser, payload: CreateProductInput) {
-    const timestamp = payload.createdAt ? new Date(payload.createdAt) : new Date();
+    const timestamp = new Date();
 
     // imageUrl explicitly present (including null) wins outright — it means
     // the client already uploaded via POST /:id/image (or is echoing a value
@@ -106,9 +82,13 @@ export class ProductService {
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const runCreate = () => session.withTransaction(async () => {
+      const runCreate = () => transaction.run(async () => {
+        if (payload.localId && await ProductTombstoneModel.exists({ ownerAdminId: actor.userId, localId: payload.localId }).session(session)) {
+          throw new AppError("Deleted product IDs cannot be reused", 409, undefined, "ENTITY_DELETED");
+        }
         if (actor.tier === "bor") {
           const activeCount = await productRepository.countActive(actor.userId, session);
           if (activeCount >= 100) {
@@ -154,8 +134,8 @@ export class ProductService {
               image: imageFields.image ?? "",
               imageUrl: imageFields.imageUrl ?? null,
               barcodes: payload.barcodes,
-              createdAt: payload.createdAt ? new Date(payload.createdAt) : timestamp,
-              updatedAt: payload.updatedAt ? new Date(payload.updatedAt) : timestamp
+              createdAt: timestamp,
+              updatedAt: timestamp
             }, session);
             break;
           } catch (err: any) {
@@ -206,11 +186,12 @@ export class ProductService {
           });
         }
 
+        await snapshotService.recompute(actor, today, payload.deviceId, [p.localId]);
         return p;
       });
 
       const product =
-        actor.tier === "bor" ? await withProductCreationLock(actor.userId, runCreate) : await runCreate();
+        await runCreate();
 
       telegramReportService.reportProductCreated(actor, {
         localId: (product as any).localId,
@@ -224,14 +205,19 @@ export class ProductService {
 
       return product;
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
   async update(actor: AuthUser, identifier: string, payload: UpdateProductInput) {
-    const product = await this.getByIdentifier(actor, identifier);
+    return withOwnerTransaction(actor.userId, () => this.updateInTransaction(actor, identifier, payload));
+  }
 
-    const updatedAt = payload.updatedAt ? new Date(payload.updatedAt) : new Date();
+  private async updateInTransaction(actor: AuthUser, identifier: string, payload: UpdateProductInput) {
+    const product = await this.getByIdentifier(actor, identifier);
+    assertBaseVersion(product as any,payload.baseVersion);
+
+    const updatedAt = new Date();
     // Switching a product to "dona" must also make its existing stock
     // countable — otherwise a 2.5 kg product silently keeps a half piece.
     const nextUnit = normalizeUnit(payload.unit ?? (product as any).unit);
@@ -297,6 +283,7 @@ export class ProductService {
     // count. Only include it when the caller actually meant to change it.
     if (quantityExplicitlyChanged) {
       updatePayload.quantity = nextQuantity;
+      if (nextQuantity !== Number(product.quantity ?? 0)) updatePayload.stockEpoch = currentRevision(actor.userId);
     }
 
     if (payload.displayIndex !== undefined) {
@@ -310,9 +297,10 @@ export class ProductService {
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const updatedProduct = await session.withTransaction(async () => {
+      const updatedProduct = await transaction.run(async () => {
         if (payload.barcodes?.length) {
           for (const code of payload.barcodes) {
             if (!code) continue;
@@ -450,6 +438,7 @@ export class ProductService {
           createdBy: actor.userId,
         });
 
+        await snapshotService.recompute(actor, today, up.deviceId, [up.localId]);
         return up;
       });
 
@@ -469,11 +458,15 @@ export class ProductService {
 
       return updatedProduct;
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
   async restock(actor: AuthUser, identifier: string, deltaQuantity: number) {
+    return withOwnerTransaction(actor.userId, () => this.restockInTransaction(actor, identifier, deltaQuantity));
+  }
+
+  private async restockInTransaction(actor: AuthUser, identifier: string, deltaQuantity: number) {
     const product = await this.getByIdentifier(actor, identifier);
 
     if (typeof deltaQuantity !== "number" || !Number.isFinite(deltaQuantity) || deltaQuantity <= 0) {
@@ -495,9 +488,14 @@ export class ProductService {
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
 
-    const session = await mongoose.startSession();
+    const transaction = await transactionScope(actor.userId);
+    const { session } = transaction;
     try {
-      const updatedProduct = await session.withTransaction(async () => {
+      const updatedProduct = await transaction.run(async () => {
+        const beforeEntry=await inventoryRepository.findByProductAndDate(actor.userId,(product as any).localId,today,session);
+        if(beforeEntry&&roundQty(Number(beforeEntry.currentQuantity))!==roundQty(Number(product.quantity))) {
+          throw new AppError("Stock projections disagree; reconcile before restocking",409,undefined,"RECONCILIATION_REQUIRED");
+        }
         const up = await productRepository.incrementQuantity(
           actor.userId,
           (product as any)._id.toString(),
@@ -546,6 +544,7 @@ export class ProductService {
           createdBy: actor.userId,
         });
 
+        await snapshotService.recompute(actor, today, up.deviceId, [up.localId]);
         return up;
       });
 
@@ -563,11 +562,15 @@ export class ProductService {
 
       return updatedProduct;
     } finally {
-      await session.endSession();
+      await transaction.close();
     }
   }
 
   async remove(actor: AuthUser, identifier: string) {
+    return withOwnerTransaction(actor.userId, () => this.removeInTransaction(actor, identifier));
+  }
+
+  private async removeInTransaction(actor: AuthUser, identifier: string) {
     const product = await this.getByIdentifier(actor, identifier);
 
     await inventoryRepository.updateProductNameByProductId(
@@ -576,6 +579,9 @@ export class ProductService {
       (product as any).name ?? "O'chirilgan mahsulot",
     );
 
+    await ProductTombstoneModel.create([{
+      ownerAdminId: actor.userId, localId: product.localId, productId: product._id.toString(),
+    }], { session: currentSession() });
     await productRepository.deleteById(actor.userId, product._id?.toString() || (product as any).id);
 
     cleanupReplacedImage((product as any).imageUrl, null);
@@ -609,17 +615,11 @@ export class ProductService {
     const key = buildImageKey(processed.hash);
     const imageUrl = await uploadImage(processed.buffer, key, processed.contentType);
 
-    const updated = await productRepository.updateById(
-      actor.userId,
-      (product as any)._id.toString(),
-      { imageUrl, updatedAt: new Date() },
-    );
-
-    if (!updated) {
-      throw new AppError("Product not found", 404);
-    }
-
-    cleanupReplacedImage(previousImageUrl, imageUrl);
+    const updated=await withOwnerTransaction(actor.userId,async session=>{
+      const current=await this.getByIdentifier(actor,identifier);
+      assertBaseVersion(current as any,Number((product as any).serverVersion??0));
+      return productRepository.updateById(actor.userId,current._id.toString(),{imageUrl,updatedAt:new Date()},session);
+    });
 
     return updated;
   }
