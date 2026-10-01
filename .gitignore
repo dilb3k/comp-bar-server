@@ -1,6 +1,7 @@
 node_modules
 dist
-.env
+.env*
+!.env.example
 .DS_Store
 coverage
 *.log
@@ -10,3 +11,9 @@ coverage
 # `createWorker("eng")` wrote a ~5MB eng.traineddata straight into this
 # repo's root). See utils/ocr.ts for the full runtime implication.
 *.traineddata
+
+admin-backup*.json
+*.dump
+*.backup
+
+.claude/settings.local.json
