@@ -22,6 +22,9 @@ export interface IPaymentSenderCardDetails {
 }
 
 export interface IPayment {
+  subscriptionId?: string;
+  grantId?: string;
+  needsReconciliation?: boolean;
   userId: string; // Hisvex admin's user id (the account being upgraded)
   telegramUserId: string;
   telegramUsername?: string;
@@ -63,6 +66,9 @@ export interface IPayment {
 
 const paymentSchema = new Schema<IPayment>(
   {
+    subscriptionId: {type:String},
+    grantId: {type:String},
+    needsReconciliation: {type:Boolean,default:false,index:true},
     userId: { type: String, required: true, index: true },
     telegramUserId: { type: String, required: true, index: true },
     telegramUsername: { type: String, default: "" },
@@ -79,7 +85,7 @@ const paymentSchema = new Schema<IPayment>(
     },
     receiptFileId: { type: String, default: null },
     receiptImageUrl: { type: String, default: null },
-    receiptHash: { type: String, default: null },
+    receiptHash: { type: String, default: undefined },
     ocr: {
       type: new Schema<IPaymentOcrResult>(
         {
@@ -146,5 +152,9 @@ paymentSchema.index(
   { status: 1, provisionExpiresAt: 1 },
   { name: "idx_provisioned_expiry" },
 );
+
+paymentSchema.index({userId:1,createdAt:-1});
+paymentSchema.index({clickTransId:1},{unique:true,partialFilterExpression:{clickTransId:{$type:"string"}},name:"idx_unique_click_transaction"});
+paymentSchema.index({merchantTransId:1},{unique:true,partialFilterExpression:{merchantTransId:{$type:"string"}},name:"idx_unique_merchant_transaction"});
 
 export const PaymentModel = models.Payment ?? model<IPayment>("Payment", paymentSchema);

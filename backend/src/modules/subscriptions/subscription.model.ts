@@ -85,8 +85,10 @@ export function computeTier(
   isPayed: boolean,
   activeSubscription: ISubscription | null
 ): SubscriptionTier {
-  if (activeSubscription) {
+  if (role === "superAdmin") return "pro";
+  if (activeSubscription && activeSubscription.isActive && new Date(activeSubscription.endDate) > new Date()) {
     return activeSubscription.tier === "pro" ? "pro" : "bor";
   }
-  return isPayed ? "bor" : "tekin";
+  // The historical boolean is a projection, never a timeless paid grant.
+  return "tekin";
 }

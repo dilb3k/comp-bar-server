@@ -1,3 +1,4 @@
+import { replyToMutation } from "../idempotency/http-mutation";
 import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
@@ -12,20 +13,18 @@ function requireAuth(req: Request) {
 export const subscriptionController = {
   async activate(req: Request, res: Response) {
     const actor = requireAuth(req);
-    const result = await subscriptionService.activate(
+    return replyToMutation(req,res,req.body.userId,"subscription.activate",()=>subscriptionService.activate(
       actor,
       req.body.userId,
       req.body.tier,
       req.body.durationMonths
-    );
-    return sendSuccess(res, result);
+    ));
   },
 
   async deactivate(req: Request, res: Response) {
     const actor = requireAuth(req);
     const userId = String(req.params.userId);
-    const result = await subscriptionService.deactivate(actor, userId);
-    return sendSuccess(res, result);
+    return replyToMutation(req,res,userId,"subscription.deactivate",()=>subscriptionService.deactivate(actor,userId));
   },
 
   async list(_req: Request, res: Response) {

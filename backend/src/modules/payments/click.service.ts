@@ -61,7 +61,8 @@ class ClickPaymentService {
   }
 
   verifyPrepareSignature(body: ClickPrepareBody): boolean {
-    if (!env.CLICK_SECRET_KEY) return false;
+    if(String(body.action)!=="0") return false;
+    if (!env.CLICK_SECRET_KEY || body.service_id!==env.CLICK_SERVICE_ID || !/^\d+$/.test(body.click_trans_id??"") || !Number.isFinite(Number(body.amount)) || Number(body.amount)<=0) return false;
     const expected = crypto
       .createHash("md5")
       .update(
@@ -72,7 +73,8 @@ class ClickPaymentService {
   }
 
   verifyCompleteSignature(body: ClickCompleteBody): boolean {
-    if (!env.CLICK_SECRET_KEY) return false;
+    if(String(body.action)!=="1") return false;
+    if (!env.CLICK_SECRET_KEY || body.service_id!==env.CLICK_SERVICE_ID || !/^\d+$/.test(body.click_trans_id??"") || !Number.isFinite(Number(body.amount)) || Number(body.amount)<=0) return false;
     const expected = crypto
       .createHash("md5")
       .update(

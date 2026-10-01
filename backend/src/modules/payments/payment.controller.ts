@@ -21,8 +21,9 @@ export const botController = {
   },
 
   async linkTelegram(req: Request, res: Response) {
-    const { userId, telegramId, telegramUsername } = req.body;
-    const user = await paymentService.linkTelegram(userId, telegramId, telegramUsername);
+    const { userId, telegramId, telegramUsername, verifiedPhone, contactTelegramId } = req.body;
+    if(contactTelegramId!==telegramId) throw new AppError("Contact ownership proof is required",403);
+    const user = await paymentService.linkTelegram(userId, telegramId, telegramUsername, verifiedPhone);
     if (!user) throw new AppError("User not found", 404);
     return sendSuccess(res, { linked: true });
   },
@@ -48,7 +49,7 @@ export const botController = {
     if (!file) {
       throw new AppError("receipt image file is required (multipart field name: receipt)", 422);
     }
-    const result = await paymentService.attachReceipt(String(req.params.paymentId), req.body.receiptFileId, file);
+    const result = await paymentService.attachReceipt(String(req.params.paymentId), req.body.receiptFileId, file, req.body.telegramUserId);
     return sendSuccess(res, result);
   },
 
@@ -57,7 +58,8 @@ export const botController = {
     const payment = await paymentService.submitCardDetails(
       String(req.params.paymentId),
       req.body.cardNumber,
-      req.body.fullName
+      req.body.fullName,
+      req.body.telegramUserId
     );
     return sendSuccess(res, payment);
   },
@@ -115,7 +117,8 @@ export const botController = {
   },
 
   async markReminderSent(req: Request, res: Response) {
-    await subscriptionService.markReminderSent(String(req.params.subscriptionId));
+    if(typeof req.body.expectedEndDate!=="string" || !Number.isFinite(Date.parse(req.body.expectedEndDate))) throw new AppError("Subscription period is required",422);
+    await subscriptionService.markReminderSent(String(req.params.subscriptionId),req.body.expectedEndDate);
     return sendSuccess(res, { ok: true });
   },
 
@@ -197,6 +200,8 @@ export const clickController = {
       if (Number(body.amount) !== payment.amount) {
         return res.json({ error: CLICK_ERROR.INCORRECT_AMOUNT, error_note: "Incorrect amount" });
       }
+
+      if (body.merchant_prepare_id !== payment._id.toString() || (payment.clickTransId && payment.clickTransId!==body.click_trans_id)) return res.json({error:CLICK_ERROR.TRANSACTION_NOT_FOUND,error_note:"Transaction identity mismatch"});
 
       // error < 0 means Click itself is telling us the payment failed/was
       // cancelled on their side (e.g. the user's card was declined after

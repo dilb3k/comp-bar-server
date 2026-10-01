@@ -5,6 +5,8 @@ export const lookupUserSchema = z.object({
 });
 
 export const linkTelegramSchema = z.object({
+  verifiedPhone: z.string().trim().min(6).max(25),
+  contactTelegramId: z.string().regex(/^\d+$/),
   userId: z.string().trim().min(1),
   telegramId: z.string().trim().min(1),
   telegramUsername: z.string().trim().optional(),
@@ -19,6 +21,7 @@ export const createManualPaymentSchema = z.object({
 });
 
 export const attachReceiptSchema = z.object({
+  telegramUserId:z.string().regex(/^\d+$/),
   receiptFileId: z.string().trim().min(1),
 });
 
@@ -40,6 +43,7 @@ export const subscriptionIdParamsSchema = z.object({
 // Screenshot-free flow (POST /api/bot/payments/:paymentId/card-details) —
 // no OCR runs on this path, so validation here is just shape, not content.
 export const cardDetailsSchema = z.object({
+  telegramUserId:z.string().regex(/^\d+$/),
   cardNumber: z.string().trim().min(8).max(25).regex(/^[\d\s]+$/, "cardNumber must contain only digits and spaces"),
   fullName: z.string().trim().min(2).max(200),
 });
