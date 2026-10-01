@@ -1,0 +1,74 @@
+{
+  "generatedAt": "2026-09-30T13:16:01.297Z",
+  "runtime": "v26.4.0",
+  "platform": "darwin",
+  "cpu": "Apple M2",
+  "logicalCPUs": 8,
+  "stores": 1000,
+  "productsPerStore": 1000,
+  "apiProcesses": 2,
+  "apiHeapLimitMB": 450,
+  "mongoPoolPerProcess": 50,
+  "setupSeconds": 16,
+  "waves": [
+    {
+      "name": "sale",
+      "concurrency": 1000,
+      "durationMs": 3115,
+      "requestsPerSecond": 321,
+      "p50ms": 1873,
+      "p95ms": 3072,
+      "p99ms": 3083,
+      "statuses": {
+        "200": 1000
+      }
+    },
+    {
+      "name": "replay-other-instance",
+      "concurrency": 1000,
+      "durationMs": 368,
+      "requestsPerSecond": 2714,
+      "p50ms": 175,
+      "p95ms": 346,
+      "p99ms": 349,
+      "statuses": {
+        "200": 1000
+      }
+    },
+    {
+      "name": "product-read",
+      "concurrency": 1000,
+      "durationMs": 291,
+      "requestsPerSecond": 3436,
+      "p50ms": 177,
+      "p95ms": 266,
+      "p99ms": 267,
+      "statuses": {
+        "200": 1000
+      }
+    }
+  ],
+  "metrics": [
+    {
+      "rssMB": 258,
+      "heapMB": 45,
+      "eventLoopP99ms": 46
+    },
+    {
+      "rssMB": 291,
+      "heapMB": 62,
+      "eventLoopP99ms": 44
+    }
+  ],
+  "correctness": {
+    "quantities": 1000,
+    "inventories": 1000,
+    "reports": 1000,
+    "receipts": 1000
+  },
+  "query": {
+    "totalDocsExamined": 1,
+    "totalKeysExamined": 1
+  },
+  "limitations": "Local single-host Mongo replica set; no WAN/TLS/Atlas resource limits or production failover. This is a synchronized burst, not a sustained production capacity guarantee."
+}
