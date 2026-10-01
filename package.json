@@ -11,7 +11,8 @@
     "build": "tsc -p backend/tsconfig.json",
     "start": "node --max-old-space-size=450 backend/dist/server.js",
     "check": "tsc --noEmit -p backend/tsconfig.json",
-    "test": "tsc -p backend/tsconfig.json && NODE_ENV=test MONGODB_URL=mongodb://127.0.0.1:27017/bar-test JWT_SECRET=test_secret_min_16_chars node backend/dist/tests/business-rules.test.js"
+    "test": "tsc -p backend/tsconfig.json && NODE_ENV=test MONGODB_URL=mongodb://127.0.0.1:27017/bar-test JWT_SECRET=test_secret_min_16_chars node backend/dist/tests/business-rules.test.js",
+    "test:integration": "npm run build && node scripts/test-integration.cjs"
   },
   "keywords": [
     "express",
@@ -49,5 +50,9 @@
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "qs": "^6.16.0",
+    "esbuild": "^0.28.1"
   }
 }
