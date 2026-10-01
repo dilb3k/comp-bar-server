@@ -1,4 +1,4 @@
-﻿import mongoose from "mongoose";
+import mongoose from "mongoose";
 
 import { env } from "../config/env";
 import { alertService } from "../services/alert.service";
@@ -7,19 +7,20 @@ export async function connectDatabase() {
   mongoose.set("strictQuery", true);
 
   const primaryUrl = env.MONGODB_URL;
-  const fallbackUrl = env.MONGODB_FALLBACK_URL;
-
-  let lastError: unknown;
+  // Application failover must keep the same receipt/stock database. The MongoDB
+  // replica-set driver handles primary election; switching datasets is unsafe.
+  if (env.MONGODB_FALLBACK_URL && env.MONGODB_FALLBACK_URL !== primaryUrl) {
+    throw new Error("Independent MONGODB_FALLBACK_URL is unsupported: configure both API instances with the same replica-set URI");
+  }
 
   try {
     await mongoose.connect(primaryUrl, {
+      autoIndex: env.NODE_ENV !== 'production',
       // Several endpoints (sales, startDay, bulkUpdateCurrent, product
       // create/update, sync) hold a session/transaction open across multiple
-      // sequential round trips each. Sized for ~1000 concurrent shop-owner
-      // requests without turning MongoDB Atlas's own per-tier connection
-      // ceiling into the bottleneck instead — raise further only after
-      // confirming Atlas's own plan allows more (a shared/free tier caps
-      // total connections well below what a busy paid tier allows).
+      // sequential round trips each. This is an initial pool budget, not
+      // proof of capacity. Benchmark the deployed tier and sum connections
+      // across every API instance before increasing it.
       maxPoolSize: 50,
       // Keeps this many connections warm even when idle, so the first
       // requests after a quiet period (this app's usual traffic pattern —
@@ -28,6 +29,11 @@ export async function connectDatabase() {
       minPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
     });
+    const hello = await mongoose.connection.db!.admin().command({hello:1});
+    if (!hello.setName && hello.msg !== "isdbgrid") {
+      await mongoose.disconnect();
+      throw new Error("Financial writes require a MongoDB replica set or sharded cluster");
+    }
     console.log("Connected to primary MongoDB");
 
     mongoose.connection.on("disconnected", () => {
@@ -44,22 +50,9 @@ export async function connectDatabase() {
 
     return;
   } catch (err) {
-    console.warn("Primary MongoDB connection failed, trying fallback...", (err as Error).message);
-    lastError = err;
+    console.error("MongoDB unavailable; refusing to switch to another dataset");
+    throw err;
   }
-
-  if (fallbackUrl) {
-    try {
-      await mongoose.connect(fallbackUrl);
-      console.log("Connected to fallback MongoDB");
-      return;
-    } catch (err) {
-      console.error("Fallback MongoDB connection also failed:", (err as Error).message);
-      lastError = err;
-    }
-  }
-
-  throw lastError;
 }
 
 export async function disconnectDatabase() {

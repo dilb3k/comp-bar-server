@@ -1,3 +1,4 @@
+import { afterCommit } from "../lib/transaction";
 import { env } from "../config/env";
 import { formatQuantity, normalizeUnit } from "../utils/quantity";
 
@@ -44,9 +45,9 @@ class TelegramReportService {
       return;
     }
 
-    void this.send(payload).catch((error) => {
+    afterCommit(() => { void this.send(payload).catch((error) => {
       console.error("Telegram report failed", error);
-    });
+    }); });
   }
 
   private buildMessage(payload: TelegramReportPayload) {

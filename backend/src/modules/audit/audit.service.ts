@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/transaction";
 import { AuditEventModel } from "./audit.model";
 
 type AuditLogInput = {
@@ -14,7 +15,7 @@ type AuditLogInput = {
 class AuditService {
   async log(input: AuditLogInput) {
     try {
-      await AuditEventModel.create({
+      await AuditEventModel.create([{
         ownerAdminId: input.ownerAdminId,
         action: input.action,
         entityType: input.entityType,
@@ -23,9 +24,10 @@ class AuditService {
         after: input.after ?? null,
         source: input.source,
         createdBy: input.createdBy,
-      });
-    } catch {
-      // audit log failure should never break the main operation
+      }], { session: currentSession() });
+    } catch (error) {
+      if (currentSession()) throw error;
+      console.error("Audit write failed", error);
     }
   }
 
