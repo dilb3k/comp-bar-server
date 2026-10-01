@@ -1,346 +1,82 @@
-import mongoose from "mongoose";
-
+import { z } from "zod";
+import { createHash } from "node:crypto";
+import { AppError } from "../../utils/app-error";
+import { assertBaseVersion } from "../../lib/versioning";
+import { withIdempotency } from "../idempotency/idempotency.service";
 import type { AuthUser } from "../auth/auth.types";
-import { auditService } from "../audit/audit.service";
-import { inventoryRepository } from "../inventory/inventory.repository";
-import { processProductImageInput } from "../products/product-image";
 import { productRepository } from "../products/product.repository";
-import { withProductCreationLock } from "../products/product.service";
-import { snapshotRepository } from "../snapshots/snapshot.repository";
-import { snapshotService } from "../snapshots/snapshot.service";
-import { aggregateSnapshot } from "../snapshots/snapshot.logic";
-import { telegramReportService } from "../../services/telegram-report.service";
-import { compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
-import { normalizeUnit, resolveLockedPrice, roundMoney, roundQty } from "../../utils/quantity";
-import { env } from "../../config/env";
+import { productService } from "../products/product.service";
+import { createProductSchema, updateProductSchema } from "../products/product.validation";
+import { applyInventoryOperation } from "../inventory/operation.service";
+import { syncPayloadSchema } from "./sync.validation";
+import { pullChanges } from "./sync.pull";
 
-type SyncInput = {
-  products?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
-  inventory?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string }>;
-  daily?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
-  snapshots?: Array<Record<string, unknown> & { localId: string; updatedAt: string; createdAt: string; deviceId: string; date: string }>;
-  lastSyncAt?: string;
-  limit?: number;
-  offset?: number;
-};
-
-type RejectedItem = {
-  entity: string;
-  localId: string;
-  reason: string;
-};
-
-const TOLERANCE = 0.01;
-
+type SyncInput = z.infer<typeof syncPayloadSchema>;
 export class SyncService {
   async sync(actor: AuthUser, payload: SyncInput) {
-    const products = payload.products ?? [];
-    const inventory = payload.inventory ?? [];
-    const snapshots = payload.daily ?? payload.snapshots ?? [];
-    const rejected: RejectedItem[] = [];
-    const businessHour = getEffectiveHour(actor);
-    const currentBusinessDate = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
-
-    const processedProducts = await Promise.all(
-      products.map(async (item) => {
-        // A synced item that doesn't touch its image at all must not wipe an
-        // imageUrl set via POST /:id/image on another device — only include
-        // the key when processing actually produced something for it.
-        let imageFields: { image?: string; imageUrl?: string } = {};
-        try {
-          imageFields = await processProductImageInput(item.image as string | undefined);
-        } catch {
-          const raw = item.image as string | undefined;
-          imageFields = raw ? { image: raw } : {};
-        }
-        return {
-          ...item,
-          image: imageFields.image ?? "",
-          ...(imageFields.imageUrl !== undefined ? { imageUrl: imageFields.imageUrl } : {}),
-          createdAt: new Date(item.createdAt),
-          updatedAt: new Date(item.updatedAt)
-        };
-      })
-    );
-
-    const validInventory: Array<Record<string, unknown>> = [];
-    for (const item of inventory) {
-      const invDate = item.date as string | undefined;
-      if (!invDate) {
-        rejected.push({ entity: "inventory", localId: item.localId, reason: "MISSING_DATE" });
-        continue;
+    const rejected: Array<{ entity: string; localId: string; reason: string; message?: string }> = [];
+    const acknowledged: Array<{ entity: string; localId: string; updatedAt?: string }> = [];
+    const accepted = { products: 0, inventory: 0, snapshots: 0, operations: 0 };
+    // Each queued operation commits independently; a conflict never discards
+    // the rest of a batch. Retrying a partially delivered response is safe.
+    for (const item of payload.products ?? []) {
+      try {
+        const key = item.operationId ?? `sync-product:${createHash("sha256").update(`${item.localId}:${item.updatedAt}`).digest("hex")}`;
+        await withIdempotency(actor.userId, key, async () => {
+          const existing: any = await productRepository.findByIdentifier(actor.userId, item.localId);
+          const { createdAt: _created, updatedAt: _updated, ...fields } = item;
+          if (existing) {
+            assertBaseVersion(existing, item.baseVersion);
+            await productService.update(actor, item.localId, updateProductSchema.parse(fields));
+          } else {
+            if ((item.baseVersion ?? 0) !== 0) throw new AppError("Product no longer exists", 409, undefined, "ENTITY_DELETED");
+            if(payload.protocolVersion!==2 || !item.operationId || item.baseVersion===undefined) throw new AppError("Legacy product creation requires reviewed migration; original client queue must be retained",409,undefined,"LEGACY_RECONCILIATION_REQUIRED");
+            await productService.create(actor, createProductSchema.parse(fields) as any);
+          }
+          return { status: 200, data: { localId: item.localId } };
+        }, { operation: "sync.product.v2", payload: item });
+        accepted.products++;
+        acknowledged.push({ entity: "product", localId: item.localId, updatedAt: item.updatedAt });
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        rejected.push({ entity: "product", localId: item.localId, reason: error.code ?? `HTTP_${error.statusCode}`, message: error.message });
       }
-      if (isPastBusinessDate(invDate, currentBusinessDate)) {
-        rejected.push({ entity: "inventory", localId: item.localId, reason: "PAST_DAY_LOCKED" });
-        continue;
-      }
-      if (compareDayKeys(invDate, currentBusinessDate) > 0) {
-        rejected.push({ entity: "inventory", localId: item.localId, reason: "FUTURE_DAY_NOT_ALLOWED" });
-        continue;
-      }
-      validInventory.push({
-        ...item,
-        createdAt: new Date(item.createdAt),
-        updatedAt: new Date(item.updatedAt)
-      });
     }
-
-    const validSnapshots: Array<Record<string, unknown>> = [];
-    for (const item of snapshots) {
-      const snapDate = item.date as string | undefined;
-      if (snapDate && isPastBusinessDate(snapDate, currentBusinessDate)) {
-        rejected.push({ entity: "snapshot", localId: item.localId, reason: "PAST_DAY_LOCKED" });
-        continue;
+    for (const deletion of payload.deletions ?? []) {
+      try {
+        await withIdempotency(actor.userId,deletion.operationId,async()=>{
+          const existing:any=await productRepository.findByIdentifier(actor.userId,deletion.localId);
+          if(!existing) throw new AppError("Product no longer exists",409,undefined,"ENTITY_DELETED");
+          assertBaseVersion(existing,deletion.baseVersion);
+          await productService.remove(actor,deletion.localId);
+          return {status:200,data:{localId:deletion.localId}};
+        },{operation:"sync.deleteProduct.v2",payload:deletion});
+        acknowledged.push({entity:"deletion",localId:deletion.localId});
+      } catch(error) {
+        if(!(error instanceof AppError)) throw error;
+        rejected.push({entity:"deletion",localId:deletion.localId,reason:error.code??`HTTP_${error.statusCode}`,message:error.message});
       }
-      validSnapshots.push({
-        ...item,
-        createdAt: new Date(item.createdAt),
-        updatedAt: new Date(item.updatedAt)
-      });
     }
-
-    // Same 100-product cap product.service.ts's create() enforces for the REST
-    // path, applied here too. Without this a 'bor' tier admin could go offline,
-    // add far more than 100 products on desktop, and have all of them sync —
-    // the cap existed on paper but had a second, unguarded door.
-    //
-    // Only genuinely NEW products count against it: an edit to a product that
-    // already made it to the server (rename, price change, restock) must never
-    // be blocked by a cap meant to limit how many exist, and a batch mixes
-    // both freely. Existing localIds are resolved once up front so each item
-    // can be classified without a query per item, and the running count walks
-    // the batch in the order it arrived — same "first come, first kept" rule
-    // a sequence of individual REST calls would have produced.
-    let allowedProducts = processedProducts;
-    // Whether this call needs the same-owner lock at all — see
-    // product-creation-lock.model.ts. Only new products (not edits to ones
-    // that already exist) count against the cap and are worth serializing
-    // for; an inventory-only or edit-only sync never touches this path.
-    const mustGuardProductCap = actor.tier === "bor" && processedProducts.length > 0;
-
-    const session = await mongoose.startSession();
-    try {
-      const runSync = () => session.withTransaction(async () => {
-        // Re-checked here, *inside* the lock (when mustGuardProductCap holds
-        // one) rather than before it: reading the count and filtering
-        // allowedProducts before acquiring the lock would leave the same gap
-        // this lock exists to close — a second concurrent sync could read
-        // the same stale count before the first one's inserts commit. Cheap
-        // no-op for a pro tier / edit-only / inventory-only sync (the
-        // `actor.tier === "bor" && processedProducts.length > 0` guard is
-        // unchanged from before).
-        if (mustGuardProductCap) {
-          const incomingLocalIds = processedProducts.map((item) => item.localId as string);
-          const existingLocalIds = await productRepository.findExistingLocalIds(actor.userId, incomingLocalIds, session);
-          let runningCount = await productRepository.countActive(actor.userId, session);
-          const allowed: typeof processedProducts = [];
-          for (const item of processedProducts) {
-            const isNew = !existingLocalIds.has(item.localId as string);
-            if (!isNew || runningCount < 100) {
-              if (isNew) runningCount += 1;
-              allowed.push(item);
-            } else {
-              rejected.push({ entity: "product", localId: item.localId as string, reason: "PRODUCT_LIMIT_EXCEEDED" });
-            }
-          }
-          allowedProducts = allowed;
-        }
-
-        // NOTE: these must run sequentially (not via Promise.all) — the MongoDB
-        // driver does not support concurrent operations sharing one ClientSession;
-        // running them in parallel is undefined behaviour per the driver docs.
-        for (const item of allowedProducts) {
-          await productRepository.upsertLastWriteWins(actor.userId, item as any, session);
-        }
-
-        for (const item of validInventory) {
-          await inventoryRepository.upsertLastWriteWins(actor.userId, item as any, session);
-        }
-
-        // The generic sync path is also how an offline sale/inventory edit reaches the
-        // server (desktop/mobile queue InventoryEntry deltas while offline, then replay
-        // them here). The dedicated /inventory/sales, /inventory/start-day and
-        // /inventory/bulk-current REST endpoints keep Product.quantity mirroring
-        // InventoryEntry.currentQuantity for "today" inside their own transactions — do
-        // the same here so a synced offline change doesn't leave the product's top-level
-        // stock count stale relative to the day's authoritative inventory record.
-        const productQuantityUpdates = new Map<string, { quantity: number; updatedAt: Date }>();
-        for (const item of validInventory) {
-          const productId = item.productId as string | undefined;
-          const currentQuantity = item.currentQuantity;
-          if (!productId || typeof currentQuantity !== "number" || !Number.isFinite(currentQuantity)) {
-            continue;
-          }
-          // Multiple queued items can touch the same product; consistent with
-          // upsertLastWriteWins elsewhere in this file, the item with the latest
-          // updatedAt wins — not simply the last one encountered in payload order.
-          const itemUpdatedAt = item.updatedAt as Date;
-          const existing = productQuantityUpdates.get(productId);
-          if (!existing || itemUpdatedAt.getTime() >= existing.updatedAt.getTime()) {
-            productQuantityUpdates.set(productId, { quantity: currentQuantity, updatedAt: itemUpdatedAt });
-          }
-        }
-        for (const [productLocalId, { quantity }] of productQuantityUpdates.entries()) {
-          await productRepository.setQuantityByLocalId(actor.userId, productLocalId, quantity, session);
-        }
-
-        for (const item of validSnapshots) {
-          const itemDate = item.date as string | undefined;
-          let snapshotData = { ...item };
-
-          if (itemDate && itemDate.length > 0) {
-            // Sequential (not Promise.all) — both queries share the same
-            // ClientSession, and concurrent ops on one session are unsupported.
-            const entries = await inventoryRepository.findByDate(actor.userId, itemDate, session);
-            const products = await productRepository.findAllByOwner(actor.userId, session);
-
-            const productMap = new Map(products.map((p: any) => [p.localId, p]));
-            const derivedItems = entries.map((entry: any) => {
-              const product = productMap.get(entry.productId);
-              // Effective price = entry's locked-in price when > 0, else current
-              // product price. Matches snapshot.service and buildInventoryResponse.
-              const buyPrice = resolveLockedPrice(entry.buyPrice, Number(product?.buyPrice ?? 0));
-              const sellPrice = resolveLockedPrice(entry.sellPrice, Number(product?.sellPrice ?? 0));
-              const newSold = roundQty(Math.max(Number(entry.startQuantity ?? 0) - Number(entry.currentQuantity ?? 0), 0));
-              const lockedSold = Number(entry.lockedSold ?? 0);
-              const lockedRevenue = Number(entry.lockedRevenue ?? 0);
-              const lockedProfit = Number(entry.lockedProfit ?? 0);
-              return {
-                productId: entry.productId,
-                productName: product?.name ?? entry.productName ?? "",
-                unit: normalizeUnit(product?.unit ?? entry.unit),
-                sold: roundQty(lockedSold + newSold),
-                buyPrice,
-                sellPrice,
-                revenue: roundMoney(lockedRevenue + newSold * sellPrice),
-                profit: roundMoney(lockedProfit + newSold * (sellPrice - buyPrice))
-              };
-            });
-
-            const derivedTotals = aggregateSnapshot(derivedItems);
-            const clientTotalRevenue = Number((item as any).totalRevenue ?? 0);
-            const clientTotalProfit = Number((item as any).totalProfit ?? 0);
-            const clientTotalSold = Number((item as any).totalSoldItems ?? 0);
-
-            if (derivedItems.length > 0) {
-              const revenueDiff = Math.abs(derivedTotals.totalRevenue - clientTotalRevenue);
-              const profitDiff = Math.abs(derivedTotals.totalProfit - clientTotalProfit);
-              const soldDiff = Math.abs(derivedTotals.totalSoldItems - clientTotalSold);
-
-              if (revenueDiff > TOLERANCE || profitDiff > TOLERANCE || soldDiff > TOLERANCE) {
-                snapshotData = {
-                  ...snapshotData,
-                  totalRevenue: derivedTotals.totalRevenue,
-                  totalProfit: derivedTotals.totalProfit,
-                  totalSoldItems: derivedTotals.totalSoldItems,
-                  items: derivedItems as any
-                };
-              }
-            }
-          }
-
-          await snapshotRepository.upsertLastWriteWins(actor.userId, snapshotData as any, session);
-        }
-
-        const totalChanges = allowedProducts.length + validInventory.length + validSnapshots.length;
-        if (totalChanges > 0) {
-          await auditService.log({
-            ownerAdminId: actor.userId,
-            action: "SYNC",
-            entityType: "sync",
-            entityId: `batch-${Date.now()}`,
-            after: {
-              products: allowedProducts.length,
-              inventory: validInventory.length,
-              snapshots: validSnapshots.length,
-              rejected: rejected.length
-            },
-            source: "sync",
-            createdBy: actor.userId,
-          });
-        }
-      });
-
-      if (mustGuardProductCap) {
-        await withProductCreationLock(actor.userId, runSync);
-      } else {
-        await runSync();
+    for (const operation of payload.operations ?? []) {
+      try {
+        await applyInventoryOperation(actor, operation);
+        accepted.operations++;
+        acknowledged.push({ entity: "operation", localId: operation.id });
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        rejected.push({ entity: "operation", localId: operation.id, reason: error.code ?? `HTTP_${error.statusCode}`, message: error.message });
       }
-
-      // Same rationale as the Product.quantity mirroring above: the dedicated
-      // /inventory/sales REST endpoint recomputes that day's DailySnapshot
-      // (dashboard revenue/profit/sold totals) inside its own transaction after
-      // every sale. The generic sync path only recomputes a snapshot when the
-      // client explicitly included one in `daily`/`snapshots` — but an offline
-      // sale/inventory edit queued on the client only ever produces `inventory`
-      // items (see desktop/mobile offline queues), never a `daily` entry. Without
-      // this, a synced offline sale would leave that day's stored snapshot stale
-      // until something unrelated happened to trigger a recompute. Auto-recompute
-      // for every business date touched by validInventory that wasn't already
-      // explicitly (re)computed above via validSnapshots.
-      const explicitSnapshotDates = new Set(validSnapshots.map((item) => item.date as string));
-      const inventoryTouchedDates = new Set(
-        validInventory
-          .map((item) => item.date as string | undefined)
-          .filter((date): date is string => Boolean(date) && !explicitSnapshotDates.has(date as string))
-      );
-      for (const date of inventoryTouchedDates) {
-        try {
-          await snapshotService.createOrUpdate(actor, { date, deviceId: "sync-auto" });
-        } catch (error) {
-          // Non-fatal: the sale/inventory data itself already synced successfully
-          // above; a snapshot recompute failure here shouldn't fail the whole sync
-          // call (the next createOrUpdate call, e.g. from an online sale or a later
-          // sync, will self-heal it since it always derives from scratch).
-          rejected.push({ entity: "snapshot", localId: `auto-${date}`, reason: "RECOMPUTE_FAILED" });
-        }
-      }
-
-      const limit = payload.limit ?? 1000;
-      const offset = payload.offset ?? 0;
-      const fetchLimit = limit + 1;
-
-      const [serverProducts, serverInventory, serverSnapshots] = await Promise.all([
-        productRepository.findAllUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset),
-        inventoryRepository.findUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset),
-        snapshotRepository.findUpdatedSince(actor.userId, payload.lastSyncAt, fetchLimit, offset)
-      ]);
-
-      const hasMore =
-        serverProducts.length > limit ||
-        serverInventory.length > limit ||
-        serverSnapshots.length > limit;
-
-      const trimmedProducts = serverProducts.slice(0, limit);
-      const trimmedInventory = serverInventory.slice(0, limit);
-      const trimmedSnapshots = serverSnapshots.slice(0, limit);
-
-      if (allowedProducts.length > 0 || validInventory.length > 0 || validSnapshots.length > 0) {
-        telegramReportService.reportSync(actor, {
-          products: allowedProducts.length,
-          inventory: validInventory.length,
-          snapshots: validSnapshots.length,
-          lastSyncAt: payload.lastSyncAt
-        });
-      }
-
-      return {
-        accepted: {
-          products: allowedProducts.length,
-          inventory: validInventory.length,
-          snapshots: validSnapshots.length
-        },
-        rejected,
-        products: trimmedProducts.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-        inventory: trimmedInventory.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-        daily: trimmedSnapshots.map((item: { toJSON: () => Record<string, unknown> }) => item.toJSON()),
-        hasMore,
-        serverTime: new Date().toISOString()
-      };
-    } finally {
-      await session.endSession();
     }
+    // Absolute offline stock and client-computed reports cannot be merged
+    // safely. Clients retain these legacy records for explicit reconciliation.
+    for (const [entity, items] of [["inventory", payload.inventory], ["snapshot", payload.daily ?? payload.snapshots]] as const) {
+      for (const item of items ?? []) rejected.push({ entity, localId: item.localId, reason: "LEGACY_RECONCILIATION_REQUIRED" });
+    }
+    const serverTime = new Date().toISOString();
+    const pulled = await pullChanges(actor, payload);
+    return { accepted, acknowledged, rejected, ...pulled, serverTime,
+      upgradeRequired: payload.protocolVersion !== 2,
+    };
   }
 }
-
 export const syncService = new SyncService();

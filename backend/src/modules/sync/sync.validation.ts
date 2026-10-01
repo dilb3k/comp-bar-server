@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { inventoryOperationSchema } from "../inventory/inventory.validation";
 import { PRODUCT_UNITS, QTY_DECIMALS, QTY_EPSILON, roundQty } from "../../utils/quantity";
 import { normalizeProductImage } from "../products/product-image";
 
@@ -17,6 +18,8 @@ const syncedQuantitySchema = z
   .transform(roundQty);
 
 const syncedProductSchema = z.object({
+  baseVersion: z.number().int().nonnegative().optional(),
+  operationId: z.string().min(8).max(100).optional(),
   localId: z.string().trim().min(1),
   deviceId: z.string().trim().min(1),
   name: z.string().trim().min(1),
@@ -105,16 +108,21 @@ const syncedSnapshotSchema = z.object({
 });
 
 export const syncPayloadSchema = z.object({
-  products: z.array(syncedProductSchema).optional(),
-  inventory: z.array(syncedInventorySchema).optional(),
-  daily: z.array(syncedSnapshotSchema).optional(),
-  snapshots: z.array(syncedSnapshotSchema).optional(),
+  protocolVersion: z.literal(2).optional(),
+  deletions: z.array(z.object({ localId: z.string().min(1), operationId: z.string().min(8).max(100), baseVersion: z.number().int().nonnegative() })).max(200).optional(),
+  checkpoint: z.string().max(4096).optional(),
+  cursor: z.string().max(4096).optional(),
+  operations: z.array(inventoryOperationSchema).max(200).optional(),
+  products: z.array(syncedProductSchema).max(1000).optional(),
+  inventory: z.array(syncedInventorySchema).max(1000).optional(),
+  daily: z.array(syncedSnapshotSchema).max(1000).optional(),
+  snapshots: z.array(syncedSnapshotSchema).max(1000).optional(),
   lastSyncAt: z.string().datetime().optional(),
   // Pagination for the server->client page of changes returned alongside
   // this sync (see sync.service.ts). Zod strips unrecognized keys by
   // default, so omitting these here silently dropped every client-provided
   // limit/offset and pinned every sync response to the hardcoded defaults —
   // a client could never page past the first 1000 changed records per entity.
-  limit: z.number().int().positive().optional(),
+  limit: z.number().int().positive().max(1000).optional(),
   offset: z.number().int().min(0).optional()
 });
