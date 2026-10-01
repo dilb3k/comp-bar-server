@@ -1,3 +1,5 @@
+import { JsonWebTokenError } from "jsonwebtoken";
+import { subscriptionService } from "../subscriptions/subscription.service";
 import type { NextFunction, Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
@@ -34,10 +36,15 @@ export function authenticate(options?: { allowStale?: boolean }) {
     try {
       const payload = verifyAccessToken(token);
 
+      if (req.headers["x-account-id"] && req.headers["x-account-id"] !== payload.userId) {
+        return next(new AppError("Request belongs to another account", 409, undefined, "ACCOUNT_CHANGED"));
+      }
       const user = await authRepository.findById(payload.userId);
       if (!user || !user.isActive) {
         return next(new AppError("User account is deactivated", 401));
       }
+
+      if(Number(payload.securityVersion??0)!==Number(user.securityVersion??0)) return next(new AppError("Security settings changed; sign in again",401,undefined,"SESSION_REVOKED"));
 
       // Single active session: the token's sessionId must match the account's
       // current session. Otherwise the session was replaced by another login.
@@ -57,7 +64,7 @@ export function authenticate(options?: { allowStale?: boolean }) {
       authRepository.touchLastActionAt(user._id.toString()).catch(() => {});
     }
 
-    const isSuperAdmin = payload.role === "superAdmin";
+    const entitlement = await subscriptionService.getUserTier(user._id.toString(), user.role, user.isPayed ?? false);
 
     // A scheduled business-day hour change becomes active once its effective
     // moment passes. Promote it here — the one code path every authenticated
@@ -96,12 +103,13 @@ export function authenticate(options?: { allowStale?: boolean }) {
 
     req.auth = {
       userId: payload.userId,
-      username: payload.username,
-      phone_number: payload.phone_number,
-      role: payload.role,
-      isPayed: payload.isPayed ?? isSuperAdmin,
-      tier: payload.tier ?? (isSuperAdmin ? "pro" : "tekin"),
-      subscriptionEndDate: payload.subscriptionEndDate ?? null,
+      securityVersion: Number(user.securityVersion??0),
+      username: user.username,
+      phone_number: user.phone_number,
+      role: user.role,
+      isPayed: entitlement.tier !== "tekin",
+      tier: entitlement.tier,
+      subscriptionEndDate: entitlement.subscription?.endDate?.toISOString() ?? null,
       sessionId: payload.sessionId,
       // DB values are the source of truth for business-day settings; the token
       // only fills in for accounts predating the field.
@@ -114,7 +122,8 @@ export function authenticate(options?: { allowStale?: boolean }) {
     if (error instanceof AppError) {
       return next(error);
     }
-    return next(new AppError("Invalid or expired token", 401));
+    if (error instanceof JsonWebTokenError) return next(new AppError("Invalid or expired token", 401));
+    return next(new AppError("Authentication service unavailable; retry later", 503, undefined, "AUTH_UNAVAILABLE"));
     }
   };
 }

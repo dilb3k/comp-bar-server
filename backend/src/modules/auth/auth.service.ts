@@ -1,4 +1,5 @@
-﻿import mongoose from "mongoose";
+import { currentSession, withOwnerTransaction } from "../../lib/transaction";
+import mongoose from "mongoose";
 import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { AppError } from "../../utils/app-error";
@@ -33,15 +34,20 @@ const OTP_TTL_MS = 3 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 3;
 
 export class AuthService {
-  private async issueSession(user: any) {
+  private async issueSession(user: any, deviceId?: string | null) {
     const sessionId = createSessionId();
-    await authRepository.updateMe(user._id.toString(), { activeSessionId: sessionId });
+    const updated = await UserModel.findOneAndUpdate({
+      _id:user._id, isActive:true, password:user.password,
+      $or:[{securityVersion:Number(user.securityVersion??0)}, ...(Number(user.securityVersion??0)===0?[{securityVersion:{$exists:false}}]:[])],
+    }, { $set:{activeSessionId:sessionId}, ...(deviceId?{$addToSet:{verifiedDeviceIds:deviceId}}:{}) }, {session:currentSession(),new:true});
+    if(!updated) throw new AppError("Hisob xavfsizlik sozlamalari o‘zgardi; qayta kiring",401);
     return sessionId;
   }
 
   private buildAuthUser(user: any, isPayed: boolean, tier: any, activeSub: any, sessionId?: string): AuthUser {
     return {
       userId: user._id.toString(),
+      securityVersion: Number(user.securityVersion??0),
       username: (user as any).username,
       phone_number: user.phone_number,
       role: user.role,
@@ -143,6 +149,7 @@ export class AuthService {
         const challenge = await SessionChallengeModel.create({
           userId: user._id.toString(),
           otpHash: hashOtp(code),
+          securityVersion: Number(user.securityVersion ?? 0),
           deviceId: deviceId ?? null,
           expiresAt: new Date(Date.now() + OTP_TTL_MS),
         });
@@ -160,24 +167,21 @@ export class AuthService {
         // don't strand the user with a challenge id that can never be
         // fulfilled; clean it up and fall through to the phone-retype path.
         await SessionChallengeModel.deleteOne({ _id: challenge._id });
+        throw new AppError("Telegram kodi yetkazilmadi. Keyinroq qayta urinib ko‘ring",503,undefined,"OTP_DELIVERY_FAILED");
       }
 
-      return {
-        needsPhoneVerification: true,
-        maskedPhone: maskPhone(user.phone_number),
-        message: "Bu akkaunt boshqa qurilmada faol. Davom etish uchun telefon raqamingizni tasdiqlang.",
-      };
+      throw new AppError("Telefon egaligini Telegram botidagi kontakt yuborish orqali tasdiqlang yoki administratorga murojaat qiling",403,undefined,"PHONE_OWNERSHIP_REQUIRED");
     }
 
-    await this.addVerifiedDevice(user._id.toString(), deviceId);
 
-    await subscriptionService.refreshExpiredSubscriptions();
+
+
 
     const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const sessionId = await this.issueSession(user);
+    const sessionId = await this.issueSession(user,deviceId);
 
     const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
@@ -188,43 +192,9 @@ export class AuthService {
     };
   }
 
-  async loginWithPhoneVerification(username: string, password: string, phone_number: string, deviceId?: string) {
-    const user = await authRepository.findByUsername(username);
-
-    if (!user || !user.isActive) {
-      throw new AppError("Invalid username, password or phone number", 401);
-    }
-
-    const passwordIsValid = await (user as any).comparePassword(password);
-    if (!passwordIsValid) {
-      throw new AppError("Invalid username, password or phone number", 401);
-    }
-
-    const stored = normalizePhone(user.phone_number);
-    const provided = normalizePhone(phone_number);
-    if (!stored || !provided || stored !== provided) {
-      throw new AppError("Telefon raqam noto'g'ri. Iltimos ro'yxatdan o'tgan raqamni kiriting.", 401);
-    }
-
-    // Phone verified → remember this device so it won't be asked again.
-    await this.addVerifiedDevice(user._id.toString(), deviceId);
-
-    await subscriptionService.refreshExpiredSubscriptions();
-
-    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
-    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
-    const tier = computeTier(user.role, isPayed, activeSub);
-
-    // New session invalidates the previous one (old device gets kicked).
-    const sessionId = await this.issueSession(user);
-
-    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
-
-    return {
-      token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
-      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
-    };
+  async loginWithPhoneVerification(username: string, password: string, _phone_number: string, deviceId?: string) {
+    // Compatibility alias: the exact same challenge policy applies here.
+    return this.login(username, password, deviceId);
   }
 
   // Completes the OTP path login() started above. Atomic claim on both the
@@ -245,7 +215,7 @@ export class AuthService {
 
     if (hashOtp(otpCode) !== challenge.otpHash) {
       const updated = await SessionChallengeModel.findOneAndUpdate(
-        { _id: challenge._id, consumed: false },
+        { _id: challenge._id, consumed: false, attempts:{$lt:OTP_MAX_ATTEMPTS}, expiresAt:{$gt:new Date()} },
         { $inc: { attempts: 1 } },
         { new: true },
       );
@@ -256,10 +226,12 @@ export class AuthService {
       throw new AppError(`Kod noto'g'ri. Qolgan urinishlar: ${attemptsLeft}`, 401);
     }
 
+    if (challenge.deviceId && challenge.deviceId !== deviceId) throw new AppError("Kod boshqa qurilma uchun yaratilgan",403);
+    return withOwnerTransaction(challenge.userId, async () => {
     const claimed = await SessionChallengeModel.findOneAndUpdate(
-      { _id: challenge._id, consumed: false },
+      { _id: challenge._id, consumed: false, attempts:{$lt:OTP_MAX_ATTEMPTS}, expiresAt:{$gt:new Date()} },
       { $set: { consumed: true } },
-      { new: true },
+      { new: true, session:currentSession() },
     );
     if (!claimed) {
       // Lost a race to a concurrent verify of the same (correct) code —
@@ -279,15 +251,15 @@ export class AuthService {
     // what makes the old device's next authenticated request fail with
     // SESSION_REPLACED (auth.middleware.ts) — no separate "kick" step
     // needed.
-    await this.addVerifiedDevice(user._id.toString(), deviceId ?? challenge.deviceId);
+    if (challenge.securityVersion !== Number(user.securityVersion ?? 0)) throw new AppError("Kod parol almashtirilishidan oldin yaratilgan",410);
 
-    await subscriptionService.refreshExpiredSubscriptions();
+
 
     const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const sessionId = await this.issueSession(user);
+    const sessionId = await this.issueSession(user,challenge.deviceId);
     const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
     alertService.reportSessionTakeover({ username: (user as any).username });
@@ -297,16 +269,12 @@ export class AuthService {
       refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
+    });
   }
 
   async logout(userId: string, sessionId?: string) {
-    const user = await authRepository.findById(userId);
-
-    // Only the currently-active session may end the account session. A stale
-    // (already kicked) device calling logout must not kill the live session.
-    if (user && shouldClearActiveSession(user, sessionId)) {
-      await authRepository.updateMe(userId, { activeSessionId: null });
-    }
+    if (!sessionId) return;
+    await UserModel.updateOne({_id:userId,activeSessionId:sessionId},{$set:{activeSessionId:createSessionId()}});
   }
 
   async getCurrentUser(userId: string) {
@@ -316,7 +284,7 @@ export class AuthService {
       throw new AppError("User not found", 404);
     }
 
-    await subscriptionService.refreshExpiredSubscriptions();
+
 
     const activeSub = await subscriptionService.getActiveSubscription(userId);
     const tier = computeTier(user.role, user.isPayed ?? false, activeSub);
@@ -348,7 +316,7 @@ export class AuthService {
       throw new AppError("Boshqa qurilmadan kirish tasdiqlangani sababli ushbu sessiya yakunlandi.", 401, undefined, "SESSION_REPLACED");
     }
 
-    await subscriptionService.refreshExpiredSubscriptions();
+
 
     const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
@@ -549,6 +517,7 @@ export class AuthService {
 
     const updatedUser: AuthUser = {
       userId: actor.userId,
+      securityVersion: actor.securityVersion??0,
       username: authUserUpdate.username ?? actor.username,
       phone_number: authUserUpdate.phone_number ?? actor.phone_number,
       role: actor.role,

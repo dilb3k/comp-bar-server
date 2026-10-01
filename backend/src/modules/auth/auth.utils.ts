@@ -9,7 +9,8 @@ export function signAccessToken(payload: AuthUser) {
     expiresIn: env.JWT_EXPIRES_IN as SignOptions["expiresIn"]
   };
 
-  return jwt.sign(payload, env.JWT_SECRET, options);
+  const {blockCode: _localPin, ...claims}=payload;
+  return jwt.sign(claims, env.JWT_SECRET, options);
 }
 
 export function verifyAccessToken(token: string) {

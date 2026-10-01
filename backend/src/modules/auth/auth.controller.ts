@@ -1,3 +1,4 @@
+import { replyToMutation } from "../idempotency/http-mutation";
 import type { Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
@@ -84,7 +85,7 @@ export const authController = {
 
   async updateAdmin(req: Request, res: Response) {
     const actor = requireAuth(req);
-    const updated = await authService.updateAdmin(actor, String(req.params.id), {
+    return replyToMutation(req,res,String(req.params.id),"admin.update",()=>authService.updateAdmin(actor, String(req.params.id), {
       username: req.body.username,
       phone_number: req.body.phone_number,
       password: req.body.password,
@@ -92,8 +93,7 @@ export const authController = {
       isPayed: req.body.isPayed,
       isActive: req.body.isActive,
       durationMonths: req.body.durationMonths,
-    });
-    return sendSuccess(res, updated);
+    }));
   },
 
   async deleteAdmin(req: Request, res: Response) {

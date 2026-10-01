@@ -4,6 +4,7 @@ export type SubscriptionTier = "tekin" | "bor" | "pro";
 
 export type AuthUser = {
   userId: string;
+  securityVersion?: number;
   username: string;
   phone_number?: string;
   role: UserRole;

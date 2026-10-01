@@ -70,6 +70,7 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    securityVersion: { type: Number, default: 0 },
     activeSessionId: {
       type: String,
       default: null,
@@ -141,5 +142,7 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
 };
 
 userSchema.index({ username: 1 }, { unique: true });
+
+userSchema.index({telegramId:1},{unique:true,partialFilterExpression:{telegramId:{$type:"string"}},name:"idx_unique_verified_telegram"});
 
 export const UserModel = models.User ?? model("User", userSchema);

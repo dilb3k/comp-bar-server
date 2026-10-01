@@ -9,6 +9,7 @@ import { Schema, model, models } from "mongoose";
 // session.
 export interface ISessionChallenge {
   userId: string;
+  securityVersion: number;
   otpHash: string; // sha256 of the 6-digit code — the code itself is never stored
   deviceId?: string | null;
   attempts: number;
@@ -20,6 +21,7 @@ export interface ISessionChallenge {
 const sessionChallengeSchema = new Schema<ISessionChallenge>(
   {
     userId: { type: String, required: true, index: true },
+    securityVersion: { type: Number, required: true },
     otpHash: { type: String, required: true },
     deviceId: { type: String, default: null },
     attempts: { type: Number, default: 0 },

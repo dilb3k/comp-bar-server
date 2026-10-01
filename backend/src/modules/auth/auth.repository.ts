@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { currentSession } from "../../lib/transaction";
 import { Types } from "mongoose";
 
 import { UserModel } from "./user.model";
@@ -20,17 +22,19 @@ export class AuthRepository {
     // pre-save hook) — used to load every active admin into memory and scan
     // them in JS for this, a full-collection load on every bot /start link
     // or phone-verification login at real admin-count scale.
-    return UserModel.findOne({ role: "admin", isActive: true, phoneDigits: digits });
+    const matches=await UserModel.find({role:"admin",isActive:true,phoneDigits:digits}).limit(2);
+    return matches.length===1?matches[0]:null;
   }
 
   async findByTelegramId(telegramId: string) {
     return UserModel.findOne({ telegramId, isActive: true });
   }
 
-  async linkTelegram(id: string, telegramId: string, telegramUsername?: string) {
+  async linkTelegram(id: string, telegramId: string, telegramUsername?: string, verifiedPhone?: string) {
     if (!Types.ObjectId.isValid(id)) return null;
-    return UserModel.findByIdAndUpdate(
-      id,
+    if (!verifiedPhone) return null;
+    return UserModel.findOneAndUpdate(
+      { _id:id, isActive:true, role:"admin", phoneDigits:normalizePhone(verifiedPhone), $or:[{telegramId:null},{telegramId}] },
       { telegramId, telegramUsername: telegramUsername ?? null },
       { new: true }
     );
@@ -47,7 +51,7 @@ export class AuthRepository {
       return null;
     }
 
-    return UserModel.findById(id);
+    return UserModel.findById(id).session(currentSession() ?? null);
   }
 
   async createUser(payload: {
@@ -80,17 +84,22 @@ export class AuthRepository {
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
-    const user = await UserModel.findById(id);
+    const user = await UserModel.findById(id).session(currentSession() ?? null);
     if (!user) return null;
 
     if (payload.username !== undefined) (user as any).username = payload.username.trim().toLowerCase();
     if (payload.phone_number !== undefined) user.phone_number = payload.phone_number.trim();
+    if (payload.password !== undefined || payload.isActive === false) {
+      user.activeSessionId = randomUUID();
+      user.securityVersion = Number(user.securityVersion ?? 0) + 1;
+      user.verifiedDeviceIds = [];
+    }
     if (payload.password !== undefined) user.password = payload.password;
     if (payload.isPayed !== undefined) user.isPayed = payload.isPayed;
     if (payload.isActive !== undefined) (user as any).isActive = payload.isActive;
     if (payload.businessDayStartHour !== undefined) (user as any).businessDayStartHour = payload.businessDayStartHour;
 
-    return user.save();
+    return user.save({session: currentSession()});
   }
 
   async updateMe(
@@ -99,7 +108,7 @@ export class AuthRepository {
   ) {
     if (!Types.ObjectId.isValid(id)) return null;
 
-    const user = await UserModel.findById(id);
+    const user = await UserModel.findById(id).session(currentSession() ?? null);
     if (!user) return null;
 
     if (payload.username !== undefined) {
@@ -124,7 +133,7 @@ export class AuthRepository {
       (user as any).activeSessionId = payload.activeSessionId;
     }
 
-    return user.save();
+    return user.save({session: currentSession()});
   }
 
   /**
@@ -178,7 +187,7 @@ export class AuthRepository {
   async touchLastActionAt(id: string) {
     if (!Types.ObjectId.isValid(id)) return;
     await UserModel.updateOne(
-      { _id: id },
+      { _id: id, $or: [{ lastActionAt: { $lt: new Date(Date.now()-5*60*1000) } }, { lastActionAt: null }] },
       { $set: { lastActionAt: new Date() } },
       { timestamps: false },
     );
