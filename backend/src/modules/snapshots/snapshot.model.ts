@@ -1,3 +1,4 @@
+import { serverVersionPlugin } from "../../lib/versioning";
 import { Schema, model, models } from "mongoose";
 
 import { DEFAULT_UNIT, PRODUCT_UNITS } from "../../utils/quantity";
@@ -135,6 +136,8 @@ dailySnapshotSchema.index(
   { ownerAdminId: 1, updatedAt: 1 },
   { name: "idx_owner_updatedat", background: true }
 );
+
+dailySnapshotSchema.plugin(serverVersionPlugin);
 
 export const DailySnapshotModel =
   models.DailySnapshot ?? model<IDailySnapshot>("DailySnapshot", dailySnapshotSchema);

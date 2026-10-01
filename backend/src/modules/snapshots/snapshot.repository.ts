@@ -1,3 +1,4 @@
+import { currentSession } from "../../lib/transaction";
 import { DailySnapshotModel } from "./snapshot.model";
 
 export type SnapshotPayload = {
@@ -35,14 +36,14 @@ export class SnapshotRepository {
     return DailySnapshotModel.findOne({
       ownerAdminId,
       date,
-    }).sort({ updatedAt: -1 });
+    }).sort({ updatedAt: -1 }).session(currentSession()??null);
   }
 
   async findRange(ownerAdminId: string, from: string, to: string) {
     return DailySnapshotModel.find({
       ownerAdminId,
       date: { $gte: from, $lte: to },
-    }).sort({ date: 1, updatedAt: 1 });
+    }).sort({ date: 1, updatedAt: 1 }).session(currentSession()??null);
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
