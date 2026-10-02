@@ -36,6 +36,13 @@ router.post(
 );
 
 router.post(
+  "/login/procurement",
+  authLimiter,
+  validateRequest({ body: loginSchema }),
+  asyncHandler(authController.loginAsProcurementAgent)
+);
+
+router.post(
   "/login/verify-phone",
   authLimiter,
   validateRequest({ body: loginWithPhoneSchema }),

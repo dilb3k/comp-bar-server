@@ -192,6 +192,38 @@ export class AuthService {
     };
   }
 
+  // Deliberately NOT a variant of login()/issueSession(): this must never
+  // read or touch activeSessionId, so the real device's session (and its
+  // already-issued token) keeps working completely untouched no matter how
+  // many procurement-scope logins happen afterward. Same credential check
+  // as login(), but the two paths otherwise don't interact at all.
+  async loginAsProcurementAgent(username: string, password: string) {
+    const user = await authRepository.findByUsername(username);
+
+    if (!user || !user.isActive) {
+      throw new AppError("Invalid username or password", 401);
+    }
+
+    const passwordIsValid = await (user as any).comparePassword(password);
+    if (!passwordIsValid) {
+      throw new AppError("Invalid username or password", 401);
+    }
+
+    const isPayed = user.role === "superAdmin" ? true : (user.isPayed ?? false);
+    const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
+    const tier = computeTier(user.role, isPayed, activeSub);
+
+    const authUser: AuthUser = {
+      ...this.buildAuthUser(user, isPayed, tier, activeSub, undefined),
+      scope: "procurement",
+    };
+
+    return {
+      token: signAccessToken(authUser, "12h"),
+      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null, scope: "procurement" },
+    };
+  }
+
   async loginWithPhoneVerification(username: string, password: string, _phone_number: string, deviceId?: string) {
     // Compatibility alias: the exact same challenge policy applies here.
     return this.login(username, password, deviceId);

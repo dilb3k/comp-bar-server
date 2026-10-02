@@ -4,6 +4,7 @@ import { AppError } from "../../utils/app-error";
 import { assertNotFutureDayKey, assertPaidRangeAllowed, compareDayKeys, getCurrentBusinessDate, getEffectiveHour, isPastBusinessDate } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
 import { InventoryEntryModel } from "../inventory/inventory.model";
+import { ProcurementModel } from "../procurements/procurement.model";
 import { DailySnapshotModel } from "./snapshot.model";
 import { buildSnapshotItem } from "./snapshot.logic";
 import { snapshotRepository } from "./snapshot.repository";
@@ -48,6 +49,17 @@ export class SnapshotService {
         buyPrice: entry.buyPrice ?? 0, sellPrice: entry.sellPrice ?? 0,
         lockedRevenue: entry.lockedRevenue ?? 0, lockedProfit: entry.lockedProfit ?? 0, lockedSold: entry.lockedSold ?? 0,
       }));
+      // Procurement docs live in their own collection (not InventoryEntry),
+      // so this is a direct sum rather than derived from `items` the way
+      // totalRevenue/totalProfit are — always a full sum for the day, never
+      // the `incremental` partial-productIds path above (a day's total
+      // Kirim cost doesn't change just because one product's inventory row
+      // was touched for an unrelated reason).
+      const procurementAgg = await ProcurementModel.aggregate([
+        { $match: { ownerAdminId: actor.userId, date } },
+        { $group: { _id: null, total: { $sum: "$totalCost" } } },
+      ]).session(session);
+      const totalProcurementCost = Math.round((procurementAgg[0]?.total ?? 0) * 100) / 100;
       const now = new Date();
       // Pipeline expressions use $literal for every user-supplied value (a name
       // beginning with '$' is text, never a field/expression).
@@ -65,6 +77,7 @@ export class SnapshotService {
           totalRevenue: { $round: [{ $sum: "$items.revenue" }, 2] },
           totalProfit: { $round: [{ $sum: "$items.profit" }, 2] },
           totalSoldItems: { $round: [{ $sum: "$items.sold" }, 3] },
+          totalProcurementCost: { $literal: totalProcurementCost },
         } },
       ], { session, upsert: true, new: true, timestamps: false }).lean();
     });

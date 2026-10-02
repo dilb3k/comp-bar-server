@@ -4,9 +4,9 @@ import crypto from "crypto";
 import { env } from "../../config/env";
 import type { AuthUser } from "./auth.types";
 
-export function signAccessToken(payload: AuthUser) {
+export function signAccessToken(payload: AuthUser, expiresInOverride?: string) {
   const options: SignOptions = {
-    expiresIn: env.JWT_EXPIRES_IN as SignOptions["expiresIn"]
+    expiresIn: (expiresInOverride ?? env.JWT_EXPIRES_IN) as SignOptions["expiresIn"]
   };
 
   const {blockCode: _localPin, ...claims}=payload;

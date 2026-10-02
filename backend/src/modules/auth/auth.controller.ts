@@ -33,6 +33,14 @@ export const authController = {
     return sendSuccess(res, result);
   },
 
+  async loginAsProcurementAgent(req: Request, res: Response) {
+    const result = await authService.loginAsProcurementAgent(
+      req.body.username,
+      req.body.password
+    );
+    return sendSuccess(res, result);
+  },
+
   async loginWithPhoneVerification(req: Request, res: Response) {
     const result = await authService.loginWithPhoneVerification(
       req.body.username,

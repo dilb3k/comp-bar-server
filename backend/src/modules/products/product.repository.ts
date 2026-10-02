@@ -175,6 +175,28 @@ export class ProductRepository {
     );
   }
 
+  // Procurement's variant of incrementQuantity: also records the latest
+  // market cost and bumps stockEpoch (see product.model.ts#stockEpoch) so a
+  // stale offline device's cached expectedBuyPrice/expectedStockEpoch is
+  // correctly rejected (RECONCILIATION_REQUIRED) instead of silently
+  // clobbering the procurement's fresh buyPrice/quantity on sync.
+  async incrementQuantityWithCost(
+    ownerAdminId: string,
+    id: string,
+    delta: number,
+    buyPrice: number,
+    stockEpoch: number,
+    session?: any
+  ) {
+    const options: Record<string, unknown> = { new: true };
+    if (session ?? currentSession()) options.session = session ?? currentSession();
+    return ProductModel.findOneAndUpdate(
+      { _id: id, ownerAdminId },
+      { $inc: { quantity: delta }, $set: { buyPrice, stockEpoch, updatedAt: new Date() } },
+      options
+    );
+  }
+
   async deleteById(ownerAdminId: string, id: string) {
     return ProductModel.findOneAndDelete({ _id: id, ownerAdminId }).session(currentSession() ?? null);
   }

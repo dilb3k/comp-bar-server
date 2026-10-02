@@ -18,6 +18,7 @@ import { inventoryRoutes } from "./modules/inventory/inventory.routes";
 import { inventoryPreviewRoutes } from "./modules/inventory/inventory-preview.routes";
 import { productRoutes } from "./modules/products/product.routes";
 import { productImageRoutes } from "./modules/products/product-image.routes";
+import { procurementRoutes } from "./modules/procurements/procurement.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
 import { botRoutes, clickWebhookRoutes } from "./modules/payments";
@@ -107,6 +108,7 @@ export function createApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/products", productImageRoutes);
   app.use("/api/products", authenticate(), productRoutes);
+  app.use("/api/procurements", authenticate(), procurementRoutes);
   app.use("/api/debtors", authenticate(), debtorRoutes);
   app.use("/api/inventory", authenticate(), inventoryRoutes);
   app.use("/api/inventory-preview", authenticate({ allowStale: true }), inventoryPreviewRoutes);

@@ -59,6 +59,7 @@ export interface IDailySnapshot {
   totalRevenue: number;
   totalProfit: number;
   totalSoldItems: number;
+  totalProcurementCost: number;
   items: Array<Record<string, unknown>>;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -98,6 +99,16 @@ const dailySnapshotSchema = new Schema<IDailySnapshot>(
     totalSoldItems: {
       type: Number,
       required: true,
+      min: 0
+    },
+    // Bozordan kirim qilingan tovarlar uchun shu kunlik umumiy xarid summasi
+    // (see procurement.service.ts). Computed in recompute() from Procurement
+    // documents, same as totalRevenue/totalProfit are computed from
+    // InventoryEntry rows — never written directly by any other code path.
+    totalProcurementCost: {
+      type: Number,
+      required: true,
+      default: 0,
       min: 0
     },
     items: {

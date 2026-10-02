@@ -24,6 +24,26 @@ function extractBearerToken(req: Request) {
   return header.slice(7).trim();
 }
 
+// Single choke point for what a procurement-scope token can reach. New
+// routes/modules are blocked by default — a module must be added here
+// explicitly, never the other way round — so a route added later under an
+// existing authenticate() mount doesn't accidentally become reachable by a
+// scoped token just because its base path wasn't thought about yet.
+// req.baseUrl (not req.path) is used because authenticate() is mounted once
+// per module at the app.use(...) level (see app.ts) — baseUrl is the exact
+// mount prefix ("/api/products", "/api/procurements", ...) regardless of
+// which sub-route matched.
+const PROCUREMENT_SCOPE_ALLOWLIST: Array<{ baseUrl: string; methods: string[] }> = [
+  { baseUrl: "/api/products", methods: ["GET", "POST"] },
+  { baseUrl: "/api/procurements", methods: ["GET", "POST"] },
+];
+
+function isAllowedForProcurementScope(method: string, baseUrl: string): boolean {
+  return PROCUREMENT_SCOPE_ALLOWLIST.some(
+    (entry) => entry.baseUrl === baseUrl && entry.methods.includes(method)
+  );
+}
+
 export function authenticate(options?: { allowStale?: boolean }) {
   const allowStale = options?.allowStale ?? false;
   return async function authenticateMiddleware(req: Request, _res: Response, next: NextFunction) {
@@ -50,11 +70,20 @@ export function authenticate(options?: { allowStale?: boolean }) {
       // current session. Otherwise the session was replaced by another login.
       // allowStale is used by logout so a kicked device can still log itself out
       // without destroying the live session.
-      const activeId = (user as any).activeSessionId;
-      const tokenSession = payload.sessionId;
-      const validSession = activeId ? tokenSession === activeId : !tokenSession;
-      if (!allowStale && !validSession) {
-        return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED"));
+      //
+      // Procurement-scope tokens are deliberately exempt: they're issued
+      // alongside the real session (never via issueSession(), never writing
+      // activeSessionId) specifically so the real device's session is never
+      // disturbed. Enforcing this check against them would do the opposite
+      // of what they're for — evict them the moment the real device's own
+      // session differs, which it always will.
+      if (payload.scope !== "procurement") {
+        const activeId = (user as any).activeSessionId;
+        const tokenSession = payload.sessionId;
+        const validSession = activeId ? tokenSession === activeId : !tokenSession;
+        if (!allowStale && !validSession) {
+          return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED"));
+        }
       }
 
     // Never blocks the request and never fails it — this is a best-effort
@@ -116,7 +145,13 @@ export function authenticate(options?: { allowStale?: boolean }) {
       businessDayStartHour: activeHour,
       pendingBusinessDayStartHour: pendingHour,
       businessDayEffectiveFrom: effectiveFrom,
+      scope: payload.scope,
     };
+
+    if (req.auth.scope === "procurement" && !isAllowedForProcurementScope(req.method, req.baseUrl)) {
+      return next(new AppError("Forbidden", 403));
+    }
+
     return next();
   } catch (error) {
     if (error instanceof AppError) {
