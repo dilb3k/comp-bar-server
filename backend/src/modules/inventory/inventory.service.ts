@@ -606,7 +606,16 @@ export class InventoryService {
             session,
           );
 
-          if (historical && !existing) throw new AppError("Old-day stock baseline needs reconciliation", 409, undefined, "RECONCILIATION_REQUIRED");
+          // No blanket refusal when a historical day never got its own entry
+          // (e.g. the whole day had zero activity until this one queued,
+          // offline sale finally arrived) — the fallback below (startQty/
+          // currentQty = live productQty) and the later-entries adjustment
+          // further down already make this safe: a late sale is applied by
+          // shifting every later day's start/current back by the same
+          // amount, and that block's own existence check (`invalid`, below)
+          // still refuses outright if any later day can't absorb the shift
+          // without going negative — which is the only way this could
+          // actually conflict with something.
           const unit = normalizeUnit((product as any).unit);
           const quantity = roundQty(line.quantity);
           assertQuantityFitsUnit(quantity, unit, (product as any).name);

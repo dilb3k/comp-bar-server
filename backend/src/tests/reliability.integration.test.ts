@@ -190,14 +190,35 @@ test('late offline sale updates historical and current balances without moving r
   assert.equal(yesterdayState.totalRevenue, 35); assert.equal(yesterdayState.totalProfit, 15);
 });
 
-test('late operation without a trustworthy baseline remains unacknowledged and retryable', async () => {
+test('a historical day with no baseline at all still applies, shifting every later day back by the same amount', async () => {
   const owner = await fixture();
+  const operation = {kind: 'sale' as const, id: randomUUID(), deviceId: 'offline', date: '2020-01-01', occurredAt: '2020-01-01T10:00:00.000Z', lines: [{productId: 'p0', quantity: 2, lineRevenue: 35,expectedBuyPrice:10,expectedUnit:'dona' as const,expectedStockEpoch:0}]};
+  const result = await syncService.sync(owner, { protocolVersion: 2, operations: [operation] });
+  assert.equal(result.rejected.length, 0);
+  assert.equal(result.acknowledged[0].localId, operation.id);
+  // The sale's own revenue/profit land on 2020-01-01, exactly like the
+  // already-synced-baseline case above — today only absorbs the quantity
+  // shift, not the sale itself.
+  assert.deepEqual(await state(owner), {product: 98, inventory: 98, revenue: 0, profit: 0});
+  const backdated: any = await DailySnapshotModel.findOne({ownerAdminId: owner.userId, date: '2020-01-01'});
+  assert.equal(backdated.totalRevenue, 35); assert.equal(backdated.totalProfit, 15);
+  const historicalEntry: any = await InventoryEntryModel.findOne({ownerAdminId: owner.userId, productId: 'p0', date: '2020-01-01'});
+  assert.equal(historicalEntry.startQuantity, 98); assert.equal(historicalEntry.currentQuantity, 98);
+});
+test('a historical sale that would drive an intermediate day negative is still rejected for reconciliation', async () => {
+  const owner = await fixture();
+  // By mid-2020 stock had genuinely dropped to 1 (recorded), then a later
+  // restock brought today's live total back up to 100 — the live total
+  // alone can't tell these two facts apart, so the historical trail itself
+  // (the intermediate day's own recorded entry) is what must stay honest.
+  await InventoryEntryModel.create({ownerAdminId: owner.userId, localId: '2020-06-15-p0', productId: 'p0', productName: 'Product 0', deviceId: 'test', date: '2020-06-15', startQuantity: 1, currentQuantity: 1, buyPrice: 10, sellPrice: 20});
   const operation = {kind: 'sale' as const, id: randomUUID(), deviceId: 'offline', date: '2020-01-01', occurredAt: '2020-01-01T10:00:00.000Z', lines: [{productId: 'p0', quantity: 2, lineRevenue: 35,expectedBuyPrice:10,expectedUnit:'dona' as const,expectedStockEpoch:0}]};
   const result = await syncService.sync(owner, { protocolVersion: 2, operations: [operation] });
   assert.equal(result.acknowledged.length, 0);
   assert.equal(result.rejected[0].reason, 'RECONCILIATION_REQUIRED');
   assert.equal(await IdempotencyKeyModel.countDocuments({ownerAdminId: owner.userId, key: operation.id}), 0);
-  assert.equal((await state(owner)).product, 100);
+  assert.deepEqual(await state(owner), {product: 100, inventory: 100, revenue: 0, profit: 0});
+  assert.equal(await InventoryEntryModel.countDocuments({ownerAdminId: owner.userId, date: '2020-01-01'}), 0);
 });
 
 test('conditional stock adjustment rejects stale clients; duplicate operation replays once', async () => {
