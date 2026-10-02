@@ -14,6 +14,7 @@ function getModels(){return [
  require('../backend/dist/modules/subscriptions/subscription-grant.model').SubscriptionGrantModel,
  require('../backend/dist/modules/auth/user.model').UserModel,
  require('../backend/dist/modules/debtors/debtor.model').DebtorModel,
+ require('../backend/dist/modules/procurements/procurement.model').ProcurementModel,
  require('../backend/dist/lib/transaction').OwnerWriteVersion,
 ]);}
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -28,7 +29,15 @@ async function inspect(db,models=getModels()){
   for(const [key,options] of model.schema.indexes()){
    if(options.unique){
     const match=options.partialFilterExpression??(options.sparse?Object.fromEntries(Object.keys(key).map(k=>[k,{$exists:true,$ne:null}])):{});
-    const duplicates=await collection.aggregate([{$match:match},{$group:{_id:Object.fromEntries(Object.keys(key).map(k=>[k,`$${k}`])),count:{$sum:1}}},{$match:{count:{$gt:1}}},{$count:'groups'}],{allowDiskUse:true}).toArray();
+    const prefix=[{$match:match}];
+    // Unique multikey indexes compare individual barcode values across
+    // documents, not whole arrays. Deduplicate repeated values in one row.
+    if('barcodes' in key) prefix.push(
+     {$unwind:'$barcodes'},
+     {$group:{_id:{document:'$_id',...Object.fromEntries(Object.keys(key).map(k=>[k,`$${k}`]))}}},
+     {$replaceWith:{...Object.fromEntries(Object.keys(key).map(k=>[k,`$_id.${k}`]))}},
+    );
+    const duplicates=await collection.aggregate([...prefix,{$group:{_id:Object.fromEntries(Object.keys(key).map(k=>[k,`$${k}`])),count:{$sum:1}}},{$match:{count:{$gt:1}}},{$count:'groups'}],{allowDiskUse:true}).toArray();
     if(duplicates.length)result.blocking.push({collection:collection.collectionName,key,duplicateGroups:duplicates[0].groups});
    }
    const equivalent=actual.find(i=>equal(i.key,key)&&!!i.unique===!!options.unique&&!!i.sparse===!!options.sparse&&equal(i.partialFilterExpression,options.partialFilterExpression));

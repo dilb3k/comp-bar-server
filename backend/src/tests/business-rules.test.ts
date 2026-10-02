@@ -449,17 +449,17 @@ run("maskPhone hides middle digits, keeps head and tail", () => {
   assert.equal(maskPhone("12"), "+998 ••• ••• •• ••");
 });
 
-run("login verification decision requires active session AND phone", () => {
+run("active-session verification fails closed even on a legacy account without a phone", () => {
   assert.equal(phoneVerificationRequired({ activeSessionId: null, phone_number: "+998901234567" }), false);
-  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "" }), false);
-  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "12" }), false);
+  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "" }), true);
+  assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "12" }), true);
   assert.equal(phoneVerificationRequired({ activeSessionId: "s1", phone_number: "+998901234567" }), true);
   assert.equal(maskPhone("998901234567").startsWith("+998"), true);
 });
 
-run("trusted device skips phone verification even when another session is active", () => {
+run("a remembered device cannot waive OTP while another session is active", () => {
   const user = { activeSessionId: "s1", phone_number: "+998901234567", verifiedDeviceIds: ["dev-b"] };
-  assert.equal(phoneVerificationRequired(user, "dev-b"), false);
+  assert.equal(phoneVerificationRequired(user, "dev-b"), true);
   assert.equal(phoneVerificationRequired(user, "dev-x"), true);
   assert.equal(phoneVerificationRequired(user), true);
   assert.equal(phoneVerificationRequired({ ...user, verifiedDeviceIds: [] }, "dev-b"), true);

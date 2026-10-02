@@ -8,10 +8,11 @@ import {SubscriptionModel} from '../modules/subscriptions/subscription.model';
 import {SubscriptionGrantModel} from '../modules/subscriptions/subscription-grant.model';
 import {PaymentModel} from '../modules/payments/payment.model';
 import {UserModel} from '../modules/auth/user.model';
+import {ProcurementModel} from '../modules/procurements/procurement.model';
 /** Fail closed before accepting traffic; migrations are a maintenance task. */
 export async function verifyDatabaseReadiness() {
   const db=mongoose.connection.db!;
-  const models=[ProductModel,InventoryEntryModel,DailySnapshotModel,ProductTombstoneModel,IdempotencyKeyModel,SubscriptionModel,SubscriptionGrantModel,PaymentModel,UserModel];
+  const models=[ProductModel,InventoryEntryModel,DailySnapshotModel,ProductTombstoneModel,IdempotencyKeyModel,SubscriptionModel,SubscriptionGrantModel,PaymentModel,UserModel,ProcurementModel];
   const failures:string[]=[];
   for(const model of models) {
     const collection=model.collection.name;

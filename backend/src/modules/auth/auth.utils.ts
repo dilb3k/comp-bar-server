@@ -62,14 +62,9 @@ export interface PhoneVerificationContext {
   verifiedDeviceIds?: string[];
 }
 
-export function phoneVerificationRequired(user: PhoneVerificationContext, deviceId?: string | null): boolean {
-  if (!user.activeSessionId || !user.phone_number || normalizePhone(user.phone_number).length < 6) {
-    return false;
-  }
-  if (deviceId && (user.verifiedDeviceIds ?? []).includes(deviceId)) {
-    return false;
-  }
-  return true;
+export function phoneVerificationRequired(user: PhoneVerificationContext, _deviceId?: string | null): boolean {
+  // A device ID is client supplied; it must not waive a real session takeover.
+  return !!user.activeSessionId;
 }
 
 export function shouldClearActiveSession(user: { activeSessionId?: string | null }, sessionId?: string | null): boolean {

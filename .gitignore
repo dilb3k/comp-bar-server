@@ -17,3 +17,26 @@ admin-backup*.json
 *.backup
 
 .claude/settings.local.json
+
+# Local credentials and private key material
+credentials*.json
+service-account*.json
+*backup*.json
+*.pem
+*.key
+*.p12
+*.p8
+*.jks
+*.keystore
+*.mobileprovision
+
+# Generated audit and test reports
+*.tsbuildinfo
+/audit/
+/test-artifacts/
+test-results/
+playwright-report/
+
+# Generated load-test data (includes synthetic login credentials)
+/tests/load-harness/fixtures.json
+/tests/load-harness/connections.json

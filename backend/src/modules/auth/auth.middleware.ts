@@ -34,11 +34,16 @@ function extractBearerToken(req: Request) {
 // mount prefix ("/api/products", "/api/procurements", ...) regardless of
 // which sub-route matched.
 const PROCUREMENT_SCOPE_ALLOWLIST: Array<{ baseUrl: string; methods: string[] }> = [
-  { baseUrl: "/api/products", methods: ["GET", "POST"] },
+  { baseUrl: "/api/products", methods: ["GET"] },
   { baseUrl: "/api/procurements", methods: ["GET", "POST"] },
 ];
 
-function isAllowedForProcurementScope(method: string, baseUrl: string): boolean {
+function isAllowedForProcurementScope(method: string, baseUrl: string, path: string): boolean {
+  if (baseUrl === "/api/auth") {
+    return (method === "GET" && path === "/me") || (method === "POST" && path === "/logout");
+  }
+  // All catalog creation and stock changes use the audited procurement batch.
+  // A direct product create could otherwise bypass procurement cost accounting.
   return PROCUREMENT_SCOPE_ALLOWLIST.some(
     (entry) => entry.baseUrl === baseUrl && entry.methods.includes(method)
   );
@@ -148,7 +153,7 @@ export function authenticate(options?: { allowStale?: boolean }) {
       scope: payload.scope,
     };
 
-    if (req.auth.scope === "procurement" && !isAllowedForProcurementScope(req.method, req.baseUrl)) {
+    if (req.auth.scope === "procurement" && !isAllowedForProcurementScope(req.method, req.baseUrl, req.path ?? "/")) {
       return next(new AppError("Forbidden", 403));
     }
 

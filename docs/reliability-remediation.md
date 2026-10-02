@@ -1,3 +1,11 @@
+## 2026-10-02 yakuniy lokal verification yangilanishi
+
+Olti repo Prompt 19 auditidan o‘tdi. Backend 34 unit + 65 integration, Web 41, Desktop 49, Mobile 46, Bot 5 test yashil; barcha typecheck va tegishli build/exportlar o‘tdi. Procurement batch/UI/limited role, manual mutation retry ID, migration barcode preflight/readiness va Desktop auth persistence ishlari tugatildi. Current tracking secret scan: 0 candidate. Npm audit besh repoda 0, Mobile’da forge advisory zanjiri 5 high: narrow backport va regressions bilan MITIGATED, upstream patch release hali kerak. F36 pending listing tekshiruvi `auth-payments.integration.test.ts`dagi provisional receipt testida mavjud va yashil.
+
+To‘liq joriy hisobot va release shartlari: [PRODUCTION_READINESS_2026-10-02.md](../../audit/PRODUCTION_READINESS_2026-10-02.md). Quyidagi 2026-10-01 bo‘limlari tarixiy snapshot; undagi test sonlari va ochiq manual-retry/migration ishlari joriy holatni aks ettirmaydi. Production deploy, credential rotation yoki production DB migration bajarilmadi. Git push/commit yo‘q.
+
+---
+
 # Reliability remediation — status report
 
 Updated: 2026-10-01, by Claude continuing Codex's work per `CLAUDE_CODE_HANDOFF.md`. The

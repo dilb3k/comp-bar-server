@@ -31,7 +31,7 @@ Prod build:
 ```env
 PORT=4000
 NODE_ENV=development
-MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net/bar
+MONGODB_URL=mongodb+srv://<username>:<password>@cluster.mongodb.net/bar
 CLIENT_URL=http://localhost:8081,http://10.0.2.2:8081
 BUSINESS_DAY_START_HOUR=0
 ```

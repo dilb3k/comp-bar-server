@@ -62,6 +62,25 @@ test('legacy phone endpoint obeys OTP policy; failed OTP delivery cannot downgra
   await assert.rejects(authService.loginWithPhoneVerification(u.username,'test-password-123',u.phone_number,'new-device'),(e:any)=>e.code==='OTP_DELIVERY_FAILED');
   assert.equal((await UserModel.findById(u._id))!.activeSessionId,u.activeSessionId);
 });
+test('an active session cannot bypass verification just because the legacy account has no phone',async()=>{
+  const u=await user({phone_number:'',telegramId:null});
+  await assert.rejects(authService.login(u.username,'test-password-123','new-device'),(e:any)=>e.code==='PHONE_OWNERSHIP_REQUIRED');
+  assert.equal((await UserModel.findById(u._id))!.activeSessionId,u.activeSessionId);
+});
+test('a remembered device ID cannot bypass an active session takeover challenge',async()=>{
+  const u=await user({verifiedDeviceIds:['remembered-device'],telegramId:null});
+  await assert.rejects(authService.login(u.username,'test-password-123','remembered-device'),(e:any)=>e.code==='PHONE_OWNERSHIP_REQUIRED');
+  await assert.rejects(authService.loginWithPhoneVerification(u.username,'test-password-123',u.phone_number,'remembered-device'),(e:any)=>e.code==='PHONE_OWNERSHIP_REQUIRED');
+  assert.equal((await UserModel.findById(u._id))!.activeSessionId,u.activeSessionId);
+});
+test('concurrent initial logins cannot silently replace the first established session',async()=>{
+  const u=await user({activeSessionId:null,telegramId:null});
+  const outcomes=await Promise.allSettled(Array.from({length:8},(_,i)=>authService.login(u.username,'test-password-123',`race-${i}`)));
+  const successes=outcomes.filter((r):r is PromiseFulfilledResult<any>=>r.status==='fulfilled');
+  assert.equal(successes.length,1);
+  const payload=JSON.parse(Buffer.from(successes[0].value.token.split('.')[1],'base64url').toString());
+  assert.equal((await UserModel.findById(u._id))!.activeSessionId,payload.sessionId);
+});
 test('password reset invalidates access, refresh, trusted devices and old OTP challenges',async()=>{
   const u=await user({verifiedDeviceIds:['old-device']});const token=signRefreshToken({userId:u._id.toString(),sessionId:u.activeSessionId!});
   const c=await SessionChallengeModel.create({userId:u._id.toString(),securityVersion:0,deviceId:'old-device',otpHash:hashOtp('123456'),expiresAt:new Date(Date.now()+60000)});

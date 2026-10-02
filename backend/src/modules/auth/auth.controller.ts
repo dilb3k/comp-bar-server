@@ -69,7 +69,7 @@ export const authController = {
   async me(req: Request, res: Response) {
     const actor = requireAuth(req);
     const user = await authService.getCurrentUser(actor.userId);
-    return sendSuccess(res, user);
+    return sendSuccess(res, actor.scope === "procurement" ? { ...user, scope: "procurement", capabilityRole: "PROCUREMENT_AGENT", blockCode: null } : user);
   },
 
   async listAdmins(req: Request, res: Response) {

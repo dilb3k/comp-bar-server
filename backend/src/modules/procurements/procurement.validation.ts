@@ -3,6 +3,7 @@ import { PRODUCT_UNITS, QTY_DECIMALS, roundQty } from "../../utils/quantity";
 
 const quantitySchema = z
   .number()
+  .finite()
   .positive("quantity must be > 0")
   .refine(
     (value) => Math.abs(value * 10 ** QTY_DECIMALS - Math.round(value * 10 ** QTY_DECIMALS)) < 1e-6,
@@ -20,20 +21,22 @@ const procurementItemSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   unit: z.enum(PRODUCT_UNITS).optional(),
   quantity: quantitySchema,
-  buyPrice: z.number().min(0, "buyPrice must be >= 0"),
+  buyPrice: z.number().finite().min(0, "buyPrice must be >= 0"),
   // Only meaningful when creating a new product; ignored when restocking an
   // existing one. Defaults to buyPrice (zero markup placeholder) in the
   // service so the admin can set a real sell price later on the Products
   // page — a Bozorchi only ever knows what they paid, not what it resells for.
-  sellPrice: z.number().min(0).optional(),
+  sellPrice: z.number().finite().min(0).optional(),
   deviceId: z.string().trim().min(1).optional(),
 });
 
 export const submitProcurementSchema = z.object({
-  items: z.array(procurementItemSchema).min(1, "At least one item is required"),
+  items: z.array(procurementItemSchema).min(1, "At least one item is required").max(500),
 });
 
-export const listProcurementsQuerySchema = z.object({
-  from: z.string().trim().optional(),
-  to: z.string().trim().optional(),
+const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 });
+export const listProcurementsQuerySchema = z.object({ from: date.optional(), to: date.optional() })
+  .refine(value => !value.from || !value.to || value.from <= value.to, "from must be <= to");

@@ -109,6 +109,11 @@ const userSchema = new Schema(
         ret.id = ret._id.toString();
         ret._id = ret.id;
         delete ret.password;
+        // Trusted-device IDs are credentials for the session-conflict gate.
+        // Exposing them to a procurement token would allow scope escalation.
+        delete ret.verifiedDeviceIds;
+        delete ret.activeSessionId;
+        delete ret.securityVersion;
         return ret;
       },
     },

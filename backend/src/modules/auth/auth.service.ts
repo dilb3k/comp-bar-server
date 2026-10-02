@@ -38,6 +38,7 @@ export class AuthService {
     const sessionId = createSessionId();
     const updated = await UserModel.findOneAndUpdate({
       _id:user._id, isActive:true, password:user.password,
+      activeSessionId: user.activeSessionId ?? null,
       $or:[{securityVersion:Number(user.securityVersion??0)}, ...(Number(user.securityVersion??0)===0?[{securityVersion:{$exists:false}}]:[])],
     }, { $set:{activeSessionId:sessionId}, ...(deviceId?{$addToSet:{verifiedDeviceIds:deviceId}}:{}) }, {session:currentSession(),new:true});
     if(!updated) throw new AppError("Hisob xavfsizlik sozlamalari o‘zgardi; qayta kiring",401);
@@ -133,17 +134,15 @@ export class AuthService {
       throw new AppError("Invalid username or password", 401);
     }
 
-    // Account already has an active session on another device. Require
-    // out-of-band confirmation before taking over it — unless this device
-    // already verified once before (trusted device).
+    // Any active session takeover requires out-of-band confirmation;
+    // a remembered, client-supplied device ID cannot waive the challenge.
     if (phoneVerificationRequired(user, deviceId)) {
       const telegramId = (user as any).telegramId as string | null | undefined;
 
       // Real OTP path — only possible for a user who has linked Telegram
       // (via hisvex-bot's /start), since a bot can only DM someone who has
       // started a conversation with it and no SMS gateway exists in this
-      // codebase. Falls back to the older "re-type your own phone number"
-      // check below for everyone else, unchanged from before this feature.
+      // codebase. Missing linkage fails closed, without phone-retype bypass.
       if (telegramId) {
         const code = generateOtpCode();
         const challenge = await SessionChallengeModel.create({
@@ -165,7 +164,7 @@ export class AuthService {
         }
         // Telegram send failed (bot blocked, transient API error, ...) —
         // don't strand the user with a challenge id that can never be
-        // fulfilled; clean it up and fall through to the phone-retype path.
+        // fulfilled; clean it up and require a later OTP delivery retry.
         await SessionChallengeModel.deleteOne({ _id: challenge._id });
         throw new AppError("Telegram kodi yetkazilmadi. Keyinroq qayta urinib ko‘ring",503,undefined,"OTP_DELIVERY_FAILED");
       }
@@ -220,7 +219,7 @@ export class AuthService {
 
     return {
       token: signAccessToken(authUser, "12h"),
-      user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null, scope: "procurement" },
+      user: { ...user.toJSON(), blockCode: null, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null, scope: "procurement", capabilityRole: "PROCUREMENT_AGENT" },
     };
   }
 

@@ -19,5 +19,13 @@ test('migration dry-run is read-only; TTL removal and null cleanup are explicit,
  await db.collection('idempotency_keys').dropIndex('ownerAdminId_1_key_1');await db.collection('idempotency_keys').insertOne({ownerAdminId:'A',key:'same'});
  const blocked=await inspect(db,[model]);assert.equal(blocked.blocking[0].duplicateGroups,1);await assert.rejects(apply(db,blocked),/blocked/);
  assert.equal(await db.collection('idempotency_keys').countDocuments(),2);
+ const productSchema=new mongoose.Schema({ownerAdminId:String,barcodes:[String]},{collection:'products'});
+ productSchema.index({ownerAdminId:1,barcodes:1},{unique:true,partialFilterExpression:{barcodes:{$type:'string'}}});
+ const product=mongoose.model('MigrationBarcodeFixture',productSchema);
+ await db.collection('products').insertMany([{ownerAdminId:'A',barcodes:['one','one','two']},{ownerAdminId:'B',barcodes:['one']}]);
+ assert.equal((await inspect(db,[product])).blocking.length,0,'same-document duplicates and other owners are valid');
+ await db.collection('products').insertOne({ownerAdminId:'A',barcodes:['two','three']});
+ const overlapping=await inspect(db,[product]);assert.equal(overlapping.blocking[0].duplicateGroups,1);
+ await assert.rejects(apply(db,overlapping),/blocked/);
  await db.dropDatabase();
 });

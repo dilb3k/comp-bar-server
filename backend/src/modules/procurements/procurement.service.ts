@@ -4,10 +4,11 @@ import { env } from "../../config/env";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
 import { getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
-import { normalizeQuantity, normalizeUnit, roundQty } from "../../utils/quantity";
+import { normalizeQuantity, normalizeUnit, roundQty, roundMoney } from "../../utils/quantity";
 import type { AuthUser } from "../auth/auth.types";
 import { auditService } from "../audit/audit.service";
 import { inventoryRepository } from "../inventory/inventory.repository";
+import { InventoryEntryModel } from "../inventory/inventory.model";
 import { productRepository } from "../products/product.repository";
 import { productService } from "../products/product.service";
 import { snapshotService } from "../snapshots/snapshot.service";
@@ -55,7 +56,7 @@ export class ProcurementService {
       }
       totalCost += recordedItems[recordedItems.length - 1].lineCost;
     }
-    totalCost = roundQty(totalCost);
+    totalCost = roundMoney(totalCost);
 
     const procurement = await ProcurementModel.create(
       [
@@ -99,6 +100,7 @@ export class ProcurementService {
     }
 
     const unit = normalizeUnit((product as any).unit);
+    if (unit === "dona" && !Number.isInteger(item.quantity)) throw new AppError("Dona miqdori butun son bo'lishi kerak", 422);
     const delta = normalizeQuantity(item.quantity, unit);
     if (delta <= 0) {
       throw new AppError(
@@ -107,6 +109,25 @@ export class ProcurementService {
       );
     }
     const buyPrice = Number(item.buyPrice) || 0;
+
+    const beforeEntry = await inventoryRepository.findByProductAndDate(actor.userId, (product as any).localId, today, currentSession());
+    if (beforeEntry && roundQty(beforeEntry.currentQuantity) !== roundQty((product as any).quantity)) {
+      throw new AppError("Stock projections disagree; reconcile before procurement", 409, undefined, "RECONCILIATION_REQUIRED");
+    }
+
+    // Freeze prior sales at their original cost before the new purchase cost
+    // takes effect. Changing only Product.buyPrice leaves the cashier on the
+    // old daily cost; changing only Inventory.buyPrice revalues past profit.
+    if (beforeEntry) {
+      const sold = roundQty(Math.max(beforeEntry.startQuantity - beforeEntry.currentQuantity, 0));
+      await InventoryEntryModel.updateOne({ _id: beforeEntry._id, ownerAdminId: actor.userId }, { $set: {
+        startQuantity: beforeEntry.currentQuantity,
+        buyPrice,
+        lockedSold: roundQty((beforeEntry.lockedSold ?? 0) + sold),
+        lockedRevenue: roundMoney((beforeEntry.lockedRevenue ?? 0) + sold * (beforeEntry.sellPrice ?? 0)),
+        lockedProfit: roundMoney((beforeEntry.lockedProfit ?? 0) + sold * ((beforeEntry.sellPrice ?? 0) - (beforeEntry.buyPrice ?? 0))),
+      } }, { session: currentSession() });
+    }
 
     const updated = await productRepository.incrementQuantityWithCost(
       actor.userId,
@@ -168,7 +189,7 @@ export class ProcurementService {
       unit,
       quantity: delta,
       buyPrice,
-      lineCost: roundQty(delta * buyPrice),
+      lineCost: roundMoney(delta * buyPrice),
       isNewProduct: false,
     };
   }
@@ -179,6 +200,7 @@ export class ProcurementService {
     today: string,
   ): Promise<IProcurementItem> {
     const unit = normalizeUnit(item.unit);
+    if (unit === "dona" && !Number.isInteger(item.quantity)) throw new AppError("Dona miqdori butun son bo'lishi kerak", 422);
     const quantity = normalizeQuantity(item.quantity, unit);
     if (quantity <= 0) {
       throw new AppError(
@@ -208,7 +230,7 @@ export class ProcurementService {
       unit,
       quantity,
       buyPrice,
-      lineCost: roundQty(quantity * buyPrice),
+      lineCost: roundMoney(quantity * buyPrice),
       isNewProduct: true,
     };
   }

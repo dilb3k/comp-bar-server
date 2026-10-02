@@ -1,0 +1,27 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {start,fixture,sale,request,models,mongoose,today}=require('./http-test-support.cjs');
+const {signAccessToken}=require('../backend/dist/modules/auth/auth.utils');
+const {ProcurementModel}=require('../backend/dist/modules/procurements/procurement.model');
+test('two API instances enforce procurement capability, stable receipt replay and shared sale accounting',async t=>{
+ const workers=await start(t);await ProcurementModel.init();
+ const owner=await fixture(2026);
+ const u=await models.users.findById(owner.owner);
+ const limited={...owner,token:signAccessToken({userId:owner.owner,username:u.username,role:'admin',isPayed:false,tier:'tekin',securityVersion:0,scope:'procurement'})};
+ const me=await request(workers[0],limited,'/auth/me');assert.equal(me.status,200);assert.equal(me.body.data.scope,'procurement');
+ assert.equal(me.body.data.verifiedDeviceIds,undefined);assert.equal(me.body.data.activeSessionId,undefined);
+ for(const route of ['/stats','/inventory','/debtors','/snapshots/daily'])assert.equal((await request(workers[0],limited,route)).status,403);
+ assert.equal((await request(workers[0],limited,'/products/p0/image',{}, {method:'POST'})).status,403);
+ assert.equal((await request(workers[0],limited,'/products',{name:'Bypass',quantity:20,buyPrice:4,sellPrice:5},{headers:{'Idempotency-Key':'forbidden-create'}})).status,403);
+ const body={items:[{productId:'p0',name:'Product 0',quantity:4,buyPrice:12},{name:'New product',unit:'kg',quantity:0.333,buyPrice:12.34}]};
+ const replies=await Promise.all(Array.from({length:10},(_,i)=>request(workers[i%2],limited,'/procurements',body,{headers:{'Idempotency-Key':'http-batch'}})));
+ assert.ok(replies.every(res=>res.status===201));assert.ok(replies.every(res=>res.body.data.procurement.localId===replies[0].body.data.procurement.localId));
+ assert.equal(await ProcurementModel.countDocuments({ownerAdminId:owner.owner}),1);
+ const stored=await models.products.findOne({ownerAdminId:owner.owner,localId:'p0'});
+ const operation=sale('sale-after-procurement');operation.lines[0].expectedBuyPrice=12;operation.lines[0].expectedStockEpoch=stored.stockEpoch;
+ assert.equal((await request(workers[1],owner,'/inventory/operations',operation)).status,200);
+ const p=await models.products.findOne({ownerAdminId:owner.owner,localId:'p0'}),entry=await models.inventory.findOne({ownerAdminId:owner.owner,productId:'p0',date:today});
+ const report=await models.snapshots.findOne({ownerAdminId:owner.owner,date:today});
+ assert.equal(p.quantity,103);assert.equal(entry.currentQuantity,103);assert.equal(report.totalProfit,8);assert.equal(report.totalProcurementCost,52.11);
+ const activeSession=u.activeSessionId;assert.equal((await request(workers[0],limited,'/auth/logout',{}, {method:'POST'})).status,200);
+ assert.equal((await models.users.findById(owner.owner)).activeSessionId,activeSession);
+});
