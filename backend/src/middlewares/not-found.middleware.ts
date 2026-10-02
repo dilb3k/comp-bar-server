@@ -5,5 +5,5 @@ import { detectLanguage, translateMessage } from "../utils/i18n";
 
 export function notFoundMiddleware(req: Request, _res: Response, next: NextFunction) {
   const lang = detectLanguage(req.headers["accept-language"]);
-  next(new AppError(`${translateMessage("Route not found", lang)}: ${req.method} ${req.originalUrl}`, 404));
+  next(new AppError(`${translateMessage("Route not found", lang)}: ${req.method} ${req.originalUrl}`, 404, undefined, "ROUTE_NOT_FOUND"));
 }
