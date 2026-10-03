@@ -42,6 +42,7 @@ function isAllowedForProcurementScope(method: string, baseUrl: string, path: str
   if (baseUrl === "/api/auth") {
     return (method === "GET" && path === "/me") || (method === "POST" && path === "/logout");
   }
+  if (baseUrl === "/api/procurements" && ["/analytics", "/export"].includes(path.replace(/\/$/, ""))) return false;
   // All catalog creation and stock changes use the audited procurement batch.
   // A direct product create could otherwise bypass procurement cost accounting.
   return PROCUREMENT_SCOPE_ALLOWLIST.some(

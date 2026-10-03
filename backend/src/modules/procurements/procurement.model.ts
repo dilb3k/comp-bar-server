@@ -15,6 +15,7 @@ export interface IProcurementItem {
   buyPrice: number;
   lineCost: number;
   isNewProduct: boolean;
+  previousBuyPrice?: number;
 }
 
 export interface IProcurement {
@@ -24,6 +25,7 @@ export interface IProcurement {
   date: string;
   items: IProcurementItem[];
   totalCost: number;
+  supplier?: string;
   // Who actually typed this in — "procurement" for a scoped Bozorchi token,
   // "full" for an admin/superAdmin entering a kirim themselves. Independent
   // of createdByUserId, which is always the same tenant account either way
@@ -31,6 +33,7 @@ export interface IProcurement {
   // only the capability that issued the write does).
   createdByScope: "procurement" | "full";
   createdByUserId: string;
+  createdByUsername?: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -44,6 +47,7 @@ const procurementItemSchema = new Schema<IProcurementItem>(
     buyPrice: { type: Number, required: true, min: 0 },
     lineCost: { type: Number, required: true, min: 0 },
     isNewProduct: { type: Boolean, default: false },
+    previousBuyPrice: { type: Number, min: 0 },
   },
   { _id: false }
 );
@@ -55,8 +59,10 @@ const procurementSchema = new Schema<IProcurement>(
     date: { type: String, required: true },
     items: { type: [procurementItemSchema], default: [] },
     totalCost: { type: Number, required: true, min: 0 },
+    supplier: { type: String, trim: true, maxlength: 120 },
     createdByScope: { type: String, enum: ["procurement", "full"], required: true },
     createdByUserId: { type: String, required: true, trim: true },
+    createdByUsername: { type: String, trim: true },
   },
   {
     collection: "procurements",
@@ -85,6 +91,8 @@ procurementSchema.index(
   { name: "idx_owner_date", background: true }
 );
 
+procurementSchema.index({ ownerAdminId: 1, supplier: 1, date: -1 });
+procurementSchema.index({ ownerAdminId: 1, "items.productId": 1, date: -1 });
 procurementSchema.plugin(serverVersionPlugin);
 
 export const ProcurementModel =

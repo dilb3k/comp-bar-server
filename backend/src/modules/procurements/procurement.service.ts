@@ -23,18 +23,19 @@ type ProcurementItemInput = {
   buyPrice: number;
   sellPrice?: number;
   deviceId?: string;
+  barcodes?: string[];
 };
 
 export class ProcurementService {
-  async submitBatch(actor: AuthUser, items: ProcurementItemInput[]) {
+  async submitBatch(actor: AuthUser, items: ProcurementItemInput[], supplier?: string) {
     if (!items.length) {
       throw new AppError("At least one item is required", 422);
     }
 
-    return withOwnerTransaction(actor.userId, () => this.submitBatchInTransaction(actor, items));
+    return withOwnerTransaction(actor.userId, () => this.submitBatchInTransaction(actor, items, supplier));
   }
 
-  private async submitBatchInTransaction(actor: AuthUser, items: ProcurementItemInput[]) {
+  private async submitBatchInTransaction(actor: AuthUser, items: ProcurementItemInput[], supplier?: string) {
     const session = currentSession();
     const businessHour = getEffectiveHour(actor);
     const today = getCurrentBusinessDate(businessHour, env.TIMEZONE_OFFSET);
@@ -66,8 +67,10 @@ export class ProcurementService {
           date: today,
           items: recordedItems,
           totalCost,
+          supplier,
           createdByScope: actor.scope === "procurement" ? "procurement" : "full",
           createdByUserId: actor.userId,
+          createdByUsername: actor.username,
         },
       ],
       { session }
@@ -191,6 +194,7 @@ export class ProcurementService {
       buyPrice,
       lineCost: roundMoney(delta * buyPrice),
       isNewProduct: false,
+      previousBuyPrice: Number((product as any).buyPrice ?? 0),
     };
   }
 
@@ -222,6 +226,7 @@ export class ProcurementService {
       buyPrice,
       sellPrice,
       deviceId: item.deviceId ?? "procurement",
+      barcodes: item.barcodes,
     } as any);
 
     return {
@@ -235,8 +240,8 @@ export class ProcurementService {
     };
   }
 
-  async list(actor: AuthUser, from?: string, to?: string) {
-    return procurementRepository.findRange(actor.userId, from, to);
+  async list(actor: AuthUser, from?: string, to?: string, options?: { supplier?: string; product?: string; page?: number; limit?: number }) {
+    return procurementRepository.findRange(actor.userId, from, to, options);
   }
 }
 
