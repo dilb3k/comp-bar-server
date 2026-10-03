@@ -18,6 +18,27 @@ function getModels(){return [
  require('../backend/dist/lib/transaction').OwnerWriteVersion,
 ]);}
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+function sameIndex(actual,key,options){
+ const textFields=Object.entries(key).filter(([,kind])=>kind==='text').map(([field])=>field);
+ let matchingKey=key;
+ if(textFields.length){
+  // MongoDB exposes compound text keys as _fts/_ftsx, with the original
+  // indexed fields in weights. Comparing that raw key with the schema always
+  // reports a false conflict, even for an already-correct named index.
+  matchingKey={};let insertedText=false;
+  for(const [field,kind] of Object.entries(key)){
+   if(kind!=='text')matchingKey[field]=kind;
+   else if(!insertedText){matchingKey._fts='text';matchingKey._ftsx=1;insertedText=true;}
+  }
+  const expectedWeights=Object.fromEntries(textFields.map(field=>[field,options.weights?.[field]??1]));
+  const sorted=value=>Object.entries(value??{}).sort(([a],[b])=>a.localeCompare(b));
+  if(!equal(sorted(actual.weights),sorted(expectedWeights)))return false;
+  if(actual.default_language!==(options.default_language??'english'))return false;
+  if(actual.language_override!==(options.language_override??'language'))return false;
+  if(options.textIndexVersion!==undefined&&actual.textIndexVersion!==options.textIndexVersion)return false;
+ }
+ return equal(actual.key,matchingKey)&&!!actual.unique===!!options.unique&&!!actual.sparse===!!options.sparse&&equal(actual.partialFilterExpression,options.partialFilterExpression);
+}
 async function inspect(db,models=getModels()){
  const result={blocking:[],dropTTL:[],indexes:[],review:{}};
  for(const model of models){
@@ -40,7 +61,7 @@ async function inspect(db,models=getModels()){
     const duplicates=await collection.aggregate([...prefix,{$group:{_id:Object.fromEntries(Object.keys(key).map(k=>[k,`$${k}`])),count:{$sum:1}}},{$match:{count:{$gt:1}}},{$count:'groups'}],{allowDiskUse:true}).toArray();
     if(duplicates.length)result.blocking.push({collection:collection.collectionName,key,duplicateGroups:duplicates[0].groups});
    }
-   const equivalent=actual.find(i=>equal(i.key,key)&&!!i.unique===!!options.unique&&!!i.sparse===!!options.sparse&&equal(i.partialFilterExpression,options.partialFilterExpression));
+   const equivalent=actual.find(i=>sameIndex(i,key,options));
    if(!equivalent){
     const conflict=actual.find(i=>i.name===options.name);
     if(conflict)result.blocking.push({collection:collection.collectionName,index:conflict.name,reason:'Index definition differs; review explicit replacement'});

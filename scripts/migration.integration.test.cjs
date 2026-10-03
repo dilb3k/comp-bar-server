@@ -29,3 +29,25 @@ test('migration dry-run is read-only; TTL removal and null cleanup are explicit,
  await assert.rejects(apply(db,overlapping),/blocked/);
  await db.dropDatabase();
 });
+
+test('compound text index metadata is reconciled without false conflicts; weight and language mismatches still block',async t=>{
+ assert.match(process.env.MONGODB_URL??'',/^mongodb:\/\/127\.0\.0\.1:\d+\/hisvex_integration\?/);
+ await mongoose.connect(process.env.MONGODB_URL,{autoIndex:false,autoCreate:false});
+ const db=mongoose.connection.getClient().db('hisvex_migration_text_test');
+ t.after(async()=>{try{await db.dropDatabase()}finally{await mongoose.disconnect()}});
+ const key={ownerAdminId:1,name:'text'};
+ const schema=new mongoose.Schema({ownerAdminId:String,name:String},{collection:'products',autoIndex:false,autoCreate:false});
+ schema.index(key,{name:'idx_name_text',default_language:'none'});
+ const model=mongoose.model('MigrationTextFixture',schema);
+ await db.collection('products').createIndex(key,{name:'idx_name_text',default_language:'none'});
+ const existing=await db.collection('products').listIndexes().toArray();
+ assert.deepEqual(existing.find(i=>i.name==='idx_name_text').key,{ownerAdminId:1,_fts:'text',_ftsx:1});
+ const plan=await inspect(db,[model]);assert.equal(plan.blocking.length,0);assert.equal(plan.indexes.length,0);
+ assert.deepEqual(await db.collection('products').listIndexes().toArray(),existing,'dry-run changes nothing');
+ for(const options of [{default_language:'none',weights:{name:2}},{default_language:'english'}]){
+  await db.collection('products').dropIndex('idx_name_text');
+  await db.collection('products').createIndex(key,{name:'idx_name_text',...options});
+  const mismatch=await inspect(db,[model]);assert.equal(mismatch.blocking.length,1);assert.equal(mismatch.indexes.length,1);
+  await assert.rejects(apply(db,mismatch),/blocked/);
+ }
+});
