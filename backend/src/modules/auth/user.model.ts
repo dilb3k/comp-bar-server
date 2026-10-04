@@ -75,6 +75,8 @@ const userSchema = new Schema(
       type: String,
       default: null,
     },
+    activeSessionLastSeenAt: { type: Date, default: null },
+    activeSessionExpiresAt: { type: Date, default: null },
     verifiedDeviceIds: {
       type: [String],
       default: [],
@@ -113,6 +115,8 @@ const userSchema = new Schema(
         // Exposing them to a procurement token would allow scope escalation.
         delete ret.verifiedDeviceIds;
         delete ret.activeSessionId;
+        delete ret.activeSessionLastSeenAt;
+        delete ret.activeSessionExpiresAt;
         delete ret.securityVersion;
         return ret;
       },

@@ -20,6 +20,7 @@ export const authController = {
       password: req.body.password,
       phone_number: req.body.phone_number,
       businessDayStartHour: req.body.businessDayStartHour,
+      deviceId: req.body.deviceId,
     });
     return sendSuccess(res, result);
   },

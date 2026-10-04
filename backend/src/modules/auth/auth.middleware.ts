@@ -4,7 +4,7 @@ import type { NextFunction, Request, Response } from "express";
 
 import { AppError } from "../../utils/app-error";
 import type { UserRole } from "./auth.types";
-import { verifyAccessToken } from "./auth.utils";
+import { SESSION_ACTIVITY_TOUCH_MS, verifyAccessToken } from "./auth.utils";
 import { authRepository } from "./auth.repository";
 
 // How often an authenticated request is allowed to write lastActionAt.
@@ -89,6 +89,13 @@ export function authenticate(options?: { allowStale?: boolean }) {
         const validSession = activeId ? tokenSession === activeId : !tokenSession;
         if (!allowStale && !validSession) {
           return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED"));
+        }
+        // Stale preview/logout and procurement traffic cannot keep another
+        // device's session alive. Await the conditional write before replying.
+        const lastSeen = user.activeSessionLastSeenAt?.getTime() ?? 0;
+        if (validSession && tokenSession && Date.now() - lastSeen >= SESSION_ACTIVITY_TOUCH_MS) {
+          const touch = await authRepository.touchSession(user._id.toString(), tokenSession, new Date());
+          if (!touch.matchedCount && !allowStale) return next(new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED"));
         }
       }
 

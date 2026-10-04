@@ -1,6 +1,5 @@
 ﻿import { Router } from "express";
 
-import { env } from "../../config/env";
 import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
 import { authLimiter } from "../../middlewares/rate-limit.middleware";
@@ -10,23 +9,13 @@ import { createAdminSchema, loginSchema, loginWithPhoneSchema, refreshSchema, re
 
 const router = Router();
 
-// Previously the ALLOW_PUBLIC_REGISTER check lived only inside
-// auth.service.register — the route was always reachable, and a disabled
-// deployment still paid for a DB round-trip (hasSuperAdmin lookup) plus the
-// authLimiter bucket per request just to get a 403. With the flag now
-// defaulting to false and hard-required false in production (see
-// config/env.ts), the route itself is unregistered instead: a disabled
-// deployment gets a plain 404, and the bootstrap superAdmin is created by
-// inserting directly into MongoDB (see README's "Ishga tushirish" — this was
-// already the documented practice for superAdmin, never this route).
-if (env.ALLOW_PUBLIC_REGISTER) {
-  router.post(
-    "/register",
-    authLimiter,
-    validateRequest({ body: registerSchema }),
-    asyncHandler(authController.register)
-  );
-}
+// Keep a stable API contract. The service rejects disabled signup before DB work.
+router.post("/register", authLimiter, validateRequest({ body: registerSchema }), asyncHandler(authController.register));
+
+router.post("/session/heartbeat", authenticate(), (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ success: true, data: { active: true } });
+});
 
 router.post(
   "/login",
@@ -120,5 +109,4 @@ router.delete(
 );
 
 export const authRoutes = router;
-
 

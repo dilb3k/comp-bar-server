@@ -40,6 +40,45 @@ Expo fizik device uchun frontend odatda `http://YOUR_LOCAL_IP:4000/api` ga ulani
 
 `superAdmin` account `.env` dan olinmaydi. U MongoDB ichidagi `users` kolleksiyasida mavjud bo'lishi kerak.
 
+### Ro‘yxatdan o‘tish va faol seans
+
+Railway va Render API servislarida `ALLOW_PUBLIC_REGISTER=true` bo‘lsa,
+`POST /api/auth/register` oddiy `admin` (tenant) hisobini va to‘liq 7 kunlik
+Bor sinov obunasini bitta tranzaksiyada yaratadi. Bu endpoint, hatto bazada
+birorta hisob bo‘lmasa ham, hech qachon `superAdmin` bermaydi. Flag unset/false
+bo‘lsa, route HTTP 403 `PUBLIC_REGISTRATION_DISABLED` qaytaradi.
+
+Telefon raqami majburiy; bir telefon bilan takroriy signup HTTP 409 beradi.
+Hisob ochilgach foydalanuvchi `https://t.me/hisvex_bot`ni ochib, Start bosishi
+va o‘z kontaktini yuborishi kerak. Ilovadagi ko‘rsatma bog‘lanishni tekshirishga
+imkon beradi. Platforma administratorlari ham o‘z Telegram kontaktini ulashi
+mumkin; obuna xaridlari oddiy tenant hisoblari bilan cheklangan.
+
+Faol seans oxirgi tasdiqlangan so‘rov/heartbeatdan 5 daqiqa ichida va seans
+muddati tugamagan bo‘lsa aniqlanadi. Ochiq web/desktop/mobile ilova har daqiqada
+authenticated `POST /api/auth/session/heartbeat` yuboradi; fon/offline holatda
+bu to‘xtaydi. Logout eski tokenlarni bekor qiladi va seansni tugagan deb
+belgilaydi. Eski, faolligi yo‘q seans ID yangi login uchun OTP talab qilmaydi.
+Haqiqiy faol seansni almashtirish esa Telegram OTP bilan tasdiqlanadi.
+
+### Telegram login OTP
+
+OTP kodini API backend to'g'ridan-to'g'ri Telegram `sendMessage` orqali yuboradi.
+Railway primary va Render standby API servislarida `OTP_TELEGRAM_BOT_TOKEN`ni
+interactive `hisvex-bot` servisining `BOT_TOKEN` qiymatiga teng qilib sozlang va
+backendlarni qayta deploy qiling. Tokenni Vercel yoki frontendga qo'ymang.
+Hisobotlar va ops bildirishnomalari mavjud `BOT_TOKEN`dan foydalanishda davom etadi.
+`OTP_TELEGRAM_BOT_TOKEN` bo'lmasa, OTP eski `BOT_TOKEN`ga qaytadi; bu faqat ikkala
+vazifani bir Telegram bot bajarganda to'g'ri ishlaydi.
+
+Foydalanuvchi aynan shu botga `/start` bosib, o'z kontaktini tugma orqali ulagan
+bo'lishi kerak. `OTP_DELIVERY_FAILED` akkauntda `telegramId` borligini, lekin OTP
+yuborish muvaffaqiyatsiz bo'lganini bildiradi. Backenddagi `[otp-telegram]` logi
+sababni secretsiz ko'rsatadi: `BOT_TOKEN_MISSING`, `BOT_TOKEN_INVALID`,
+`CHAT_NOT_FOUND`, `BOT_BLOCKED`, `TELEGRAM_FORBIDDEN` yoki `TELEGRAM_RATE_LIMITED`.
+Tarmoq yoki timeout uchun `OTP delivery failed or timed out` yoziladi.
+OTP yetkazilmasa login fail closed qoladi va mavjud sessiya almashtirilmaydi.
+
 ## Asosiy biznes qoidalar
 
 - Business day `00:00` da boshlanadi

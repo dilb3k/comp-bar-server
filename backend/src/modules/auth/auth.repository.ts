@@ -7,7 +7,7 @@ import { normalizePhone } from "./auth.utils";
 
 export class AuthRepository {
   async findByUsername(username: string) {
-    return UserModel.findOne({ username: username.trim().toLowerCase() });
+    return UserModel.findOne({ username: username.trim().toLowerCase() }).session(currentSession() ?? null);
   }
 
   // Used by the bot to link a Telegram user to their Hisvex account after
@@ -22,7 +22,7 @@ export class AuthRepository {
     // pre-save hook) — used to load every active admin into memory and scan
     // them in JS for this, a full-collection load on every bot /start link
     // or phone-verification login at real admin-count scale.
-    const matches=await UserModel.find({role:"admin",isActive:true,phoneDigits:digits}).limit(2);
+    const matches=await UserModel.find({isActive:true,phoneDigits:digits}).limit(2);
     return matches.length===1?matches[0]:null;
   }
 
@@ -34,7 +34,7 @@ export class AuthRepository {
     if (!Types.ObjectId.isValid(id)) return null;
     if (!verifiedPhone) return null;
     return UserModel.findOneAndUpdate(
-      { _id:id, isActive:true, role:"admin", phoneDigits:normalizePhone(verifiedPhone), $or:[{telegramId:null},{telegramId}] },
+      { _id:id, isActive:true, phoneDigits:normalizePhone(verifiedPhone), $or:[{telegramId:null},{telegramId}] },
       { telegramId, telegramUsername: telegramUsername ?? null },
       { new: true }
     );
@@ -55,6 +55,7 @@ export class AuthRepository {
   }
 
   async createUser(payload: {
+    id?: string;
     username: string;
     phone_number?: string;
     password: string;
@@ -62,14 +63,22 @@ export class AuthRepository {
     createdBy?: string | null;
     businessDayStartHour?: number;
   }) {
-    return UserModel.create({
+    const [user] = await UserModel.create([{
+      ...(payload.id ? { _id: payload.id } : {}),
       username: payload.username.trim().toLowerCase(),
       phone_number: payload.phone_number?.trim() ?? "",
       password: payload.password,
       role: payload.role,
       createdBy: payload.createdBy ?? null,
       businessDayStartHour: payload.businessDayStartHour ?? 0,
-    });
+    }], { session: currentSession() });
+    return user;
+  }
+
+  async touchSession(userId: string, sessionId: string, now: Date, expiresAt?: Date) {
+    return UserModel.updateOne({ _id: userId, isActive: true, activeSessionId: sessionId }, {
+      $set: { activeSessionLastSeenAt: now, ...(expiresAt ? { activeSessionExpiresAt: expiresAt } : {}) },
+    }, { timestamps: false, session: currentSession() });
   }
 
   async listAdmins() {

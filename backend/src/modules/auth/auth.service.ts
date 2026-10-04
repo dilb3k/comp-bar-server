@@ -1,4 +1,4 @@
-import { currentSession, withOwnerTransaction } from "../../lib/transaction";
+import { currentSession, ensureOwnerFence, withOwnerTransaction } from "../../lib/transaction";
 import mongoose from "mongoose";
 import { env } from "../../config/env";
 import { telegramReportService } from "../../services/telegram-report.service";
@@ -36,13 +36,16 @@ const OTP_MAX_ATTEMPTS = 3;
 export class AuthService {
   private async issueSession(user: any, deviceId?: string | null) {
     const sessionId = createSessionId();
+    const refreshToken = signRefreshToken({ userId: user._id.toString(), sessionId });
+    const expiresAt = new Date(verifyRefreshToken(refreshToken).exp * 1000);
     const updated = await UserModel.findOneAndUpdate({
       _id:user._id, isActive:true, password:user.password,
       activeSessionId: user.activeSessionId ?? null,
+      activeSessionLastSeenAt: user.activeSessionLastSeenAt ?? null,
       $or:[{securityVersion:Number(user.securityVersion??0)}, ...(Number(user.securityVersion??0)===0?[{securityVersion:{$exists:false}}]:[])],
-    }, { $set:{activeSessionId:sessionId}, ...(deviceId?{$addToSet:{verifiedDeviceIds:deviceId}}:{}) }, {session:currentSession(),new:true});
+    }, { $set:{activeSessionId:sessionId, activeSessionLastSeenAt:new Date(), activeSessionExpiresAt:expiresAt}, ...(deviceId?{$addToSet:{verifiedDeviceIds:deviceId}}:{}) }, {session:currentSession(),new:true});
     if(!updated) throw new AppError("Hisob xavfsizlik sozlamalari o‘zgardi; qayta kiring",401);
-    return sessionId;
+    return { sessionId, refreshToken };
   }
 
   private buildAuthUser(user: any, isPayed: boolean, tier: any, activeSub: any, sessionId?: string): AuthUser {
@@ -68,57 +71,38 @@ export class AuthService {
     await authRepository.pushVerifiedDevice(userId, deviceId);
   }
 
-  async register(payload: { username: string; password: string; phone_number?: string; businessDayStartHour?: number }) {
-    const existing = await authRepository.findByUsername(payload.username);
-
-    if (existing) {
-      throw new AppError("Username already exists", 409);
+  async register(payload: { username: string; password: string; phone_number: string; businessDayStartHour?: number; deviceId?: string }) {
+    if (!env.ALLOW_PUBLIC_REGISTER) {
+      throw new AppError("Ro‘yxatdan o‘tish yopiq. Administratorga murojaat qiling.", 403, undefined, "PUBLIC_REGISTRATION_DISABLED");
     }
-
-    const superAdmin = await authRepository.findSuperAdmin();
-    const hasSuperAdmin = !!superAdmin;
-
-    // The very first account (bootstrap superAdmin) is always allowed. Once a
-    // superAdmin exists, public self-registration can be disabled via the
-    // ALLOW_PUBLIC_REGISTER env flag (kill-switch for production).
-    if (hasSuperAdmin && !env.ALLOW_PUBLIC_REGISTER) {
-      throw new AppError("Public registration is disabled", 403);
-    }
-
-    const role = hasSuperAdmin ? "admin" : "superAdmin";
-
-    const user = await authRepository.createUser({
-      username: payload.username,
-      phone_number: payload.phone_number,
-      password: payload.password,
-      role: role as "admin" | "superAdmin",
-      createdBy: null,
-      businessDayStartHour: payload.businessDayStartHour,
-    });
-
-    let isPayed = role === "superAdmin" ? true : false;
-    let activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
-
-    // Give all new users a 7-day trial subscription
-    if (!activeSub) {
-      const now = new Date();
-      const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
-      const sub = await subscriptionService.createTrialSubscription(user._id.toString(), "bor", now, endDate);
-      isPayed = true;
-      activeSub = sub;
-    }
-
-    const tier = computeTier(role, isPayed, activeSub);
-
-    const sessionId = await this.issueSession(user);
-
-    const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
-
-    return {
-      token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
-      user: { ...user.toJSON(), isPayed, tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
-    };
+    const phone = normalizePhone(payload.phone_number);
+    if (phone.length < 7 || phone.length > 15) throw new AppError("Telefon raqamingizni to‘liq kiriting", 422);
+    const userId = new mongoose.Types.ObjectId().toString();
+    // Shared across API replicas: simultaneous signups cannot create two
+    // accounts for one phone and make Telegram contact lookup ambiguous.
+    const phoneFence = `signup:${hashOtp(phone)}`;
+    await ensureOwnerFence(phoneFence);
+    return withOwnerTransaction(userId, () => withOwnerTransaction(phoneFence, async () => {
+      if (await authRepository.findByUsername(payload.username)) throw new AppError("Username already exists", 409);
+      if (await UserModel.exists({ phoneDigits: phone }).session(currentSession() ?? null)) {
+        throw new AppError("Bu telefon raqami bilan hisob mavjud. Hisobingizga kiring.", 409, undefined, "PHONE_ALREADY_REGISTERED");
+      }
+      const user = await authRepository.createUser({
+        id: userId, username: payload.username, password: payload.password,
+        phone_number: phone, role: "admin", createdBy: null,
+        businessDayStartHour: payload.businessDayStartHour,
+      });
+      const start = new Date();
+      const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const subscription = await subscriptionService.createTrialSubscription(userId, "bor", start, end);
+      const tier = computeTier("admin", true, subscription);
+      const { sessionId, refreshToken } = await this.issueSession(user, payload.deviceId);
+      const authUser = this.buildAuthUser(user, true, tier, subscription, sessionId);
+      return {
+        token: signAccessToken(authUser), refreshToken,
+        user: { ...user.toJSON(), isPayed: true, tier, subscriptionEndDate: subscription.endDate.toISOString() },
+      };
+    }));
   }
 
   async login(username: string, password: string, deviceId?: string) {
@@ -180,13 +164,13 @@ export class AuthService {
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const sessionId = await this.issueSession(user,deviceId);
+    const { sessionId, refreshToken } = await this.issueSession(user,deviceId);
 
     const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
+      refreshToken,
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }
@@ -290,14 +274,14 @@ export class AuthService {
     const activeSub = await subscriptionService.getActiveSubscription(user._id.toString());
     const tier = computeTier(user.role, isPayed, activeSub);
 
-    const sessionId = await this.issueSession(user,challenge.deviceId);
+    const { sessionId, refreshToken } = await this.issueSession(user,challenge.deviceId);
     const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, sessionId);
 
     alertService.reportSessionTakeover({ username: (user as any).username });
 
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId }),
+      refreshToken,
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
     });
@@ -305,7 +289,9 @@ export class AuthService {
 
   async logout(userId: string, sessionId?: string) {
     if (!sessionId) return;
-    await UserModel.updateOne({_id:userId,activeSessionId:sessionId},{$set:{activeSessionId:createSessionId()}});
+    // Retain a revocation marker so old/legacy tokens cannot authenticate;
+    // explicitly expire it so the next login is not a session takeover.
+    await UserModel.updateOne({_id:userId,activeSessionId:sessionId},{$set:{activeSessionId:createSessionId(),activeSessionLastSeenAt:null,activeSessionExpiresAt:new Date(0)}});
   }
 
   async getCurrentUser(userId: string) {
@@ -355,9 +341,15 @@ export class AuthService {
 
     const authUser: AuthUser = this.buildAuthUser(user, isPayed, tier, activeSub, decoded.sessionId);
 
+    const refreshToken = signRefreshToken({ userId: user._id.toString(), sessionId: decoded.sessionId });
+    if (decoded.sessionId) {
+      const touched = await authRepository.touchSession(user._id.toString(), decoded.sessionId, new Date(), new Date(verifyRefreshToken(refreshToken).exp * 1000));
+      if (!touched.matchedCount) throw new AppError("Sessiya boshqa qurilmada ochildi. Qayta kiring.", 401, undefined, "SESSION_REPLACED");
+    }
+
     return {
       token: signAccessToken(authUser),
-      refreshToken: signRefreshToken({ userId: user._id.toString(), sessionId: decoded.sessionId }),
+      refreshToken,
       user: { ...user.toJSON(), tier, subscriptionEndDate: activeSub?.endDate?.toISOString?.() ?? null }
     };
   }

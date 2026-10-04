@@ -88,6 +88,7 @@ export function createApp() {
   };
   app.use(cors(corsOptions));
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+  app.use("/api/auth", express.json({ limit: "16kb" }));
   app.use(express.json({ limit: "20mb" }));
   if(env.NODE_ENV!=="test") app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
   app.use("/api", apiLimiter);

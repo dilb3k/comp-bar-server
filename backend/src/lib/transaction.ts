@@ -27,14 +27,16 @@ async function lockOwner(owner: string, scope: Context) {
   scope.owners.set(owner, fence.revision);
 }
 
+export async function ensureOwnerFence(owner: string) {
+  // Materialize the lock outside the transaction so two first-ever writers
+  // retry a write conflict instead of aborting on an upsert E11000.
+  try { await OwnerWriteVersion.updateOne({ _id: owner }, { $setOnInsert: { revision: 0 } }, { upsert: true }); }
+  catch (error: any) { if (error?.code !== 11000) throw error; }
+}
+
 export async function transactionScope(owner: string) {
   const inherited = context.getStore();
-  if (!inherited) {
-    // Materialize the tenant lock outside the transaction so two first-ever
-    // writers cannot abort with an upsert E11000 instead of a write conflict.
-    try { await OwnerWriteVersion.updateOne({ _id: owner }, { $setOnInsert: { revision: 0 } }, { upsert: true }); }
-    catch (error: any) { if (error?.code !== 11000) throw error; }
-  }
+  if (!inherited) await ensureOwnerFence(owner);
   const session = inherited?.session ?? await mongoose.startSession();
   return {
     session,

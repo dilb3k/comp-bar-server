@@ -51,6 +51,9 @@ services:
         sync: false
       - key: BOT_TOKEN
         sync: false
+      # Same value as hisvex-bot's BOT_TOKEN; reports can keep their own bot.
+      - key: OTP_TELEGRAM_BOT_TOKEN
+        sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: ALERT_TELEGRAM_CHAT_ID
@@ -91,7 +94,7 @@ services:
       - key: MIGRATION_ENABLED
         value: "false"
       - key: ALLOW_PUBLIC_REGISTER
-        value: "false"
+        value: "true"
 
       # MOBILE_LATEST_VERSION / MOBILE_DOWNLOAD_URL are intentionally absent.
       # /meta/app-version reads the GitHub release feed now, and the env vars

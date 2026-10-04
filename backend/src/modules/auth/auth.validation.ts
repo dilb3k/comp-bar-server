@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizePhone } from "./auth.utils";
 
 export const loginSchema = z.object({
   username: z.string().trim().min(1, "username is required"),
@@ -20,10 +21,13 @@ export const verifySessionChallengeSchema = z.object({
 });
 
 export const registerSchema = z.object({
-  username: z.string().trim().min(3, "username must be at least 3 characters"),
-  password: z.string().min(6, "password must be at least 6 characters"),
-  phone_number: z.string().trim().optional(),
+  username: z.string().trim().min(3, "username must be at least 3 characters").max(64),
+  password: z.string().min(6, "password must be at least 6 characters")
+    .refine(value => Buffer.byteLength(value, "utf8") <= 72, "password must be at most 72 bytes"),
+  phone_number: z.string().trim().regex(/^\+?[\d\s()-]+$/, "Telefon raqamingizni kiriting")
+    .transform(normalizePhone).refine(value => value.length >= 7 && value.length <= 15, "Telefon raqamingizni to‘liq kiriting"),
   businessDayStartHour: z.number().int().min(0).max(23).optional(),
+  deviceId: z.string().trim().min(1).max(128).optional(),
 });
 
 export const createAdminSchema = z.object({

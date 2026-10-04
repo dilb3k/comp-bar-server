@@ -24,6 +24,13 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().optional(),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default("30d"),
   BOT_TOKEN: z.string().trim().min(1).optional(),
+  // Token of the interactive hisvex-bot that owns users' linked chats.
+  // BOT_TOKEN may belong to a separate reporting bot; retain it as a fallback
+  // for deployments where the same bot handles both reports and login OTPs.
+  OTP_TELEGRAM_BOT_TOKEN: z.preprocess(
+    value => typeof value === "string" && !value.trim() ? undefined : value,
+    z.string().trim().min(1).optional(),
+  ),
   TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   // Separate from TELEGRAM_CHAT_ID above (business events: new product, sale,
   // sync) — this is the ops channel for infrastructure alerts (failover, DB
@@ -33,9 +40,7 @@ const envSchema = z.object({
   // ops chat yet still gets alerted somewhere rather than silently nowhere.
   ALERT_TELEGRAM_CHAT_ID: z.string().trim().min(1).optional(),
   MIGRATION_ENABLED: envBoolean,
-  // Defaults closed. Self-serve signup is a real feature some deployments
-  // want, but it must be an explicit choice, not something a fresh prod
-  // deploy inherits silently. See the hard production check below.
+  // Operators opt into tenant signup. Public signup never creates superAdmins.
   ALLOW_PUBLIC_REGISTER: envBoolean,
 
   // Shared secret the hisvex-bot service presents (X-Bot-Secret header) to
@@ -110,22 +115,6 @@ if (parsed.data.NODE_ENV === "development" && !parsed.data.JWT_REFRESH_SECRET) {
     "JWT_REFRESH_SECRET is not set — deriving it from JWT_SECRET with a fixed suffix for local development only. " +
       "Set JWT_REFRESH_SECRET explicitly before deploying to production (production already refuses to boot without it)."
   );
-}
-
-// ALLOW_PUBLIC_REGISTER now defaults to false and is force-checked the same
-// way JWT_REFRESH_SECRET is: open self-registration in production is refused
-// outright rather than merely warned about, because every admin account
-// beyond the bootstrap superAdmin is meant to be created deliberately via
-// POST /api/auth/admins (superAdmin-only), not discovered by a stranger
-// hitting /register. An operator who genuinely wants public signup in
-// production is asking this codebase to do something it now considers
-// misconfiguration, not a supported mode.
-if (parsed.data.NODE_ENV === "production" && parsed.data.ALLOW_PUBLIC_REGISTER) {
-  console.error(
-    "ALLOW_PUBLIC_REGISTER=true is not allowed in production. Admin accounts are created via " +
-      "POST /api/auth/admins (superAdmin-only); leave this unset/false and remove it from the environment."
-  );
-  process.exit(1);
 }
 
 const R2_VARS = [

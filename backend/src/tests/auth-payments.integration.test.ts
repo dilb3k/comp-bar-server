@@ -27,7 +27,7 @@ before(async()=>{
 after(async()=>{await mongoose.disconnect()});
 let telegramSequence=100000;
 async function user(extra:Record<string,unknown>={}) {
-  return UserModel.create({username:randomUUID(),password:'test-password-123',phone_number:`99890${++telegramSequence}`,role:'admin',isActive:true,activeSessionId:randomUUID(),telegramId:String(telegramSequence),...extra});
+  return UserModel.create({username:randomUUID(),password:'test-password-123',phone_number:`99890${++telegramSequence}`,role:'admin',isActive:true,activeSessionId:randomUUID(),activeSessionLastSeenAt:new Date(),telegramId:String(telegramSequence),...extra});
 }
 const actor=(u:any)=>({userId:u._id.toString(),username:u.username,phone_number:u.phone_number,role:u.role,isPayed:true,tier:'pro' as const,sessionId:u.activeSessionId});
 const admin=()=>({userId:new mongoose.Types.ObjectId().toString(),username:'test-admin',role:'superAdmin' as const,phone_number:'',isPayed:true,tier:'pro' as const});

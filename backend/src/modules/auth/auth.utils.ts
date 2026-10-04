@@ -58,13 +58,30 @@ export function maskPhone(value: string | undefined | null): string {
 
 export interface PhoneVerificationContext {
   activeSessionId?: string | null;
+  activeSessionLastSeenAt?: Date | string | null;
+  activeSessionExpiresAt?: Date | string | null;
+  lastActionAt?: Date | string | null;
   phone_number?: string;
   verifiedDeviceIds?: string[];
 }
 
-export function phoneVerificationRequired(user: PhoneVerificationContext, _deviceId?: string | null): boolean {
+export const SESSION_ACTIVITY_TTL_MS = 5 * 60 * 1000;
+export const SESSION_ACTIVITY_TOUCH_MS = 30 * 1000;
+
+export function phoneVerificationRequired(user: PhoneVerificationContext, _deviceId?: string | null, now = Date.now()): boolean {
   // A device ID is client supplied; it must not waive a real session takeover.
-  return !!user.activeSessionId;
+  if (!user.activeSessionId) return false;
+  if (user.activeSessionExpiresAt != null) {
+    const expires = new Date(user.activeSessionExpiresAt).getTime();
+    if (!Number.isFinite(expires) || expires <= now) return false;
+  }
+  // General account activity (including procurement) cannot prove that the
+  // normal session is alive. Legacy IDs become live only after a request
+  // authenticated with their own valid session token records this timestamp.
+  const seen = user.activeSessionLastSeenAt;
+  if (seen == null) return false;
+  const age = now - new Date(seen).getTime();
+  return Number.isFinite(age) && age >= -SESSION_ACTIVITY_TOUCH_MS && age < SESSION_ACTIVITY_TTL_MS;
 }
 
 export function shouldClearActiveSession(user: { activeSessionId?: string | null }, sessionId?: string | null): boolean {
