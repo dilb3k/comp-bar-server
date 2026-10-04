@@ -32,6 +32,12 @@ export const registerSchema = z.object({
 });
 
 export const registrationStatusSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export const passwordResetRequestSchema = z.object({ telegramId: z.string().regex(/^\d{1,20}$/) });
+export const passwordResetConfirmSchema = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  password: z.string().min(6, "password must be at least 6 characters")
+    .refine(value => Buffer.byteLength(value, "utf8") <= 72, "password must be at most 72 bytes"),
+});
 export const registrationStartSchema = z.object({
   startToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   telegramId: z.string().regex(/^\d+$/),

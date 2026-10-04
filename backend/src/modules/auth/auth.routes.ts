@@ -8,9 +8,16 @@ import { authenticate, authorize } from "./auth.middleware";
 import { registrationPhoneService } from "./registration-phone.service";
 import { registrationStatusSchema } from "./auth.validation";
 import { sendSuccess } from "../../utils/response";
+import { passwordResetService } from "./password-reset.service";
+import { passwordResetConfirmSchema } from "./auth.validation";
 import { createAdminSchema, loginSchema, loginWithPhoneSchema, refreshSchema, registerSchema, updateAdminSchema, updateMeSchema, verifySessionChallengeSchema } from "./auth.validation";
 
 const router = Router();
+
+router.post("/password/reset", authLimiter, validateRequest({ body: passwordResetConfirmSchema }), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return sendSuccess(res, await passwordResetService.confirm(req.body.token, req.body.password));
+}));
 
 router.post("/register/phone", authLimiter, asyncHandler(async (_req, res) => {
   res.setHeader("Cache-Control", "no-store");

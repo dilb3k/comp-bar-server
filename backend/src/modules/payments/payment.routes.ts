@@ -8,6 +8,8 @@ import { botController } from "./payment.controller";
 import { registrationPhoneService } from "../auth/registration-phone.service";
 import { registrationStartSchema, registrationContactSchema } from "../auth/auth.validation";
 import { sendSuccess } from "../../utils/response";
+import { passwordResetService } from "../auth/password-reset.service";
+import { passwordResetRequestSchema } from "../auth/auth.validation";
 import {
   lookupUserSchema,
   linkTelegramSchema,
@@ -26,6 +28,11 @@ import {
 const router = Router();
 
 router.use(botAuth);
+
+router.post("/password-reset", validateRequest({ body: passwordResetRequestSchema }), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return sendSuccess(res, await passwordResetService.request(req.body.telegramId));
+}));
 
 router.post("/registration/start", validateRequest({ body: registrationStartSchema }), asyncHandler(async (req, res) => {
   return sendSuccess(res, await registrationPhoneService.start(req.body.startToken, req.body.telegramId));

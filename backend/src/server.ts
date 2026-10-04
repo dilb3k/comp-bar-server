@@ -7,6 +7,7 @@ import { env } from "./config/env";
 import { connectDatabase } from "./lib/mongoose";
 import {verifyDatabaseReadiness} from './lib/database-readiness';
 import { authService } from "./modules/auth/auth.service";
+import { ensurePasswordResetStorage } from "./modules/auth/password-reset.model";
 import { createApp } from "./app";
 import { migrateLegacyProductRecords } from "./modules/products/product.migration";
 import { migrateSplitCollections } from "./modules/migrations/split-collections.migration";
@@ -29,6 +30,7 @@ process.on("uncaughtException", (err) => {
 
 async function bootstrap() {
   await connectDatabase();
+  await ensurePasswordResetStorage();
   if (env.MIGRATION_ENABLED) {
     await migrateFixDisplayIndex();
     await migrateProductBarcodeUniqueIndex();
