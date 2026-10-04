@@ -6,6 +6,8 @@ import mongoose from 'mongoose';
 import { env } from '../config/env';
 import { createApp } from '../app';
 import { UserModel } from '../modules/auth/user.model';
+import { registrationPhoneService } from '../modules/auth/registration-phone.service';
+import { RegistrationPhoneModel } from '../modules/auth/registration-phone.model';
 import { authService } from '../modules/auth/auth.service';
 import { authRepository } from '../modules/auth/auth.repository';
 import { phoneVerificationRequired, SESSION_ACTIVITY_TTL_MS, signAccessToken, verifyAccessToken } from '../modules/auth/auth.utils';
@@ -21,7 +23,7 @@ const signup = () => ({ username: `signup-${randomUUID()}`, password: 'local-pas
 before(async () => {
   assert.match(process.env.MONGODB_URL ?? '', /^mongodb:\/\/127\.0\.0\.1:\d+\/hisvex_integration\?/);
   await mongoose.connect(process.env.MONGODB_URL!);
-  await Promise.all([UserModel, SubscriptionModel, OwnerWriteVersion].map(model => model.init()));
+  await Promise.all([UserModel, SubscriptionModel, OwnerWriteVersion, RegistrationPhoneModel].map(model => model.init()));
   server = createApp().listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
@@ -39,8 +41,18 @@ async function request(path: string, body?: unknown, token?: string) {
 }
 async function enabled<T>(work: () => Promise<T>) {
   const original = env.ALLOW_PUBLIC_REGISTER;
+  const originalSecret = env.BOT_INTERNAL_SECRET;
+  env.BOT_INTERNAL_SECRET = "local-test-only";
   env.ALLOW_PUBLIC_REGISTER = true;
-  try { return await work(); } finally { env.ALLOW_PUBLIC_REGISTER = original; }
+  try { return await work(); } finally { env.ALLOW_PUBLIC_REGISTER = original; env.BOT_INTERNAL_SECRET = originalSecret; }
+}
+async function verifiedSignup() {
+  const input = signup();
+  const challenge = await registrationPhoneService.begin();
+  const telegramId = String(++phoneSequence);
+  await registrationPhoneService.start(new URL(challenge.botUrl).searchParams.get('start')!.slice(4), telegramId);
+  await registrationPhoneService.confirm(telegramId, telegramId, input.phone_number, 'signup-test');
+  return { ...input, phoneVerificationToken: challenge.token };
 }
 async function session(extra: Record<string, unknown> = {}) {
   return UserModel.create({ ...signup(), role: 'admin', isActive: true,
@@ -66,7 +78,7 @@ test('malformed and oversized auth JSON returns a safe client error', async () =
   }
 });
 test('signup creates only an ordinary tenant, a full seven-day trial and a current session', async () => enabled(async () => {
-  const input = signup();
+  const input = await verifiedSignup();
   const original = authRepository.findSuperAdmin;
   authRepository.findSuperAdmin = async () => { throw Error('signup must never bootstrap a platform admin'); };
   try {
@@ -74,7 +86,8 @@ test('signup creates only an ordinary tenant, a full seven-day trial and a curre
     assert.equal(response.status, 200);
     const { token, refreshToken, user } = response.body.data;
     assert.equal(user.role, 'admin');
-    assert.equal(user.telegramId, null);
+    assert.ok(user.telegramId);
+    assert.notEqual(user.telegramId, "forged");
     assert.equal(user.tier, 'bor');
     assert.ok(refreshToken);
     for (const field of ['password', 'activeSessionId', 'activeSessionLastSeenAt', 'activeSessionExpiresAt']) assert.equal(field in user, false);
@@ -93,22 +106,27 @@ test('signup requires a usable phone and rejects missing, short or oversized cre
   }
 }));
 test('concurrent signup for one phone creates one account and one trial', async () => enabled(async () => {
-  const first = signup();
+  const first = await verifiedSignup();
   const second = { ...signup(), phone_number: `+${first.phone_number.slice(0, 3)} ${first.phone_number.slice(3)}` };
   const responses = await Promise.all([request('/auth/register', first), request('/auth/register', second)]);
-  assert.deepEqual(responses.map(r => r.status).sort(), [200, 409]);
+  assert.equal(responses.filter(r => r.status === 200).length, 1);
+  // A replay can observe either the spent proof (403) or the already-created
+  // phone account (409), depending on which request reaches the DB first.
+  assert.ok(responses.some(r => r.status === 403 || r.status === 409));
   const users = await UserModel.find({ phoneDigits: first.phone_number });
   assert.equal(users.length, 1);
   assert.equal(await SubscriptionModel.countDocuments({ userId: users[0]._id.toString() }), 1);
 }));
 test('a failed trial rolls back the whole signup and retry succeeds', async () => enabled(async () => {
-  const input = signup();
+  const input = await verifiedSignup();
   const original = subscriptionService.createTrialSubscription;
   subscriptionService.createTrialSubscription = async () => { throw Error('injected trial failure'); };
   try { await assert.rejects(authService.register(input), /injected trial failure/); }
   finally { subscriptionService.createTrialSubscription = original; }
   assert.equal(await UserModel.countDocuments({ username: input.username }), 0);
+  assert.equal((await RegistrationPhoneModel.findOne({ phone: input.phone_number }))!.consumed, false);
   assert.equal((await authService.register(input)).user.role, 'admin');
+  assert.equal((await RegistrationPhoneModel.findOne({ phone: input.phone_number }))!.consumed, true);
 }));
 test('logout revokes old credentials and a subsequent login needs no phantom OTP', async () => {
   const u = await session({ telegramId: null });

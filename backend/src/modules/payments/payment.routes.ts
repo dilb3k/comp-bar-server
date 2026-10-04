@@ -5,6 +5,9 @@ import { validateRequest } from "../../middlewares/validate.middleware";
 import { botAuth } from "../../middlewares/bot-auth.middleware";
 import { imageUpload } from "../../middlewares/upload.middleware";
 import { botController } from "./payment.controller";
+import { registrationPhoneService } from "../auth/registration-phone.service";
+import { registrationStartSchema, registrationContactSchema } from "../auth/auth.validation";
+import { sendSuccess } from "../../utils/response";
 import {
   lookupUserSchema,
   linkTelegramSchema,
@@ -23,6 +26,13 @@ import {
 const router = Router();
 
 router.use(botAuth);
+
+router.post("/registration/start", validateRequest({ body: registrationStartSchema }), asyncHandler(async (req, res) => {
+  return sendSuccess(res, await registrationPhoneService.start(req.body.startToken, req.body.telegramId));
+}));
+router.post("/registration/confirm", validateRequest({ body: registrationContactSchema }), asyncHandler(async (req, res) => {
+  return sendSuccess(res, await registrationPhoneService.confirm(req.body.telegramId, req.body.contactUserId, req.body.phone, req.body.telegramUsername));
+}));
 
 router.get("/pricing", asyncHandler(botController.pricing));
 

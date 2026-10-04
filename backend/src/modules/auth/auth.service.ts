@@ -9,6 +9,7 @@ import { computeTier, SubscriptionModel } from "../subscriptions/subscription.mo
 import { authRepository } from "./auth.repository";
 import { UserModel } from "./user.model";
 import { SessionChallengeModel } from "./session-challenge.model";
+import { registrationPhoneService } from "./registration-phone.service";
 import { sendOtpViaTelegram } from "./otp-telegram";
 import { alertService } from "../../services/alert.service";
 import { ProductModel as ProductMongooseModel } from "../products/product.model";
@@ -71,27 +72,37 @@ export class AuthService {
     await authRepository.pushVerifiedDevice(userId, deviceId);
   }
 
-  async register(payload: { username: string; password: string; phone_number: string; businessDayStartHour?: number; deviceId?: string }) {
+  async register(payload: { username: string; password: string; phone_number: string; businessDayStartHour?: number; deviceId?: string; phoneVerificationToken?: string }) {
     if (!env.ALLOW_PUBLIC_REGISTER) {
       throw new AppError("Ro‘yxatdan o‘tish yopiq. Administratorga murojaat qiling.", 403, undefined, "PUBLIC_REGISTRATION_DISABLED");
     }
     const phone = normalizePhone(payload.phone_number);
     if (phone.length < 7 || phone.length > 15) throw new AppError("Telefon raqamingizni to‘liq kiriting", 422);
+    const telegramId = await registrationPhoneService.verifiedOwner(payload.phoneVerificationToken, phone);
     const userId = new mongoose.Types.ObjectId().toString();
     // Shared across API replicas: simultaneous signups cannot create two
     // accounts for one phone and make Telegram contact lookup ambiguous.
     const phoneFence = `signup:${hashOtp(phone)}`;
+    const telegramFence = `signup-telegram:${hashOtp(telegramId)}`;
     await ensureOwnerFence(phoneFence);
-    return withOwnerTransaction(userId, () => withOwnerTransaction(phoneFence, async () => {
+    await ensureOwnerFence(telegramFence);
+    return withOwnerTransaction(userId, () => withOwnerTransaction(phoneFence, () => withOwnerTransaction(telegramFence, async () => {
       if (await authRepository.findByUsername(payload.username)) throw new AppError("Username already exists", 409);
       if (await UserModel.exists({ phoneDigits: phone }).session(currentSession() ?? null)) {
         throw new AppError("Bu telefon raqami bilan hisob mavjud. Hisobingizga kiring.", 409, undefined, "PHONE_ALREADY_REGISTERED");
+      }
+      const verified = await registrationPhoneService.consume(payload.phoneVerificationToken, phone);
+      if (await UserModel.exists({ telegramId: verified.telegramId }).session(currentSession() ?? null)) {
+        throw new AppError("Bu Telegram bilan hisob mavjud. Hisobingizga kiring.", 409);
       }
       const user = await authRepository.createUser({
         id: userId, username: payload.username, password: payload.password,
         phone_number: phone, role: "admin", createdBy: null,
         businessDayStartHour: payload.businessDayStartHour,
       });
+      user.telegramId = verified.telegramId;
+      user.telegramUsername = verified.telegramUsername;
+      await user.save({ session: currentSession() });
       const start = new Date();
       const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
       const subscription = await subscriptionService.createTrialSubscription(userId, "bor", start, end);
@@ -102,7 +113,7 @@ export class AuthService {
         token: signAccessToken(authUser), refreshToken,
         user: { ...user.toJSON(), isPayed: true, tier, subscriptionEndDate: subscription.endDate.toISOString() },
       };
-    }));
+    })));
   }
 
   async login(username: string, password: string, deviceId?: string) {

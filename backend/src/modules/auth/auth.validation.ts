@@ -21,6 +21,7 @@ export const verifySessionChallengeSchema = z.object({
 });
 
 export const registerSchema = z.object({
+  phoneVerificationToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
   username: z.string().trim().min(3, "username must be at least 3 characters").max(64),
   password: z.string().min(6, "password must be at least 6 characters")
     .refine(value => Buffer.byteLength(value, "utf8") <= 72, "password must be at most 72 bytes"),
@@ -28,6 +29,18 @@ export const registerSchema = z.object({
     .transform(normalizePhone).refine(value => value.length >= 7 && value.length <= 15, "Telefon raqamingizni to‘liq kiriting"),
   businessDayStartHour: z.number().int().min(0).max(23).optional(),
   deviceId: z.string().trim().min(1).max(128).optional(),
+});
+
+export const registrationStatusSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export const registrationStartSchema = z.object({
+  startToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  telegramId: z.string().regex(/^\d+$/),
+});
+export const registrationContactSchema = z.object({
+  telegramId: z.string().regex(/^\d+$/),
+  contactUserId: z.string().regex(/^\d+$/),
+  phone: z.string().min(7).max(32),
+  telegramUsername: z.string().max(64).optional(),
 });
 
 export const createAdminSchema = z.object({

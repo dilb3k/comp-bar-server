@@ -5,9 +5,22 @@ import { validateRequest } from "../../middlewares/validate.middleware";
 import { authLimiter } from "../../middlewares/rate-limit.middleware";
 import { authController } from "./auth.controller";
 import { authenticate, authorize } from "./auth.middleware";
+import { registrationPhoneService } from "./registration-phone.service";
+import { registrationStatusSchema } from "./auth.validation";
+import { sendSuccess } from "../../utils/response";
 import { createAdminSchema, loginSchema, loginWithPhoneSchema, refreshSchema, registerSchema, updateAdminSchema, updateMeSchema, verifySessionChallengeSchema } from "./auth.validation";
 
 const router = Router();
+
+router.post("/register/phone", authLimiter, asyncHandler(async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return sendSuccess(res, await registrationPhoneService.begin());
+}));
+// Polling uses the API limiter; it must not exhaust the login-attempt budget.
+router.post("/register/phone/status", validateRequest({ body: registrationStatusSchema }), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return sendSuccess(res, await registrationPhoneService.status(req.body.token));
+}));
 
 // Keep a stable API contract. The service rejects disabled signup before DB work.
 router.post("/register", authLimiter, validateRequest({ body: registerSchema }), asyncHandler(authController.register));
@@ -109,4 +122,3 @@ router.delete(
 );
 
 export const authRoutes = router;
-

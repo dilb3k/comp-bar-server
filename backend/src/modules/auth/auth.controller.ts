@@ -21,6 +21,7 @@ export const authController = {
       phone_number: req.body.phone_number,
       businessDayStartHour: req.body.businessDayStartHour,
       deviceId: req.body.deviceId,
+      phoneVerificationToken: req.body.phoneVerificationToken,
     });
     return sendSuccess(res, result);
   },
