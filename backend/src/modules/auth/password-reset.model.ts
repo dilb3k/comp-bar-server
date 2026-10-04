@@ -5,6 +5,7 @@ const schema = new Schema({
   telegramId: { type: String, required: true },
   securityVersion: { type: Number, required: true },
   tokenHash: { type: String, required: true, unique: true },
+  purpose: { type: String, enum: ["web", "telegram"], default: "web" },
   consumed: { type: Boolean, default: false },
   expiresAt: { type: Date, required: true },
   createdAt: { type: Date, default: Date.now },

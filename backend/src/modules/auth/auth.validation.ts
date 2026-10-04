@@ -38,6 +38,7 @@ export const passwordResetConfirmSchema = z.object({
   password: z.string().min(6, "password must be at least 6 characters")
     .refine(value => Buffer.byteLength(value, "utf8") <= 72, "password must be at most 72 bytes"),
 });
+export const passwordResetChatConfirmSchema = passwordResetConfirmSchema.merge(passwordResetRequestSchema);
 export const registrationStartSchema = z.object({
   startToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   telegramId: z.string().regex(/^\d+$/),

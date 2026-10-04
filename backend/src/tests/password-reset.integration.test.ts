@@ -68,6 +68,77 @@ test("only the trusted bot can create a reset link for its linked Telegram sende
   assert.equal(await u.comparePassword(oldPassword), true);
   assert.equal((await request("/bot/password-reset", { telegramId: u.telegramId }, secret)).status, 429);
 });
+test("chat reset requires bot authentication and cannot be confirmed publicly or by another Telegram sender", async () => {
+  const u = await user(), other = await user();
+  const path = "/bot/password-reset/chat";
+  assert.equal((await request(path, { telegramId: u.telegramId })).status, 401);
+  assert.equal((await request(path, { telegramId: u.telegramId }, "wrong-secret")).status, 401);
+  const begin = await request(path, { telegramId: u.telegramId, userId: other._id.toString(), purpose: "web" }, secret);
+  assert.equal(begin.status, 200); assert.equal(begin.cache, "no-store");
+  assert.deepEqual(Object.keys(begin.body.data).sort(), ["expiresAt", "token"]);
+  const proof = begin.body.data.token;
+  assert.match(proof, /^[A-Za-z0-9_-]{43}$/);
+  const stored = await PasswordResetModel.findOne({ tokenHash: hashOtp(proof) });
+  assert.equal(stored!.purpose, "telegram"); assert.equal(stored!.userId, u._id.toString());
+  assert.equal(JSON.stringify(stored).includes(proof), false);
+  const body = { telegramId: u.telegramId, token: proof, password: newPassword };
+  assert.equal((await request(path + "/confirm", body)).status, 401);
+  assert.equal((await request(path + "/confirm", body, "wrong-secret")).status, 401);
+  assert.equal((await request("/auth/password/reset", body)).body.error.code, "PASSWORD_RESET_INVALID");
+  assert.equal((await request(path + "/confirm", { ...body, telegramId: other.telegramId }, secret)).body.error.code, "PASSWORD_RESET_INVALID");
+  assert.equal((await PasswordResetModel.findById(stored!._id))!.consumed, false);
+  assert.equal(await (await UserModel.findById(u._id))!.comparePassword(oldPassword), true);
+
+  const id = u._id.toString();
+  const claims = { userId: id, username: u.username, role: "admin" as const, isPayed: false, tier: "tekin" as const, sessionId: u.activeSessionId!, securityVersion: 0 };
+  const access = signAccessToken(claims), scoped = signAccessToken({ ...claims, scope: "procurement" });
+  const refresh = signRefreshToken({ userId: id, sessionId: u.activeSessionId! });
+  const reply = await request(path + "/confirm", { ...body, role: "superAdmin" }, secret);
+  assert.equal(reply.status, 200); assert.equal(reply.cache, "no-store"); assert.equal(reply.body.data.reset, true);
+  const saved = await UserModel.findById(id);
+  assert.equal(saved!.role, "admin"); assert.equal(saved!.securityVersion, 1);
+  assert.equal(await saved!.comparePassword(newPassword), true); assert.notEqual(saved!.password, newPassword);
+  assert.equal((await request("/auth/me", undefined, undefined, access)).status, 401);
+  assert.equal((await request("/auth/me", undefined, undefined, scoped)).status, 401);
+  await assert.rejects(authService.refresh(refresh));
+  assert.equal((await request(path + "/confirm", body, secret)).body.error.code, "PASSWORD_RESET_INVALID");
+  assert.equal(await (await UserModel.findById(other._id))!.comparePassword(oldPassword), true);
+});
+test("chat confirmation cannot consume a web proof, including links issued before purpose was stored", async () => {
+  const u = await user(), proof = await reset.request(u.telegramId!);
+  const raw = token(proof.resetUrl);
+  await assert.rejects(reset.confirm(raw, newPassword, u.telegramId!), (e: any) => e.code === "PASSWORD_RESET_INVALID");
+  await PasswordResetModel.collection.updateOne({ tokenHash: hashOtp(raw) }, { $unset: { purpose: "" } });
+  await assert.rejects(reset.confirm(raw, newPassword, u.telegramId!), (e: any) => e.code === "PASSWORD_RESET_INVALID");
+  assert.equal((await reset.confirm(raw, newPassword)).reset, true);
+});
+test("expired, rebound and credential-invalidated chat proofs cannot change a password", async () => {
+  for (const kind of ["expired", "rebound", "credentials", "inactive"]) {
+    const u = await user(), proof = await reset.requestInChat(u.telegramId!);
+    if (kind === "expired") await PasswordResetModel.updateOne({ tokenHash: hashOtp(proof.token) }, { $set: { expiresAt: new Date(0) } });
+    if (kind === "rebound") await UserModel.updateOne({ _id: u._id }, { $set: { telegramId: String(++serial) } });
+    if (kind === "credentials") await UserModel.updateOne({ _id: u._id }, { $inc: { securityVersion: 1 } });
+    if (kind === "inactive") await UserModel.updateOne({ _id: u._id }, { $set: { isActive: false } });
+    await assert.rejects(reset.confirm(proof.token, newPassword, u.telegramId!), (e: any) => e.code === "PASSWORD_RESET_INVALID");
+    assert.equal(await (await UserModel.findById(u._id))!.comparePassword(oldPassword), true);
+  }
+});
+test("simultaneous chat confirmations change the password only once", async () => {
+  const u = await user(), proof = await reset.requestInChat(u.telegramId!);
+  const body = { telegramId: u.telegramId, token: proof.token, password: newPassword };
+  const replies = await Promise.all(Array.from({ length: 4 }, () => request("/bot/password-reset/chat/confirm", body, secret)));
+  assert.equal(replies.filter(reply => reply.status === 200).length, 1);
+  assert.equal(replies.filter(reply => reply.status === 400 && reply.body.error.code === "PASSWORD_RESET_INVALID").length, 3);
+  assert.equal((await UserModel.findById(u._id))!.securityVersion, 1);
+});
+test("invalid chat passwords and identities are rejected without consuming the proof", async () => {
+  const u = await user(), proof = await reset.requestInChat(u.telegramId!);
+  for (const password of ["short", "a".repeat(73), "😀".repeat(19)]) {
+    assert.equal((await request("/bot/password-reset/chat/confirm", { telegramId: u.telegramId, token: proof.token, password }, secret)).status, 422);
+  }
+  assert.equal((await request("/bot/password-reset/chat/confirm", { telegramId: "invalid", token: proof.token, password: newPassword }, secret)).status, 422);
+  assert.equal((await PasswordResetModel.findOne({ tokenHash: hashOtp(proof.token) }))!.consumed, false);
+});
 test("unlinked, deactivated and ambiguous Telegram identities cannot choose an account", async () => {
   await assert.rejects(reset.request("999999999999"), (e: any) => e.statusCode === 404);
   const inactive = await user({ isActive: false });

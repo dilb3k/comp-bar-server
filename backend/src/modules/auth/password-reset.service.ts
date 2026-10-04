@@ -7,7 +7,7 @@ import { UserModel } from "./user.model";
 import { SessionChallengeModel } from "./session-challenge.model";
 import { PasswordResetModel } from "./password-reset.model";
 
-const invalid = () => new AppError("Havola ishlatilgan yoki muddati tugagan. Telegram botidan yangi havola oling.", 400, undefined, "PASSWORD_RESET_INVALID");
+const invalid = () => new AppError("Tasdiqlash ishlatilgan yoki muddati tugagan. Telegram botida tiklashni qayta boshlang.", 400, undefined, "PASSWORD_RESET_INVALID");
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 
 function resetPage() {
@@ -20,39 +20,53 @@ function resetPage() {
   return new URL("https://hisvex-web.vercel.app/reset-password");
 }
 
+// Called only by botAuth routes. Resolve durable ownership on every request.
+async function issue(telegramId: string, purpose: "web" | "telegram") {
+  if (!/^\d{1,20}$/.test(telegramId)) throw new AppError("Telegram hisobi noto‘g‘ri.", 422);
+  const users = await UserModel.find({ telegramId, isActive: true }).limit(2);
+  if (users.length !== 1) throw new AppError("Hisobingizni avval /start orqali ulang. Bir nechta hisob bog‘langan bo‘lsa, yordamga murojaat qiling.", 404, undefined, "PASSWORD_RESET_ACCOUNT_UNAVAILABLE");
+  const owner = users[0]._id.toString();
+  return withOwnerTransaction(owner, async () => {
+    const user = await UserModel.findOne({ _id: owner, telegramId, isActive: true }).session(currentSession() ?? null);
+    if (!user) throw invalid();
+    const recent = await PasswordResetModel.exists({ userId: owner, createdAt: { $gt: new Date(Date.now() - 60000) } }).session(currentSession() ?? null);
+    if (recent) throw new AppError("Tiklashni qayta boshlash uchun 1 daqiqa kuting.", 429, undefined, "PASSWORD_RESET_RATE_LIMITED");
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await PasswordResetModel.updateMany({ userId: owner, consumed: false }, { $set: { consumed: true } }, { session: currentSession() });
+    await PasswordResetModel.create([{ userId: owner, telegramId, purpose, securityVersion: Number(user.securityVersion ?? 0), tokenHash: hashOtp(token), expiresAt }], { session: currentSession() });
+    return { token, expiresAt: expiresAt.toISOString() };
+  });
+}
+
 export const passwordResetService = {
-  // Called only by botAuth routes. Account ownership comes from the sender's
-  // durable Telegram link, never a client-provided user ID or typed phone.
+  // Keep already issued web links valid until their short expiry. The bot's
+  // new flow uses a separate purpose that this public flow cannot consume.
   async request(telegramId: string) {
-    if (!/^\d{1,20}$/.test(telegramId)) throw new AppError("Telegram hisobi noto‘g‘ri.", 422);
-    const users = await UserModel.find({ telegramId, isActive: true }).limit(2);
-    if (users.length !== 1) throw new AppError("Hisobingizni avval /start orqali ulang. Bir nechta hisob bog‘langan bo‘lsa, yordamga murojaat qiling.", 404, undefined, "PASSWORD_RESET_ACCOUNT_UNAVAILABLE");
-    const owner = users[0]._id.toString();
-    return withOwnerTransaction(owner, async () => {
-      const user = await UserModel.findOne({ _id: owner, telegramId, isActive: true }).session(currentSession() ?? null);
-      if (!user) throw invalid();
-      const recent = await PasswordResetModel.exists({ userId: owner, createdAt: { $gt: new Date(Date.now() - 60000) } }).session(currentSession() ?? null);
-      if (recent) throw new AppError("Yangi havola olish uchun 1 daqiqa kutib, qayta bosing.", 429, undefined, "PASSWORD_RESET_RATE_LIMITED");
-      const token = randomBytes(32).toString("base64url");
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-      await PasswordResetModel.updateMany({ userId: owner, consumed: false }, { $set: { consumed: true } }, { session: currentSession() });
-      await PasswordResetModel.create([{ userId: owner, telegramId, securityVersion: Number(user.securityVersion ?? 0), tokenHash: hashOtp(token), expiresAt }], { session: currentSession() });
-      const url = resetPage();
-      // A fragment does not travel in HTTP request logs or Referer headers.
-      url.hash = `token=${token}`;
-      return { resetUrl: url.toString(), expiresAt: expiresAt.toISOString() };
-    });
+    const { token, expiresAt } = await issue(telegramId, "web");
+    const url = resetPage();
+    // A fragment does not travel in HTTP request logs or Referer headers.
+    url.hash = `token=${token}`;
+    return { resetUrl: url.toString(), expiresAt };
   },
-  async confirm(token: string, password: string) {
+  requestInChat(telegramId: string) {
+    return issue(telegramId, "telegram");
+  },
+  async confirm(token: string, password: string, telegramId?: string) {
     if (!tokenPattern.test(token)) throw invalid();
     if (typeof password !== "string" || password.length < 6 || Buffer.byteLength(password, "utf8") > 72) {
       throw new AppError("Parol kamida 6 belgi va ko‘pi bilan 72 bayt bo‘lsin.", 422);
     }
     const tokenHash = hashOtp(token);
-    const found = await PasswordResetModel.findOne({ tokenHash, consumed: false, expiresAt: { $gt: new Date() } });
+    // Chat proofs need both the bot's service credential and the actual
+    // Telegram sender. Public web confirmation cannot use a chat proof.
+    const channel = telegramId === undefined
+      ? { $or: [{ purpose: "web" }, { purpose: { $exists: false } }] }
+      : { purpose: "telegram", telegramId };
+    const found = await PasswordResetModel.findOne({ tokenHash, ...channel, consumed: false, expiresAt: { $gt: new Date() } });
     if (!found) throw invalid();
     return withOwnerTransaction(found.userId, async () => {
-      const proof = await PasswordResetModel.findOneAndUpdate({ _id: found._id, tokenHash, consumed: false, expiresAt: { $gt: new Date() } },
+      const proof = await PasswordResetModel.findOneAndUpdate({ _id: found._id, tokenHash, ...channel, consumed: false, expiresAt: { $gt: new Date() } },
         { $set: { consumed: true } }, { new: true, session: currentSession() });
       if (!proof) throw invalid();
       const user = await UserModel.findOne({ _id: proof.userId, telegramId: proof.telegramId, isActive: true }).session(currentSession() ?? null);

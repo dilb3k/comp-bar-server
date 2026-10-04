@@ -9,7 +9,7 @@ import { registrationPhoneService } from "../auth/registration-phone.service";
 import { registrationStartSchema, registrationContactSchema } from "../auth/auth.validation";
 import { sendSuccess } from "../../utils/response";
 import { passwordResetService } from "../auth/password-reset.service";
-import { passwordResetRequestSchema } from "../auth/auth.validation";
+import { passwordResetRequestSchema, passwordResetChatConfirmSchema } from "../auth/auth.validation";
 import {
   lookupUserSchema,
   linkTelegramSchema,
@@ -32,6 +32,16 @@ router.use(botAuth);
 router.post("/password-reset", validateRequest({ body: passwordResetRequestSchema }), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   return sendSuccess(res, await passwordResetService.request(req.body.telegramId));
+}));
+
+router.post("/password-reset/chat", validateRequest({ body: passwordResetRequestSchema }), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return sendSuccess(res, await passwordResetService.requestInChat(req.body.telegramId));
+}));
+router.post("/password-reset/chat/confirm", validateRequest({ body: passwordResetChatConfirmSchema }), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const { token, password, telegramId } = req.body;
+  return sendSuccess(res, await passwordResetService.confirm(token, password, telegramId));
 }));
 
 router.post("/registration/start", validateRequest({ body: registrationStartSchema }), asyncHandler(async (req, res) => {
