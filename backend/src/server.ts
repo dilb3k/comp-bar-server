@@ -1,12 +1,11 @@
-import http from "node:http";
+import { createHttpServer } from "./lib/http-server";
 
-import mongoose from "mongoose";
+
 import cron from "node-cron";
 
 import { env } from "./config/env";
-import { connectDatabase } from "./lib/mongoose";
+import { connectDatabase, disconnectDatabase } from "./lib/mongoose";
 import {verifyDatabaseReadiness} from './lib/database-readiness';
-import { authService } from "./modules/auth/auth.service";
 import { ensurePasswordResetStorage } from "./modules/auth/password-reset.model";
 import { createApp } from "./app";
 import { migrateLegacyProductRecords } from "./modules/products/product.migration";
@@ -18,7 +17,7 @@ import { migrateProductImagesToR2 } from "./modules/migrations/backfill-product-
 import { subscriptionService } from "./modules/subscriptions/subscription.service";
 import { paymentService } from "./modules/payments/payment.service";
 import { telegramReportService } from "./services/telegram-report.service";
-import { warmUpOcr } from "./utils/ocr";
+import { closeReportWorker } from "./lib/report-worker";
 
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled Rejection:", reason);
@@ -28,7 +27,7 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-async function bootstrap() {
+export async function prepareDatabase() {
   await connectDatabase();
   await ensurePasswordResetStorage();
   if (env.MIGRATION_ENABLED) {
@@ -41,16 +40,23 @@ async function bootstrap() {
   }
   if(env.NODE_ENV==='production') await verifyDatabaseReadiness();
 
+}
+
+export async function bootstrap() {
+  if (process.env.CLUSTER_BOOTSTRAPPED === "1") await connectDatabase();
+  else await prepareDatabase();
+  const jobs: ReturnType<typeof cron.schedule>[] = [];
+  if (process.env.RUN_SCHEDULED_JOBS !== "false" && process.env.CLUSTER_SCHEDULER !== "0") {
   // Real fix for a long-standing gap: subscription expiry used to only be
   // checked lazily (on a user's next login/me/refresh call), so a lapsed
   // paid account could keep working for an arbitrary amount of time if it
   // simply didn't hit one of those routes. Runs every hour; harmless to run
   // more often than subscriptions actually expire.
-  cron.schedule("0 * * * *", () => {
+  jobs.push(cron.schedule("0 * * * *", () => {
     subscriptionService.refreshExpiredSubscriptions().catch((error) => {
       console.error("refreshExpiredSubscriptions cron failed", error);
     });
-  });
+  }));
 
   // Second layer of defense behind OCR auto-provisioning (see
   // payment.service.ts#attachReceipt): a "provisioned" payment nobody
@@ -59,7 +65,7 @@ async function bootstrap() {
   // — this bounds how long a forged one can ride on a granted tier before a
   // human (or this cron) closes the window. Hourly, same cadence as the
   // subscription-expiry cron above.
-  cron.schedule("0 * * * *", () => {
+  jobs.push(cron.schedule("0 * * * *", () => {
     paymentService
       .autoExpireProvisionedPayments()
       .then((expired) => {
@@ -86,41 +92,40 @@ async function bootstrap() {
       .catch((error) => {
         console.error("autoExpireProvisionedPayments cron failed", error);
       });
-  });
+  }));
+  }
 
-  // Pays the OCR worker's first-use cost (traineddata fetch, see ocr.ts) at
-  // boot instead of on whichever admin's receipt upload happens to be first
-  // after a cold start. Not awaited — a slow/unreachable fetch here must
-  // never delay the health check or block startup; a receipt uploaded
-  // before this resolves just falls through to the same lazy getWorker().
-  warmUpOcr().catch((error) => {
-    console.error("OCR worker warm-up failed (will retry lazily on first receipt upload):", error);
-  });
-
+  // OCR stays lazy: do not allocate/fetch a worker in every API process at boot.
   const app = createApp();
 
-  const server = http.createServer(app);
+  const server = createHttpServer(app);
 
-  server.listen(env.PORT, () => {
+  server.listen({ port: env.PORT, backlog: 4096 }, () => {
     console.log(`Backend listening on http://localhost:${env.PORT}`);
   });
 
+  let stopping = false;
   function gracefulShutdown(signal: string) {
-    console.log(`Received ${signal}, shutting down gracefully...`);
-    server.close(() => {
-      console.log("HTTP server closed");
-      mongoose.disconnect().then(() => {
-        console.log("MongoDB disconnected");
-        process.exit(0);
-      });
+    if (stopping) return;
+    stopping = true;
+    console.log(`Received ${signal}, draining HTTP requests...`);
+    for (const job of jobs) job.stop();
+    const deadline = setTimeout(() => { server.closeAllConnections(); process.exit(1); }, 25000);
+    deadline.unref();
+    server.close(async () => {
+      try { await closeReportWorker(); await disconnectDatabase(); process.exit(0); }
+      catch (error) { console.error("Shutdown failed", error); process.exit(1); }
     });
+    server.closeIdleConnections();
   }
-
   process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
   process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("disconnect", () => gracefulShutdown("parent disconnect"));
+  process.on("message", message => { if (message === "shutdown") gracefulShutdown("primary shutdown"); });
+  return server;
 }
 
-void bootstrap().catch((error) => {
+if (require.main === module) void bootstrap().catch(error => {
   console.error("Failed to start server", error);
   process.exit(1);
 });

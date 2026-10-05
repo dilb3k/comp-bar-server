@@ -1,5 +1,5 @@
 import { currentSession } from "../../lib/transaction";
-import { ProcurementModel } from "./procurement.model";
+import { ProcurementModel, serializeProcurement } from "./procurement.model";
 
 export class ProcurementRepository {
   async findRange(ownerAdminId: string, from?: string, to?: string, options: { supplier?: string; product?: string; page?: number; limit?: number } = {}) {
@@ -16,7 +16,7 @@ export class ProcurementRepository {
     const query = ProcurementModel.find(filter).sort({ date: -1, createdAt: -1, localId: -1 }).skip(((options.page ?? 1) - 1) * limit).limit(limit);
     const session = currentSession();
     if (session) query.session(session);
-    return query;
+    return (await query.lean()).map(serializeProcurement);
   }
 }
 

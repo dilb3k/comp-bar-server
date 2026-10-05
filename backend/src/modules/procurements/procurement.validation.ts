@@ -73,8 +73,10 @@ export const procurementAnalyticsQuerySchema = z
     ...rangeFields,
     period: z.enum(["day", "week", "month", "year", "custom"]).default("day"),
     format: z.enum(["csv", "xlsx", "pdf"]).optional(),
+    report: z.enum(["analytics", "receipts"]).optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.report === "receipts" && value.format === "pdf") ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Receipt ledger supports csv or xlsx" });
     if (value.period === "custom" && (!value.from || !value.to))
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

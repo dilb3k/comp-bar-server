@@ -6,10 +6,10 @@ import { OwnerWriteVersion } from "../../lib/transaction";
 import { AppError } from "../../utils/app-error";
 import { getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
 import type { AuthUser } from "../auth/auth.types";
-import { ProductModel } from "../products/product.model";
+import { ProductModel, serializeProduct } from "../products/product.model";
 import { ProductTombstoneModel } from "../products/product-tombstone.model";
-import { InventoryEntryModel } from "../inventory/inventory.model";
-import { DailySnapshotModel } from "../snapshots/snapshot.model";
+import { InventoryEntryModel, serializeInventory } from "../inventory/inventory.model";
+import { DailySnapshotModel, serializeSnapshot } from "../snapshots/snapshot.model";
 
 const names = ["products", "inventory", "daily", "deletedProducts"] as const;
 const models = [ProductModel, InventoryEntryModel, DailySnapshotModel, ProductTombstoneModel];
@@ -78,15 +78,15 @@ export async function pullChanges(actor: AuthUser, input: { cursor?: string; che
       ] });
     }
     const docs: any[] = await model.find({ $and: clauses }).sort(initial ? { _id: 1 } : { serverVersion: 1, _id: 1 })
-      .limit(limit + 1).read("primary").readConcern("majority");
+      .limit(limit + 1).read("primary").readConcern("majority").lean();
     page.done[index] = docs.length <= limit;
     const items = docs.slice(0, limit);
     const last = items.at(-1);
-    if (last) page.positions[index] = { id: String(last._id), revision: Number(last.get("serverVersion") ?? 0) };
+    if (last) page.positions[index] = { id: String(last._id), revision: Number(last.serverVersion ?? 0) };
     result[names[index]] = items.map(doc => {
-      const json = doc.toJSON();
+      const json = index === 0 ? serializeProduct(doc) : index === 1 ? serializeInventory(doc) : index === 2 ? serializeSnapshot(doc) : { ...doc };
       delete json.ownerAdminId;
-      return { ...json, serverVersion: Number(doc.get("serverVersion") ?? 0) };
+      return { ...json, serverVersion: Number(doc.serverVersion ?? 0) };
     });
   }));
   const hasMore = page.done.some(done => !done);

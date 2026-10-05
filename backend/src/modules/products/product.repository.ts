@@ -2,7 +2,7 @@ import { currentSession } from "../../lib/transaction";
 import { FilterQuery, Types } from "mongoose";
 
 import { normalizeUnit } from "../../utils/quantity";
-import { ProductModel, IProduct } from "./product.model";
+import { ProductModel, IProduct, serializeProduct } from "./product.model";
 
 type ProductPayload = Record<string, unknown>;
 
@@ -56,7 +56,7 @@ export class ProductRepository {
       { displayIndex: 1, _id: 0 }
     ).sort({ displayIndex: -1 }).limit(1);
     if (session ?? currentSession()) query.session(session ?? currentSession()!);
-    const maxProduct = await query;
+    const maxProduct = await query.lean<{displayIndex: number}>();
 
     if (maxProduct && maxProduct.displayIndex !== undefined) {
       return maxProduct.displayIndex + 1;
@@ -76,13 +76,20 @@ export class ProductRepository {
     return ProductModel.find(filter).sort({
       displayIndex: 1,
       name: 1
-    }).session(currentSession()??null);
+    }).session(currentSession()??null).lean().then(rows => rows.map(serializeProduct));
+  }
+
+  async findPublicByIdentifier(ownerAdminId: string, identifier: string) {
+    const alternatives: Record<string, unknown>[] = [{ localId: identifier }];
+    if (Types.ObjectId.isValid(identifier)) alternatives.push({ _id: identifier });
+    const row = await ProductModel.findOne({ ownerAdminId, $or: alternatives }).lean();
+    return row ? serializeProduct(row) : null;
   }
 
   async findAllByOwner(ownerAdminId: string, session?: any) {
     const query = ProductModel.find({ ownerAdminId }).sort({ updatedAt: 1 });
     if (session ?? currentSession()) query.session(session ?? currentSession()!);
-    return query;
+    return (await query.lean()).map(serializeProduct);
   }
 
   async findAllUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {
@@ -109,7 +116,7 @@ export class ProductRepository {
     if (localIds.length === 0) return new Set();
     let query = ProductModel.find({ ownerAdminId, localId: { $in: localIds } }).select("localId");
     if (session) query = query.session(session);
-    const docs = await query;
+    const docs = await query.lean();
     return new Set(docs.map((d: any) => d.localId));
   }
 

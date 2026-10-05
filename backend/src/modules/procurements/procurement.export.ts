@@ -3,6 +3,7 @@ import PDFDocument from "pdfkit";
 import { resolve } from "node:path";
 export type ReportRow = (string | number)[];
 export function procurementReportRows(data: any): ReportRow[] {
+  if (data.kind === "receipts") return data.rows as ReportRow[];
   const rows: ReportRow[] = [
     ["Ta’minot va Kirimlar Tahlili"],
     ["Davr", data.from, data.to],
@@ -67,7 +68,7 @@ export function procurementCsv(data: any) {
     return '"' + s.replace(/"/g, '""') + '"';
   };
   return (
-    "\uFEFF" +
+    "\uFEFF" + (data.kind === "receipts" ? "sep=,\r\n" : "") +
     procurementReportRows(data)
       .map((row) => row.map(cell).join(","))
       .join("\r\n")
@@ -86,12 +87,29 @@ export async function procurementExport(
   if (format === "xlsx") {
     const book = new ExcelJS.Workbook();
     const sheet = book.addWorksheet("Kirimlar");
+    sheet.columns = Array.from({ length: Math.max(...rows.map(row => row.length)) }, (_, i) => ({ width: i === 0 ? 45 : 24 }));
     sheet.addRows(rows);
-    sheet.columns.forEach((column, i) => {
-      column.width = i === 0 ? 45 : 24;
-    });
     sheet.getRow(1).font = { bold: true, size: 16 };
     sheet.views = [{ state: "frozen", ySplit: 4 }];
+    if (data.kind === "receipts") {
+      sheet.columns.forEach((column, i) => { column.width = [7, 15, 26, 30, 17, 11, 20, 22, 30][i] ?? 24; });
+      sheet.mergeCells("A1:I1");
+      sheet.getRow(1).height = 30;
+      sheet.getRow(4).height = 27;
+      sheet.getRow(4).eachCell(cell => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF6D28D9" } };
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      });
+      sheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: Math.max(4, rows.length - 1), column: 9 } };
+      sheet.eachRow((row, i) => {
+        if (i <= 4) return;
+        row.height = 25;
+        row.alignment = { vertical: "middle", wrapText: true };
+        row.getCell(5).numFmt = "#,##0.###";
+        for (const column of [7, 8]) row.getCell(column).numFmt = "#,##0.##";
+        if (i === rows.length) { row.font = { bold: true }; row.eachCell(cell => { cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDE9FE" } }; }); }
+      });
+    }
     return {
       mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       body: Buffer.from(await book.xlsx.writeBuffer()),

@@ -9,10 +9,13 @@
   "scripts": {
     "dev": "tsx watch backend/src/server.ts",
     "build": "tsc -p backend/tsconfig.json",
-    "start": "node --max-old-space-size=450 backend/dist/server.js",
+    "start": "node --max-old-space-size=450 backend/dist/cluster.js",
     "check": "tsc --noEmit -p backend/tsconfig.json",
     "test": "tsc -p backend/tsconfig.json && NODE_ENV=test MONGODB_URL=mongodb://127.0.0.1:27017/bar-test JWT_SECRET=test_secret_min_16_chars node backend/dist/tests/business-rules.test.js",
-    "test:integration": "npm run build && node scripts/test-integration.cjs"
+    "test:integration": "npm run build && node scripts/test-integration.cjs",
+    "start:single": "node --max-old-space-size=450 backend/dist/server.js",
+    "test:capacity": "npm run build && node scripts/test-integration.cjs scripts/capacity.integration.test.cjs",
+    "test:architecture": "npm run build && node --test scripts/architecture.test.cjs"
   },
   "keywords": [
     "express",

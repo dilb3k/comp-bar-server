@@ -7,6 +7,14 @@ function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+export function serializeSnapshot(value: any) {
+  const ret = { totalProcurementCost: 0, serverVersion: 0, ...value };
+  ret.id = ret._id.toString(); ret._id = ret.id; delete ret.ownerAdminId;
+  ret.items = (ret.items ?? []).map((item: any) => ({ unit: DEFAULT_UNIT, ...item }));
+  ret.createdAt = iso(ret.createdAt); ret.updatedAt = iso(ret.updatedAt);
+  return ret;
+}
+
 const snapshotItemSchema = new Schema(
   {
     productId: {
@@ -122,12 +130,7 @@ const dailySnapshotSchema = new Schema<IDailySnapshot>(
     versionKey: false,
     toJSON: {
       transform(_doc, ret: any) {
-        ret.id = ret._id.toString();
-        ret._id = ret.id;
-        delete ret.ownerAdminId;
-        ret.createdAt = iso(ret.createdAt);
-        ret.updatedAt = iso(ret.updatedAt);
-        return ret;
+        return serializeSnapshot(ret);
       }
     }
   }

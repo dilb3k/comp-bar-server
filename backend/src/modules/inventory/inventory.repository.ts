@@ -1,6 +1,6 @@
 import { currentSession } from "../../lib/transaction";
 import { normalizeUnit } from "../../utils/quantity";
-import { InventoryEntryModel } from "./inventory.model";
+import { InventoryEntryModel, serializeInventory } from "./inventory.model";
 
 type InventoryPayload = Record<string, unknown>;
 
@@ -62,7 +62,7 @@ export class InventoryRepository {
       filter.date = dateFilter;
     }
 
-    return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 }).session(currentSession()??null);
+    return InventoryEntryModel.find(filter).sort({ date: 1, createdAt: 1 }).session(currentSession()??null).lean().then(rows => rows.map(serializeInventory));
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {

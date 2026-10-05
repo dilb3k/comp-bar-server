@@ -14,6 +14,16 @@ const envBoolean = z.preprocess((value) => {
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
+  WEB_CONCURRENCY: z.string().regex(/^(auto|[1-9][0-9]?)$/).default("auto"),
+  DEPLOYMENT_REPLICAS: z.coerce.number().int().min(1).max(100).default(2),
+  MONGO_MAX_POOL_SIZE: z.coerce.number().int().min(1).max(1000).default(100),
+  MONGO_MIN_POOL_SIZE: z.coerce.number().int().min(0).max(100).default(10),
+  MONGO_CONNECTION_BUDGET: z.coerce.number().int().min(20).default(660),
+  MONGO_CONNECTION_RESERVE: z.coerce.number().int().min(0).default(24),
+  MONGO_TOPOLOGY_MEMBERS: z.coerce.number().int().min(1).max(50).default(3),
+  API_READ_LIMIT: z.coerce.number().int().positive().default(3000),
+  HTTP_LOG_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.01),
+  API_WRITE_LIMIT: z.coerce.number().int().positive().default(600),
   MONGODB_URL: z.string().min(1, "MONGODB_URL is required"),
   MONGODB_FALLBACK_URL: z.string().optional(),
   CLIENT_URL: z.string().default("*"),
@@ -90,7 +100,8 @@ const envSchema = z.object({
   R2_PUBLIC_URL: z.string().trim().optional(),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.refine(value => value.MONGO_MIN_POOL_SIZE <= value.MONGO_MAX_POOL_SIZE
+  && value.MONGO_CONNECTION_RESERVE < value.MONGO_CONNECTION_BUDGET, "Invalid MongoDB pool budget").safeParse(process.env);
 
 if (!parsed.success) {
   console.error("Invalid environment variables");

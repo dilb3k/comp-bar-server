@@ -50,9 +50,9 @@ test('current role and expiry override a stale paid/superadmin JWT',async()=>{
   assert.equal(error,undefined);assert.equal(req.auth.role,'admin');assert.equal(req.auth.tier,'tekin');assert.equal(req.auth.isPayed,false);
 });
 test('auth DB outage returns 503 and never claims the session expired',async()=>{
-  const u=await user();const original=authRepository.findById;
-  authRepository.findById=async()=>{throw Error('test DB unavailable')};
-  try {assert.equal((await authenticateUser(u)).error.statusCode,503)}finally{authRepository.findById=original}
+  const u=await user();const original=authRepository.findSessionIdentityById;
+  authRepository.findSessionIdentityById=async()=>{throw Error('test DB unavailable')};
+  try {assert.equal((await authenticateUser(u)).error.statusCode,503)}finally{authRepository.findSessionIdentityById=original}
 });
 test('legacy phone endpoint obeys OTP policy; failed OTP delivery cannot downgrade verification',async()=>{
   const u=await user({telegramId:null});

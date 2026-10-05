@@ -173,7 +173,7 @@ export class InventoryService {
         const storedBuyPrice = toNumber(entry.buyPrice ?? 0);
         const storedSellPrice = toNumber(entry.sellPrice ?? 0);
         return {
-          ...entry.toJSON(),
+          ...(typeof entry.toJSON === "function" ? entry.toJSON() : entry),
           ...calculateInventoryMetrics({
             startQuantity: toNumber(entry.startQuantity),
             currentQuantity: toNumber(entry.currentQuantity),

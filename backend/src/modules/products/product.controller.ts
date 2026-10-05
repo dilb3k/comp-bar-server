@@ -1,3 +1,5 @@
+import { cachedOwnerRead } from "../../lib/cached-owner-read";
+import { productRepository } from "./product.repository";
 import { replyToMutation } from "../idempotency/http-mutation";
 import { assertBaseVersion } from "../../lib/versioning";
 import type { Request, Response } from "express";
@@ -26,11 +28,15 @@ async function mutationState(req:Request) {
 export const productController = {
   async list(req: Request, res: Response) {
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
-    return sendSuccess(res, await productService.getAll(requireAuth(req), search));
+    return cachedOwnerRead(req, res, "products", () => productService.getAll(requireAuth(req), search));
   },
 
   async get(req: Request, res: Response) {
-    return sendSuccess(res, await productService.getByIdentifier(requireAuth(req), String(req.params.id)));
+    return cachedOwnerRead(req, res, `product:${req.params.id}`, async () => {
+      const product = await productRepository.findPublicByIdentifier(requireAuth(req).userId, String(req.params.id));
+      if (!product) throw new AppError("Product not found", 404);
+      return product;
+    });
   },
 
   async create(req:Request,res:Response) {

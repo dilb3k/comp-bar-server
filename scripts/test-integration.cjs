@@ -24,8 +24,9 @@ async function freePort() { const s = net.createServer(); await new Promise((res
     for (let i = 0; ; i++) { if ((await bootstrap.db('admin').command({ hello: 1 })).isWritablePrimary) break; if (i > 80) throw Error('Replica set not ready'); await delay(200); }
     await bootstrap.close();
     const env = { PATH: process.env.PATH, NODE_ENV: 'test', TZ: 'UTC', MONGODB_URL: `mongodb://127.0.0.1:${port}/hisvex_integration?replicaSet=hisvex_test`, JWT_SECRET: 'local_test_secret_not_for_production', JWT_REFRESH_SECRET: 'local_refresh_secret_not_for_production' };
+    for(const key of ['CAPACITY_CONNECTIONS','CAPACITY_REQUESTS','CAPACITY_PRODUCTS_PER_STORE']) if(process.env[key]) env[key]=process.env[key];
     const files = process.argv.slice(2);
-    const defaults = [...require('node:fs').readdirSync('backend/dist/tests').filter(name => name.endsWith('.integration.test.js')).map(name => `backend/dist/tests/${name}`), 'scripts/http-concurrency.integration.test.cjs','scripts/procurement-http.integration.test.cjs','scripts/migration.integration.test.cjs','scripts/config.test.cjs'];
+    const defaults = [...require('node:fs').readdirSync('backend/dist/tests').filter(name => name.endsWith('.integration.test.js')).map(name => `backend/dist/tests/${name}`), 'scripts/http-concurrency.integration.test.cjs','scripts/procurement-http.integration.test.cjs','scripts/migration.integration.test.cjs','scripts/config.test.cjs','scripts/architecture-http.integration.test.cjs','scripts/cluster.integration.test.cjs'];
     const child = spawn(process.execPath, ['--test', ...(files.length ? files : defaults)], { stdio: 'inherit', env });
     process.exitCode = await new Promise(resolve => child.once('exit', (code) => resolve(code ?? 1)));
   } catch (error) {

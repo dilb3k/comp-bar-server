@@ -60,6 +60,7 @@ export function errorMiddleware(
   }
 
   if (error instanceof AppError) {
+    if (error.statusCode === 503) res.setHeader("Retry-After", "5");
     if (error.statusCode >= 500) {
       alertService.reportCriticalError({
         statusCode: error.statusCode,

@@ -1,9 +1,14 @@
 const assert=require('node:assert/strict'),{fork}=require('node:child_process'),path=require('node:path'),{randomUUID}=require('node:crypto');
 const mongoose=require('mongoose');
 const http=require('node:http');
-// Bound local sockets as a reverse proxy would; all 1,000 actors are active
-// concurrently, with queued requests reported in end-to-end latency.
-const agent=new http.Agent({keepAlive:true,maxSockets:100,maxFreeSockets:100});
+// Capacity runs configure 500–1000 real keep-alive sockets.
+const agent=new http.Agent({keepAlive:true,maxSockets:100,maxFreeSockets:100,maxTotalSockets:200});
+const sockets=new Set();let peakSockets=0,createdSockets=0;
+const createConnection=agent.createConnection.bind(agent);
+let connectLimit=Infinity,connecting=0;const connectingQueue=[];
+function openQueuedSockets(){while(connecting<connectLimit&&connectingQueue.length){const [options,callback]=connectingQueue.shift();connecting++;const socket=createConnection(options);sockets.add(socket);createdSockets++;peakSockets=Math.max(peakSockets,sockets.size);socket.once('close',()=>sockets.delete(socket));let done=false;const finish=error=>{if(done)return;done=true;callback(error,socket);setTimeout(()=>{connecting--;openQueuedSockets()},connectLimit===Infinity?0:100)};socket.once('connect',()=>finish(null));socket.once('error',finish)}}
+agent.createConnection=(options,callback)=>{connectingQueue.push([options,callback]);openQueuedSockets()};
+const socketMetrics=()=>({open:sockets.size,peak:peakSockets,created:createdSockets});
 const {signAccessToken}=require('../backend/dist/modules/auth/auth.utils');
 const {getCurrentBusinessDate}=require('../backend/dist/utils/business-day');
 const models={
@@ -19,7 +24,9 @@ const models={
  debtors:require('../backend/dist/modules/debtors/debtor.model').DebtorModel,
 };
 const today=getCurrentBusinessDate(6,300);
-async function start(t){
+async function start(t,{connections=200,connectionRamp=Infinity}={}){
+ connectLimit=connectionRamp;
+ agent.maxSockets=Math.ceil(connections/2);agent.maxTotalSockets=connections;agent.maxFreeSockets=Math.ceil(connections/2);
  assert.match(process.env.MONGODB_URL??'',/^mongodb:\/\/127\.0\.0\.1:\d+\/hisvex_integration\?/);
  await mongoose.connect(process.env.MONGODB_URL,{maxPoolSize:30});
  await Promise.all(Object.values(models).map(m=>m.init()));
@@ -34,7 +41,7 @@ async function start(t){
 }
 async function fixture(index,count=1){
  const _id=new mongoose.Types.ObjectId(),owner=_id.toString(),sessionId=randomUUID(),now=new Date();
- await models.users.collection.insertOne({_id,username:`http-${owner}`,password:'unused-test-only',role:'admin',isActive:true,activeSessionId:sessionId,securityVersion:0,businessDayStartHour:6,lastActionAt:now,createdAt:now,updatedAt:now});
+ await models.users.collection.insertOne({_id,username:`http-${owner}`,password:'unused-test-only',role:'admin',isActive:true,activeSessionId:sessionId,activeSessionLastSeenAt:now,securityVersion:0,businessDayStartHour:6,lastActionAt:now,createdAt:now,updatedAt:now});
  const products=Array.from({length:count},(_,i)=>({ownerAdminId:owner,localId:`p${i}`,deviceId:'test',name:`Product ${i}`,quantity:100,stockEpoch:0,buyPrice:10,sellPrice:20,unit:'dona',displayIndex:i+1,serverVersion:0,createdAt:now,updatedAt:now}));
  await models.products.collection.insertMany(products);
  await models.inventory.collection.insertMany(products.map(p=>({ownerAdminId:owner,localId:`${today}-${p.localId}`,productId:p.localId,productName:p.name,deviceId:'test',date:today,startQuantity:100,currentQuantity:100,buyPrice:10,sellPrice:20,unit:'dona',lockedSold:0,lockedRevenue:0,lockedProfit:0,serverVersion:0,createdAt:now,updatedAt:now})));
@@ -56,4 +63,4 @@ async function assertState(owner,quantity=99,revenue=20){
  const p=await models.products.findOne({ownerAdminId:owner.owner,localId:'p0'}).lean(),i=await models.inventory.findOne({ownerAdminId:owner.owner,productId:'p0',date:today}).lean(),s=await models.snapshots.findOne({ownerAdminId:owner.owner,date:today}).lean();
  assert.equal(p.quantity,quantity);assert.equal(i.currentQuantity,quantity);assert.equal(s.totalRevenue,revenue);assert.equal(s.totalProfit,revenue/2);
 }
-module.exports={start,fixture,sale,request,assertState,models,today,mongoose};
+module.exports={start,socketMetrics,fixture,sale,request,assertState,models,today,mongoose};

@@ -1,0 +1,20 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {start,fixture,sale,request,models}=require('./http-test-support.cjs');
+const {randomUUID}=require('node:crypto');
+test('cached HTTP reads invalidate across instances, isolate tenants and recheck revoked sessions',async t=>{
+ const workers=await start(t),a=await fixture(90001),b=await fixture(90002);
+ const first=await request(workers[0],a,'/products/p0');assert.equal(first.status,200);assert.equal(first.body.data.quantity,100);assert.equal(first.body.data.ownerAdminId,undefined);
+ await request(workers[0],a,'/products');
+ assert.equal((await request(workers[1],a,'/inventory/operations',sale())).status,200);
+ assert.equal((await request(workers[0],a,'/products/p0')).body.data.quantity,99);
+ assert.equal((await request(workers[0],a,'/products')).body.data[0].quantity,99);
+ assert.equal((await request(workers[0],b,'/products/p0')).body.data.quantity,100);
+ await models.users.updateOne({_id:a.owner},{$set:{activeSessionId:randomUUID()}});
+ assert.equal((await request(workers[0],a,'/products/p0')).status,401);
+ assert.equal((await request(workers[0],a,'/products')).status,401);
+ for(let i=0;i<250;i++)assert.equal((await request(workers[0],b,'/products/p0')).status,200);
+ const invalid={...b,ip:'10.240.1.1'};
+ const logins=[];for(let i=0;i<11;i++)logins.push(await request(workers[0],invalid,'/auth/login',{}));
+ assert.equal(logins[0].status,422);assert.equal(logins[10].status,429);
+ assert.equal((await request(workers[0],invalid,'/health')).status,200);
+});

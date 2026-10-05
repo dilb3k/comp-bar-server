@@ -144,7 +144,7 @@ export class SubscriptionService {
       userId,
       isActive: true,
       endDate: { $gte: new Date() },
-    }).sort({ createdAt: -1 }).session(currentSession() ?? null);
+    }).sort({ createdAt: -1 }).session(currentSession() ?? null).lean<ISubscription>();
 
     return sub;
   }
@@ -154,7 +154,7 @@ export class SubscriptionService {
       userId: { $in: userIds },
       isActive: true,
       endDate: { $gte: new Date() },
-    }).sort({ createdAt: -1 }).session(currentSession() ?? null);
+    }).sort({ createdAt: -1 }).session(currentSession() ?? null).lean<ISubscription[]>();
 
     const map = new Map<string, ISubscription>();
     for (const sub of subs) {

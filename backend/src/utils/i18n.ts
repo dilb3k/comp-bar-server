@@ -78,6 +78,24 @@ const translations: Record<string, Record<string, string>> = {
   },
 };
 
+// Localized traffic-shaping and bounded-work errors.
+const capacityMessages: [string, string, string][] = [
+  ["Too many login attempts. Please try again after 15 minutes.", "Urinishlar soni ko‘payib ketdi. 15 daqiqadan keyin qayta urinib ko‘ring", "Слишком много попыток. Повторите через 15 минут"],
+  ["Read service busy; retry later", "Server band. Birozdan keyin qayta urinib ko‘ring", "Сервер занят. Попробуйте чуть позже"],
+  ["Report service busy; retry later", "Hisobot xizmati band. Birozdan keyin qayta urinib ko‘ring", "Сервис отчётов занят. Попробуйте чуть позже"],
+  ["Report generation failed", "Hisobotni yaratib bo‘lmadi. Qayta urinib ko‘ring", "Не удалось создать отчёт. Попробуйте ещё раз"],
+  ["Report generation timed out", "Hisobot tayyorlash vaqti tugadi. Qisqaroq davrni tanlang", "Время создания отчёта истекло. Выберите более короткий период"],
+  ["Report is too large. Choose a shorter date range.", "Hisobot juda katta. Qisqaroq davrni tanlang", "Отчёт слишком большой. Выберите более короткий период"],
+  ["Rate limiter unavailable", "Server vaqtincha band. Qayta urinib ko‘ring", "Сервер временно занят. Попробуйте позже"],
+  ["Server shutting down", "Server yangilanmoqda. Birozdan keyin qayta urinib ko‘ring", "Сервер обновляется. Попробуйте чуть позже"],
+  ["Too many requests. Please try again later.", "So‘rovlar soni ko‘payib ketdi. Keyinroq qayta urinib ko‘ring", "Слишком много запросов. Попробуйте позже"],
+  ["Too many image requests. Please try again later.", "Rasm so‘rovlari soni ko‘payib ketdi. Keyinroq urinib ko‘ring", "Слишком много запросов изображений. Попробуйте позже"],
+];
+for (const [message, uz, ru] of capacityMessages) {
+  translations.uz[message] = uz;
+  translations.ru[message] = ru;
+}
+
 const dynamicPrefixes: Record<string, Record<string, string>> = {
   uz: {
     "Active product not found for productId=": "Faol mahsulot topilmadi (productId=",

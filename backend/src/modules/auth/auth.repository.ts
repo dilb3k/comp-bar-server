@@ -5,6 +5,13 @@ import { Types } from "mongoose";
 import { UserModel } from "./user.model";
 import { normalizePhone } from "./auth.utils";
 
+type SessionIdentity = {
+  _id: Types.ObjectId; username: string; phone_number: string; role: "admin" | "superAdmin";
+  isActive: boolean; securityVersion?: number; activeSessionId?: string;
+  activeSessionLastSeenAt?: Date; lastActionAt?: Date; isPayed?: boolean;
+  businessDayStartHour?: number; pendingBusinessDayStartHour?: number | null; businessDayEffectiveFrom?: Date | null;
+};
+
 export class AuthRepository {
   async findByUsername(username: string) {
     return UserModel.findOne({ username: username.trim().toLowerCase() }).session(currentSession() ?? null);
@@ -44,6 +51,12 @@ export class AuthRepository {
     return UserModel.findOne({ role: "superAdmin", isActive: true }).sort({
       createdAt: 1,
     });
+  }
+
+  async findSessionIdentityById(id: string) {
+    if (!Types.ObjectId.isValid(id)) return null;
+    const user = await UserModel.findById(id).select("isActive securityVersion activeSessionId activeSessionLastSeenAt lastActionAt role isPayed businessDayStartHour pendingBusinessDayStartHour businessDayEffectiveFrom username phone_number").lean<SessionIdentity>();
+    return user ? Object.assign({ phone_number: "", isActive: true, isPayed: false, businessDayStartHour: 0 }, user) : null;
   }
 
   async findById(id: string) {

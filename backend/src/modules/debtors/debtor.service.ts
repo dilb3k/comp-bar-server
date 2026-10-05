@@ -6,8 +6,8 @@ import type { AuthUser } from "../auth/auth.types";
 
 export const debtorService = {
   async getAll(auth: AuthUser) {
-    const debtors = await DebtorModel.find({ createdBy: auth.userId }).sort({ amount: -1 });
-    return debtors;
+    const debtors = await DebtorModel.find({ createdBy: auth.userId }).sort({ amount: -1 }).lean();
+    return debtors.map((row: any) => { const value = { ...row, id: row._id }; delete value.__v; return value; });
   },
 
   async getById(auth: AuthUser, id: string) {

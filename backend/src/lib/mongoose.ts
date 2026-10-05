@@ -1,9 +1,19 @@
 import mongoose from "mongoose";
 
+import { poolBudget } from "./runtime-capacity";
 import { env } from "../config/env";
 import { alertService } from "../services/alert.service";
 
-export async function connectDatabase() {
+let connecting: Promise<void> | null = null;
+let listenersInstalled = false;
+let closing = false;
+export function connectDatabase(): Promise<void> {
+  if (!connecting) connecting = openDatabase().catch(async error => { try { await mongoose.disconnect(); } finally { connecting = null; } throw error; });
+  return connecting;
+}
+
+async function openDatabase() {
+  closing = false;
   mongoose.set("strictQuery", true);
 
   const primaryUrl = env.MONGODB_URL;
@@ -16,18 +26,8 @@ export async function connectDatabase() {
   try {
     await mongoose.connect(primaryUrl, {
       autoIndex: env.NODE_ENV !== 'production',
-      // Several endpoints (sales, startDay, bulkUpdateCurrent, product
-      // create/update, sync) hold a session/transaction open across multiple
-      // sequential round trips each. This is an initial pool budget, not
-      // proof of capacity. Benchmark the deployed tier and sum connections
-      // across every API instance before increasing it.
-      maxPoolSize: 50,
-      // Keeps this many connections warm even when idle, so the first
-      // requests after a quiet period (this app's usual traffic pattern —
-      // shops open, ring up sales in bursts, go quiet) don't each pay a
-      // fresh TCP+TLS handshake to Atlas before their query even starts.
-      minPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      ...poolBudget(Number(process.env.CLUSTER_WORKERS || 1)),
+      bufferCommands: false,
     });
     const hello = await mongoose.connection.db!.admin().command({hello:1});
     if (!hello.setName && hello.msg !== "isdbgrid") {
@@ -36,18 +36,21 @@ export async function connectDatabase() {
     }
     console.log("Connected to primary MongoDB");
 
-    mongoose.connection.on("disconnected", () => {
-      console.warn("MongoDB disconnected");
-      alertService.reportDbError("Ulanish uzildi (disconnected) — qayta ulanishga harakat qilinmoqda.");
-    });
-    mongoose.connection.on("error", (err) => {
-      console.error("MongoDB connection error:", err.message);
-      alertService.reportDbError(err.message);
-    });
-    mongoose.connection.on("reconnected", () => {
-      console.log("MongoDB reconnected");
-    });
-
+    if (!listenersInstalled) {
+      listenersInstalled = true;
+      mongoose.connection.on("disconnected", () => {
+        if (closing) return;
+        console.warn("MongoDB disconnected");
+        alertService.reportDbError("Ulanish uzildi (disconnected) — qayta ulanishga harakat qilinmoqda.");
+      });
+      mongoose.connection.on("error", (err) => {
+        console.error("MongoDB connection error:", err.message);
+        alertService.reportDbError(err.message);
+      });
+      mongoose.connection.on("reconnected", () => {
+        console.log("MongoDB reconnected");
+      });
+    }
     return;
   } catch (err) {
     console.error("MongoDB unavailable; refusing to switch to another dataset");
@@ -56,5 +59,7 @@ export async function connectDatabase() {
 }
 
 export async function disconnectDatabase() {
+  closing = true;
   await mongoose.disconnect();
+  connecting = null;
 }

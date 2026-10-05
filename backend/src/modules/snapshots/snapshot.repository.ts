@@ -1,5 +1,5 @@
 import { currentSession } from "../../lib/transaction";
-import { DailySnapshotModel } from "./snapshot.model";
+import { DailySnapshotModel, serializeSnapshot } from "./snapshot.model";
 
 export type SnapshotPayload = {
   localId: string;
@@ -36,14 +36,14 @@ export class SnapshotRepository {
     return DailySnapshotModel.findOne({
       ownerAdminId,
       date,
-    }).sort({ updatedAt: -1 }).session(currentSession()??null);
+    }).sort({ updatedAt: -1 }).session(currentSession()??null).lean().then(row => row ? serializeSnapshot(row) : null);
   }
 
   async findRange(ownerAdminId: string, from: string, to: string) {
     return DailySnapshotModel.find({
       ownerAdminId,
       date: { $gte: from, $lte: to },
-    }).sort({ date: 1, updatedAt: 1 }).session(currentSession()??null);
+    }).sort({ date: 1, updatedAt: 1 }).session(currentSession()??null).lean().then(rows => rows.map(serializeSnapshot));
   }
 
   async findUpdatedSince(ownerAdminId: string, lastSyncAt?: string, limit = 1000, offset = 0) {

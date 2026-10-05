@@ -7,6 +7,14 @@ function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+export function serializeProcurement(value: any) {
+  const ret = { serverVersion: 0, ...value, id: value._id.toString(), _id: value._id.toString() };
+  delete ret.ownerAdminId;
+  ret.items = (ret.items ?? []).map((item: any) => ({ unit: DEFAULT_UNIT, isNewProduct: false, ...item }));
+  ret.createdAt = iso(ret.createdAt); ret.updatedAt = iso(ret.updatedAt);
+  return ret;
+}
+
 export interface IProcurementItem {
   productId: string;
   name: string;
@@ -70,12 +78,7 @@ const procurementSchema = new Schema<IProcurement>(
     versionKey: false,
     toJSON: {
       transform(_doc, ret: any) {
-        ret.id = ret._id.toString();
-        ret._id = ret.id;
-        delete ret.ownerAdminId;
-        ret.createdAt = iso(ret.createdAt);
-        ret.updatedAt = iso(ret.updatedAt);
-        return ret;
+        return serializeProcurement(ret);
       },
     },
   }

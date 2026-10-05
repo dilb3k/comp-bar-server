@@ -7,6 +7,15 @@ function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+// Same wire contract for lean reads and hydrated mutation documents.
+export function serializeProduct(value: any) {
+  const ret = { stockEpoch: 0, quantity: 0, buyPrice: 0, sellPrice: 0, image: "", imageUrl: null, displayIndex: 0, serverVersion: 0, ...value };
+  ret.id = ret._id.toString(); ret._id = ret.id;
+  delete ret.ownerAdminId; ret.unit = normalizeUnit(ret.unit);
+  ret.createdAt = iso(ret.createdAt); ret.updatedAt = iso(ret.updatedAt);
+  return ret;
+}
+
 export interface IProduct {
   _id?: string;
   ownerAdminId: string;
@@ -109,13 +118,7 @@ const productSchema = new Schema<IProduct>(
     versionKey: false,
     toJSON: {
       transform(_doc, ret: any) {
-        ret.id = ret._id.toString();
-        ret._id = ret.id;
-        delete ret.ownerAdminId;
-        ret.unit = normalizeUnit(ret.unit);
-        ret.createdAt = iso(ret.createdAt);
-        ret.updatedAt = iso(ret.updatedAt);
-        return ret;
+        return serializeProduct(ret);
       }
     }
   }

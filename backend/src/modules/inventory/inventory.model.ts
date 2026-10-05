@@ -7,6 +7,14 @@ function iso(value?: Date | string | null) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+export function serializeInventory(value: any) {
+  const ret = { productName: "", buyPrice: 0, sellPrice: 0, lockedRevenue: 0, lockedProfit: 0, lockedSold: 0, note: "", serverVersion: 0, ...value };
+  ret.id = ret._id.toString(); ret._id = ret.id; delete ret.ownerAdminId;
+  ret.unit = normalizeUnit(ret.unit);
+  ret.createdAt = iso(ret.createdAt); ret.updatedAt = iso(ret.updatedAt);
+  return ret;
+}
+
 export interface IInventoryEntry {
   _id?: string;
   ownerAdminId: string;
@@ -117,13 +125,7 @@ const inventoryEntrySchema = new Schema<IInventoryEntry>(
     versionKey: false,
     toJSON: {
       transform(_doc, ret: any) {
-        ret.id = ret._id.toString();
-        ret._id = ret.id;
-        delete ret.ownerAdminId;
-        ret.unit = normalizeUnit(ret.unit);
-        ret.createdAt = iso(ret.createdAt);
-        ret.updatedAt = iso(ret.updatedAt);
-        return ret;
+        return serializeInventory(ret);
       }
     }
   }

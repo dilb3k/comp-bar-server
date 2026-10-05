@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-05T08:12:15.448Z",
+  "generatedAt": "2026-10-05T08:07:16.675Z",
   "runtime": "v26.4.0",
   "platform": "darwin",
   "cpu": "Apple M2",
@@ -8,50 +8,51 @@
   "productsPerStore": 100,
   "totalRequests": 12000,
   "connections": 1000,
-  "connectionRamp": {
-    "maxHandshakes": 32,
-    "releaseDelayMs": 100
-  },
   "sockets": {
     "open": 1000,
     "peak": 1000,
-    "created": 1000
+    "created": 1466
   },
   "apiProcesses": 2,
   "apiHeapLimitMB": 450,
   "setupSeconds": 2,
-  "durationMs": 6919,
-  "requestsPerSecond": 1734,
-  "p50ms": 335,
-  "p95ms": 1310,
-  "p99ms": 2828,
+  "durationMs": 6214,
+  "requestsPerSecond": 1931,
+  "p50ms": 323,
+  "p95ms": 1377,
+  "p99ms": 1541,
   "waves": [
     {
       "name": "sale",
       "requests": 1000,
       "concurrency": 1000,
-      "durationMs": 3216,
-      "requestsPerSecond": 311,
-      "p50ms": 1622,
-      "p95ms": 3017,
-      "p99ms": 3129,
-      "maxMs": 3185,
+      "durationMs": 1692,
+      "requestsPerSecond": 591,
+      "p50ms": 1396,
+      "p95ms": 1626,
+      "p99ms": 1649,
+      "maxMs": 1654,
       "statuses": {
-        "200": 1000
+        "200": 620,
+        "transportError": 380
       },
-      "errors": [],
+      "errors": [
+        "connect ECONNRESET 127.0.0.1:59942",
+        "connect ECONNRESET 127.0.0.1:59923",
+        "connect ECONNRESET 127.0.0.1:59942"
+      ],
       "metrics": [
         {
-          "rssMB": 193,
-          "heapMB": 59,
-          "eventLoopP99ms": 25,
-          "eventLoopMaxMs": 30,
-          "eventLoopUtilization": 0.7152966979083116,
+          "rssMB": 230,
+          "heapMB": 43,
+          "eventLoopP99ms": 46,
+          "eventLoopMaxMs": 72,
+          "eventLoopUtilization": 0.9537096215717289,
           "pool": {
-            "created": 2,
+            "created": 83,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 17,
+            "checkedOut": -1,
+            "peakCheckedOut": 84,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -73,16 +74,16 @@
           }
         },
         {
-          "rssMB": 196,
-          "heapMB": 57,
-          "eventLoopP99ms": 28,
-          "eventLoopMaxMs": 31,
-          "eventLoopUtilization": 0.7123719058880122,
+          "rssMB": 226,
+          "heapMB": 48,
+          "eventLoopP99ms": 53,
+          "eventLoopMaxMs": 82,
+          "eventLoopUtilization": 0.9584625770013941,
           "pool": {
-            "created": 9,
+            "created": 82,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 18,
+            "checkedOut": -1,
+            "peakCheckedOut": 84,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -109,28 +110,33 @@
       "name": "replay-other-instance",
       "requests": 1000,
       "concurrency": 1000,
-      "durationMs": 372,
-      "requestsPerSecond": 2687,
-      "p50ms": 314,
-      "p95ms": 349,
-      "p99ms": 353,
-      "maxMs": 358,
+      "durationMs": 1039,
+      "requestsPerSecond": 963,
+      "p50ms": 664,
+      "p95ms": 961,
+      "p99ms": 994,
+      "maxMs": 1005,
       "statuses": {
-        "200": 1000
+        "200": 914,
+        "transportError": 86
       },
-      "errors": [],
+      "errors": [
+        "write EPIPE",
+        "connect ECONNRESET 127.0.0.1:59942",
+        "connect ECONNRESET 127.0.0.1:59923"
+      ],
       "metrics": [
         {
-          "rssMB": 229,
-          "heapMB": 50,
-          "eventLoopP99ms": 66,
-          "eventLoopMaxMs": 66,
-          "eventLoopUtilization": 0.936620055484314,
+          "rssMB": 242,
+          "heapMB": 49,
+          "eventLoopP99ms": 70,
+          "eventLoopMaxMs": 70,
+          "eventLoopUtilization": 0.9564851486018945,
           "pool": {
-            "created": 32,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 47,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -152,16 +158,16 @@
           }
         },
         {
-          "rssMB": 229,
-          "heapMB": 50,
-          "eventLoopP99ms": 47,
-          "eventLoopMaxMs": 47,
-          "eventLoopUtilization": 0.9287575196844224,
+          "rssMB": 231,
+          "heapMB": 58,
+          "eventLoopP99ms": 99,
+          "eventLoopMaxMs": 99,
+          "eventLoopUtilization": 0.9536203112401307,
           "pool": {
-            "created": 39,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 47,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -188,28 +194,28 @@
       "name": "mixed-catalog-read",
       "requests": 9000,
       "concurrency": 1000,
-      "durationMs": 3035,
-      "requestsPerSecond": 2965,
-      "p50ms": 370,
-      "p95ms": 619,
-      "p99ms": 675,
-      "maxMs": 785,
+      "durationMs": 3165,
+      "requestsPerSecond": 2843,
+      "p50ms": 366,
+      "p95ms": 621,
+      "p99ms": 649,
+      "maxMs": 1587,
       "statuses": {
         "200": 9000
       },
       "errors": [],
       "metrics": [
         {
-          "rssMB": 309,
-          "heapMB": 67,
-          "eventLoopP99ms": 60,
-          "eventLoopMaxMs": 80,
-          "eventLoopUtilization": 0.991547886774676,
+          "rssMB": 283,
+          "heapMB": 96,
+          "eventLoopP99ms": 85,
+          "eventLoopMaxMs": 97,
+          "eventLoopUtilization": 0.99240562335052,
           "pool": {
-            "created": 83,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 100,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -222,25 +228,25 @@
             }
           },
           "cache": {
-            "hits": 4000,
+            "hits": 3991,
             "misses": 500,
-            "coalesced": 0,
-            "bytes": 8497000,
+            "coalesced": 9,
+            "bytes": 8497009,
             "entries": 500,
             "inflight": 0
           }
         },
         {
-          "rssMB": 240,
-          "heapMB": 69,
-          "eventLoopP99ms": 47,
-          "eventLoopMaxMs": 68,
-          "eventLoopUtilization": 0.8934583980119944,
+          "rssMB": 242,
+          "heapMB": 64,
+          "eventLoopP99ms": 49,
+          "eventLoopMaxMs": 61,
+          "eventLoopUtilization": 0.9010584197004996,
           "pool": {
-            "created": 90,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 100,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -253,10 +259,10 @@
             }
           },
           "cache": {
-            "hits": 4000,
+            "hits": 3994,
             "misses": 500,
-            "coalesced": 0,
-            "bytes": 212000,
+            "coalesced": 6,
+            "bytes": 212007,
             "entries": 500,
             "inflight": 0
           }
@@ -267,28 +273,28 @@
       "name": "analytics-read",
       "requests": 1000,
       "concurrency": 1000,
-      "durationMs": 296,
-      "requestsPerSecond": 3375,
-      "p50ms": 265,
-      "p95ms": 287,
-      "p99ms": 292,
-      "maxMs": 294,
+      "durationMs": 318,
+      "requestsPerSecond": 3146,
+      "p50ms": 292,
+      "p95ms": 310,
+      "p99ms": 314,
+      "maxMs": 316,
       "statuses": {
         "200": 1000
       },
       "errors": [],
       "metrics": [
         {
-          "rssMB": 309,
-          "heapMB": 82,
-          "eventLoopP99ms": 53,
-          "eventLoopMaxMs": 53,
-          "eventLoopUtilization": 0.8338993531877624,
+          "rssMB": 284,
+          "heapMB": 91,
+          "eventLoopP99ms": 61,
+          "eventLoopMaxMs": 61,
+          "eventLoopUtilization": 0.866676611147163,
           "pool": {
-            "created": 83,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 100,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -301,25 +307,25 @@
             }
           },
           "cache": {
-            "hits": 4000,
+            "hits": 3991,
             "misses": 510,
-            "coalesced": 490,
-            "bytes": 8525180,
+            "coalesced": 499,
+            "bytes": 8525189,
             "entries": 510,
             "inflight": 0
           }
         },
         {
-          "rssMB": 241,
-          "heapMB": 71,
-          "eventLoopP99ms": 45,
-          "eventLoopMaxMs": 45,
-          "eventLoopUtilization": 0.8289024653973063,
+          "rssMB": 242,
+          "heapMB": 80,
+          "eventLoopP99ms": 56,
+          "eventLoopMaxMs": 56,
+          "eventLoopUtilization": 0.8452716286563624,
           "pool": {
-            "created": 90,
+            "created": 96,
             "closed": 0,
-            "checkedOut": 0,
-            "peakCheckedOut": 100,
+            "checkedOut": -1,
+            "peakCheckedOut": 99,
             "checkoutFailures": 0,
             "options": {
               "maxPoolSize": 100,
@@ -332,10 +338,10 @@
             }
           },
           "cache": {
-            "hits": 4000,
+            "hits": 3994,
             "misses": 510,
-            "coalesced": 490,
-            "bytes": 240180,
+            "coalesced": 496,
+            "bytes": 240187,
             "entries": 510,
             "inflight": 0
           }
@@ -345,16 +351,16 @@
   ],
   "after": [
     {
-      "rssMB": 309,
-      "heapMB": 82,
-      "eventLoopP99ms": 21,
-      "eventLoopMaxMs": 21,
-      "eventLoopUtilization": 0.008170565696598634,
+      "rssMB": 284,
+      "heapMB": 91,
+      "eventLoopP99ms": 20,
+      "eventLoopMaxMs": 20,
+      "eventLoopUtilization": 0.009206350432783244,
       "pool": {
-        "created": 83,
+        "created": 96,
         "closed": 0,
-        "checkedOut": 0,
-        "peakCheckedOut": 100,
+        "checkedOut": -1,
+        "peakCheckedOut": 99,
         "checkoutFailures": 0,
         "options": {
           "maxPoolSize": 100,
@@ -367,25 +373,25 @@
         }
       },
       "cache": {
-        "hits": 4000,
+        "hits": 3991,
         "misses": 510,
-        "coalesced": 490,
-        "bytes": 8525180,
+        "coalesced": 499,
+        "bytes": 8525189,
         "entries": 510,
         "inflight": 0
       }
     },
     {
-      "rssMB": 241,
-      "heapMB": 71,
+      "rssMB": 242,
+      "heapMB": 80,
       "eventLoopP99ms": 21,
       "eventLoopMaxMs": 21,
-      "eventLoopUtilization": 0.0049012630587735645,
+      "eventLoopUtilization": 0.006685549409800349,
       "pool": {
-        "created": 90,
+        "created": 96,
         "closed": 0,
-        "checkedOut": 0,
-        "peakCheckedOut": 100,
+        "checkedOut": -1,
+        "peakCheckedOut": 99,
         "checkoutFailures": 0,
         "options": {
           "maxPoolSize": 100,
@@ -398,20 +404,20 @@
         }
       },
       "cache": {
-        "hits": 4000,
+        "hits": 3994,
         "misses": 510,
-        "coalesced": 490,
-        "bytes": 240180,
+        "coalesced": 496,
+        "bytes": 240187,
         "entries": 510,
         "inflight": 0
       }
     }
   ],
   "correctness": {
-    "quantities": 1000,
-    "inventories": 1000,
-    "reports": 1000,
-    "receipts": 1000
+    "quantities": 984,
+    "inventories": 984,
+    "reports": 984,
+    "receipts": 984
   },
   "query": {
     "totalDocsExamined": 1,

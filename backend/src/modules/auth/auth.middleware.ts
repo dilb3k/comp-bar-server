@@ -65,7 +65,7 @@ export function authenticate(options?: { allowStale?: boolean }) {
       if (req.headers["x-account-id"] && req.headers["x-account-id"] !== payload.userId) {
         return next(new AppError("Request belongs to another account", 409, undefined, "ACCOUNT_CHANGED"));
       }
-      const user = await authRepository.findById(payload.userId);
+      const user = await authRepository.findSessionIdentityById(payload.userId);
       if (!user || !user.isActive) {
         return next(new AppError("User account is deactivated", 401));
       }
