@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { z } from "zod";
+import { listReviewQueue } from "./payment-history.service";
 
 import { asyncHandler } from "../../utils/async-handler";
 import { validateRequest } from "../../middlewares/validate.middleware";
@@ -93,6 +95,7 @@ router.post(
   validateRequest({ body: rejectPaymentSchema }),
   asyncHandler(botController.rejectPayment)
 );
+router.get("/payments/review-queue", validateRequest({ query: z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), limit: z.coerce.number().int().min(1).max(10).default(5) }) }), asyncHandler(async (req, res) => sendSuccess(res, await listReviewQueue(Number(req.query.page), Number(req.query.limit)))));
 router.get("/payments/pending", asyncHandler(botController.listPending));
 router.get("/payments/user/:userId", asyncHandler(botController.listByUser));
 router.get("/payments/:paymentId", asyncHandler(botController.getPayment));

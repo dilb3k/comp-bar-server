@@ -1,3 +1,4 @@
+import { getInventoryQuantities } from "../../utils/quantities";
 import { roundMoney, roundQty } from "../../utils/quantity";
 
 export function calculateSold(startQuantity: number, currentQuantity: number) {
@@ -56,7 +57,7 @@ export function calculateInventoryMetrics({
 }
 
 export function aggregateInventory(items: any[]) {
-  return items.reduce(
+  const totals = items.reduce(
     (acc, item) => {
       acc.totalStart += item.startQuantity || 0;
       acc.totalCurrent += item.remaining || 0;
@@ -79,6 +80,18 @@ export function aggregateInventory(items: any[]) {
       totalStockProfit: 0,
     },
   );
+  return {
+    ...totals,
+    totalStart: roundQty(totals.totalStart),
+    totalCurrent: roundQty(totals.totalCurrent),
+    totalSold: roundQty(totals.totalSold),
+    totalRevenue: roundMoney(totals.totalRevenue),
+    totalProfit: roundMoney(totals.totalProfit),
+    totalStockSellValue: roundMoney(totals.totalStockSellValue),
+    totalStockBuyValue: roundMoney(totals.totalStockBuyValue),
+    totalStockProfit: roundMoney(totals.totalStockProfit),
+    quantities: getInventoryQuantities(items),
+  };
 }
 
 function getItemProductId(item: any): string | undefined {
@@ -214,6 +227,7 @@ export function aggregateInventoryForRange(items: any[]) {
   }
 
   return {
+    quantities: getInventoryQuantities(items),
     totalStart: roundQty(totalStart),
     totalCurrent: roundQty(totalCurrent),
     totalSold: roundQty(totalSold),

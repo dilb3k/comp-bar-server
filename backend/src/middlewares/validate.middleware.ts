@@ -2,11 +2,12 @@ import type { NextFunction, Request, Response } from "express";
 import type { ZodError, ZodTypeAny } from "zod";
 
 import { AppError } from "../utils/app-error";
+import { detectLanguage, translateMessage } from "../utils/i18n";
 
-function formatZodError(error: ZodError) {
+function formatZodError(error: ZodError, lang: string) {
   return error.issues.map((issue) => ({
     path: issue.path.join("."),
-    message: issue.message
+    message: translateMessage(issue.message, lang)
   }));
 }
 
@@ -32,7 +33,7 @@ export function validateRequest(schema: {
       next();
     } catch (error) {
       if (error instanceof Error && "issues" in error) {
-        return next(new AppError("Validation failed", 422, formatZodError(error as ZodError)));
+        return next(new AppError("Validation failed", 422, formatZodError(error as ZodError, detectLanguage(req.headers["accept-language"]))));
       }
 
       next(error);

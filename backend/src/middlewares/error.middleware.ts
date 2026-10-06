@@ -17,6 +17,7 @@ export function errorMiddleware(
   _next: NextFunction
 ) {
   const lang = getLang(req);
+  res.vary("Accept-Language");
 
   // body-parser errors can carry the raw request body (including passwords).
   // Treat malformed/oversized input as a client error without logging it.
@@ -24,7 +25,7 @@ export function errorMiddleware(
   if (parserType === "entity.parse.failed" || parserType === "entity.too.large") {
     const oversized = parserType === "entity.too.large";
     return res.status(oversized ? 413 : 400).json({ success: false, error: {
-      message: oversized ? "Request body is too large" : "Invalid JSON request body",
+      message: translateMessage(oversized ? "Request body is too large" : "Invalid JSON request body", lang),
       details: null, code: oversized ? "PAYLOAD_TOO_LARGE" : "INVALID_JSON",
     } });
   }
@@ -83,7 +84,7 @@ export function errorMiddleware(
     return res.status(400).json({
       success: false,
       error: {
-        message: error.message,
+        message: translateMessage("Validation failed", lang),
         details: null
       }
     });

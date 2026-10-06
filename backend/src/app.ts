@@ -21,6 +21,7 @@ import { productImageRoutes } from "./modules/products/product-image.routes";
 import { procurementRoutes } from "./modules/procurements/procurement.routes";
 import { snapshotRoutes } from "./modules/snapshots/snapshot.routes";
 import { syncRoutes } from "./modules/sync/sync.routes";
+import { paymentHistoryRoutes } from "./modules/payments/payment-history.routes";
 import { botRoutes, clickWebhookRoutes } from "./modules/payments";
 import { opsRoutes } from "./modules/ops";
 
@@ -124,6 +125,7 @@ export function createApp() {
   // hisvex-bot integration: its own auth (shared secret, not a user JWT —
   // see bot-auth.middleware.ts), and Click's webhook (signature-verified
   // inside the controller, no auth header at all — Click calls it directly).
+  app.use("/api/admin/payments", authenticate(), paymentHistoryRoutes);
   app.use("/api/bot", botRoutes);
   app.use("/api/payments/click", express.urlencoded({extended:false,limit:"16kb"}), clickWebhookRoutes);
 
