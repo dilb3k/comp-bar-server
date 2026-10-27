@@ -72,7 +72,7 @@ const bulkCurrentItemSchema = z.object({
   productId: z.string().trim().min(1),
   currentQuantity: quantitySchema,
   /**
-   * Restates the revenue for every unit this edit accounts as sold — the
+   * Restates the TOTAL daily revenue, including previously locked sales — the
    * "Kutilgan tushum" figure on the inventory screen. Profit follows from it
    * automatically, since the cost of those units does not change.
    */

@@ -1,3 +1,4 @@
+import { ProcurementModel } from "../procurements/procurement.model";
 import { ProductTombstoneModel } from "./product-tombstone.model";
 import { assertBaseVersion } from "../../lib/versioning";
 import { snapshotService } from "../snapshots/snapshot.service";
@@ -8,7 +9,7 @@ import type { Product } from "../../types/domain";
 import { AppError } from "../../utils/app-error";
 import { createLocalId } from "../../utils/ids";
 import { getBusinessDateFromTimestamp, getCurrentBusinessDate, getEffectiveHour } from "../../utils/business-day";
-import { normalizeQuantity, normalizeUnit, roundQty } from "../../utils/quantity";
+import { normalizeQuantity, normalizeUnit, roundQty, roundMoney } from "../../utils/quantity";
 import { telegramReportService } from "../../services/telegram-report.service";
 import { deleteImage, isR2Enabled, keyFromPublicUrl, uploadImage } from "../../lib/r2";
 import { buildImageKey, processImageToWebp } from "../../utils/image-processing";
@@ -53,7 +54,7 @@ export class ProductService {
     return product;
   }
 
-  async create(actor: AuthUser, payload: CreateProductInput) {
+  async create(actor: AuthUser, payload: CreateProductInput, options: { recordInitialReceipt?: boolean } = {}) {
     const timestamp = new Date();
 
     // imageUrl explicitly present (including null) wins outright — it means
@@ -184,6 +185,19 @@ export class ProductService {
             source: "rest",
             createdBy: actor.userId,
           });
+        }
+
+        if (quantity > 0 && options.recordInitialReceipt !== false) {
+          await ProcurementModel.create([{
+            ownerAdminId: actor.userId,
+            localId: `initial-${p.localId}`,
+            date: today,
+            items: [{ productId: p.localId, name: p.name, unit, quantity, buyPrice: p.buyPrice, lineCost: roundMoney(quantity * p.buyPrice), isNewProduct: true }],
+            totalCost: roundMoney(quantity * p.buyPrice),
+            createdByScope: actor.scope === "procurement" ? "procurement" : "full",
+            createdByUserId: actor.userId,
+            createdByUsername: actor.username,
+          }], { session });
         }
 
         await snapshotService.recompute(actor, today, payload.deviceId, [p.localId]);

@@ -1,3 +1,6 @@
+import { procurementService } from "../modules/procurements/procurement.service";
+import { ProcurementModel } from "../modules/procurements/procurement.model";
+import { calculateInventoryMetrics } from "../modules/inventory/inventory.logic";
 import { syncService } from "../modules/sync/sync.service";
 import { pullChanges } from "../modules/sync/sync.pull";
 import { productService } from "../modules/products/product.service";
@@ -42,7 +45,7 @@ before(async () => {
   const uri = process.env.MONGODB_URL ?? '';
   assert.match(uri, /^mongodb:\/\/127\.0\.0\.1:\d+\/hisvex_integration\?/);
   await mongoose.connect(uri, { maxPoolSize: 30 });
-  await Promise.all([OwnerWriteVersion, IdempotencyKeyModel, ProductTombstoneModel, ProductModel, InventoryEntryModel, DailySnapshotModel, AuditEventModel].map(model => model.init()));
+  await Promise.all([ProcurementModel, OwnerWriteVersion, IdempotencyKeyModel, ProductTombstoneModel, ProductModel, InventoryEntryModel, DailySnapshotModel, AuditEventModel].map(model => model.init()));
 });
 after(async () => { await mongoose.disconnect(); });
 
@@ -292,4 +295,84 @@ test('ambiguous old receipts and pre-v2 product creation are retained for reconc
   const product:any=await ProductModel.findOne({ownerAdminId:owner.userId});
   const result=await syncService.sync(owner,{products:[{...product.toJSON(),localId:'unknown-old-id'}]});
   assert.equal(result.rejected[0].reason,'LEGACY_RECONCILIATION_REQUIRED');assert.equal(result.acknowledged.length,0);assert.equal((await state(owner)).product,100);
+});
+
+
+test('day-total discount replaces locked revenue, preserves historical cost and supports repeated edits', async () => {
+  const owner = await fixture();
+  await inventoryService.sales(owner, {deviceId: 'test', date: today, lines: [{productId: 'p0', quantity: 3, lineRevenue: 45}]});
+  async function adjust(quantity: number, revenue?: number) {
+    const entry: any = await InventoryEntryModel.findOne({ownerAdminId: owner.userId, productId: 'p0', date: today}).lean();
+    await inventoryService.bulkUpdateCurrent(owner, {deviceId: 'test', date: today, items: [{productId: 'p0', currentQuantity: quantity, baseVersion: entry.serverVersion, ...(revenue !== undefined ? {lineRevenue: revenue} : {})}]});
+  }
+  await adjust(97);
+  assert.deepEqual(await state(owner), {product:97, inventory:97, revenue:45, profit:15});
+  await adjust(97, 40);
+  assert.deepEqual(await state(owner), {product:97, inventory:97, revenue:40, profit:10});
+  await adjust(96, 55);
+  assert.deepEqual(await state(owner), {product:96, inventory:96, revenue:55, profit:15});
+  const product: any = await ProductModel.findOne({ownerAdminId: owner.userId, localId: 'p0'}).lean();
+  await productService.update(owner, 'p0', {buyPrice: 12, baseVersion: product.serverVersion});
+  await adjust(95, 65);
+  assert.deepEqual(await state(owner), {product:95, inventory:95, revenue:65, profit:13});
+  await adjust(95, 0);
+  assert.deepEqual(await state(owner), {product:95, inventory:95, revenue:0, profit:-52});
+});
+
+
+test('positive revenue without any sold quantity is rejected without changing stock', async () => {
+  const owner = await fixture();
+  await assert.rejects(inventoryService.bulkUpdateCurrent(owner, {deviceId:'test',date:today,items:[{productId:'p0',currentQuantity:100,baseVersion:0,lineRevenue:10}]}), (error: any) => error.statusCode === 422);
+  assert.deepEqual(await state(owner), {product:100, inventory:100, revenue:0, profit:0});
+});
+
+
+for (const unit of ['dona','kg'] as const) test(`100 successive ${unit} server operations agree with an independent ledger`, async () => {
+  const owner=await fixture();
+  let current=100,opening=100,sold=0,revenue=0,cost=0,buy=unit==='kg'?1000:10,price=buy*2,seed=2917;
+  await ProductModel.updateOne({ownerAdminId:owner.userId,localId:'p0'},{$set:{unit,buyPrice:buy,sellPrice:price}});
+  await InventoryEntryModel.updateOne({ownerAdminId:owner.userId,productId:'p0'},{$set:{unit,buyPrice:buy,sellPrice:price}});
+  const next=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed};
+  const money=(n:number)=>Math.round(n*100)/100;
+  for(let i=0;i<100;i++) {
+    const kind=i%5,qty=unit==='kg'?((next()%3)+1)/8:(next()%3)+1;
+    const entry:any=await InventoryEntryModel.findOne({ownerAdminId:owner.userId,productId:'p0',date:today}).lean();
+    if(kind===0) {
+      const amount=money(qty*(price-(next()%3)*(unit==='kg'?100:1)));
+      const operation={kind:'sale' as const,id:randomUUID(),deviceId:'test',date:today,occurredAt:new Date().toISOString(),lines:[{productId:'p0',quantity:qty,lineRevenue:amount,expectedBuyPrice:buy,expectedUnit:unit,expectedStockEpoch:0}]};
+      const product:any=await ProductModel.findOne({ownerAdminId:owner.userId,localId:'p0'}).lean();
+      operation.lines[0].expectedStockEpoch=product.stockEpoch??0;
+      await applyInventoryOperation(owner,operation);await applyInventoryOperation(owner,operation);
+      current-=qty;sold+=qty;revenue=money(revenue+amount);cost=money(cost+qty*buy);
+    } else if(kind===1) {
+      current-=qty;sold+=qty;cost=money(cost+qty*buy);revenue=money(Math.max(0,revenue+qty*price-(next()%5)));
+      await inventoryService.bulkUpdateCurrent(owner,{deviceId:'test',date:today,items:[{productId:'p0',currentQuantity:current,lineRevenue:revenue,baseVersion:entry.serverVersion}]});
+    } else if(kind===2) {
+      buy=(unit==='kg'?1000:10)+(next()%5)*(unit==='kg'?100:1);price=buy*2;
+      const product:any=await ProductModel.findOne({ownerAdminId:owner.userId,localId:'p0'}).lean();
+      await productService.update(owner,'p0',{buyPrice:buy,sellPrice:price,baseVersion:product.serverVersion});
+    } else if(kind===3) {
+      await productService.restock(owner,'p0',qty);current+=qty;opening+=qty;
+    } else {
+      buy=(unit==='kg'?1000:10)+(next()%5)*(unit==='kg'?100:1);
+      await procurementService.submitBatch(owner,[{productId:'p0',name:'Product 0',quantity:qty,buyPrice:buy}]);current+=qty;opening+=qty;
+    }
+    const row:any=await InventoryEntryModel.findOne({ownerAdminId:owner.userId,productId:'p0',date:today}).lean();
+    const metrics=calculateInventoryMetrics(row);
+    assert.deepEqual([metrics.remaining,metrics.sold,metrics.revenue,metrics.realizedProfit,metrics.stockSellValue,metrics.stockBuyValue],[current,sold,revenue,money(revenue-cost),money(current*price),money(current*buy)],`step ${i}`);
+    assert.equal(Math.round((row.startQuantity+row.lockedSold)*1000)/1000,opening,`opening step ${i}`);
+    assert.deepEqual(await state(owner),{product:current,inventory:current,revenue,profit:money(revenue-cost)},`snapshot step ${i}`);
+  }
+});
+
+test('returning unlocked stock reverses only those sales and cannot undo locked discounted units',async()=>{
+ const owner=await fixture();await sell(owner,randomUUID(),5);
+ let entry:any=await InventoryEntryModel.findOne({ownerAdminId:owner.userId,productId:'p0',date:today}).lean();
+ await inventoryService.bulkUpdateCurrent(owner,{date:today,deviceId:'test',items:[{productId:'p0',currentQuantity:97,baseVersion:entry.serverVersion}]});
+ assert.deepEqual(await state(owner),{product:97,inventory:97,revenue:60,profit:30});
+ entry=await InventoryEntryModel.findOne({ownerAdminId:owner.userId,productId:'p0',date:today}).lean();
+ await inventoryService.bulkUpdateCurrent(owner,{date:today,deviceId:'test',items:[{productId:'p0',currentQuantity:97,lineRevenue:50,baseVersion:entry.serverVersion}]});
+ entry=await InventoryEntryModel.findOne({ownerAdminId:owner.userId,productId:'p0',date:today}).lean();
+ await assert.rejects(inventoryService.bulkUpdateCurrent(owner,{date:today,deviceId:'test',items:[{productId:'p0',currentQuantity:98,baseVersion:entry.serverVersion}]}),(e:any)=>e.statusCode===422);
+ assert.deepEqual(await state(owner),{product:97,inventory:97,revenue:50,profit:20});
 });

@@ -94,3 +94,23 @@ if (!backend) {
     }
   });
 }
+
+test('day opening total includes previously locked negotiated-price sales', () => {
+  const { aggregateInventory } = loadSource('backend/src/modules/inventory/inventory.logic.ts');
+  const total = aggregateInventory([{productId:'p',unit:'dona',startQuantity:37,currentQuantity:37,remaining:37,lockedSold:3,sold:3}]);
+  assert.equal(total.totalStart,40); assert.equal(total.totalCurrent,37); assert.equal(total.totalSold,3);
+});
+
+test('range opening and latest stock are independent of query ordering', () => {
+  const { aggregateInventoryForRange } = loadSource('backend/src/modules/inventory/inventory.logic.ts');
+  const rows = [
+    {productId:'p',unit:'dona',date:'2026-10-01',startQuantity:97,currentQuantity:90,lockedSold:3,sold:10,revenue:180,realizedProfit:80},
+    {productId:'p',unit:'dona',date:'2026-10-02',startQuantity:90,currentQuantity:85,sold:5,revenue:100,realizedProfit:50},
+    {productId:'p',unit:'dona',date:'2026-10-03',startQuantity:85,currentQuantity:80,sold:5,revenue:100,realizedProfit:50},
+  ];
+  for (const input of [rows,[...rows].reverse(),[rows[1],rows[2],rows[0]]]) {
+    const total=aggregateInventoryForRange(input);
+    assert.equal(total.totalStart,100); assert.equal(total.totalCurrent,80); assert.equal(total.totalSold,20);
+    assert.equal(total.totalRevenue,380); assert.equal(total.totalProfit,180);
+  }
+});

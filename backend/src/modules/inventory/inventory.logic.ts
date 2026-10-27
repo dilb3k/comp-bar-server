@@ -59,7 +59,7 @@ export function calculateInventoryMetrics({
 export function aggregateInventory(items: any[]) {
   const totals = items.reduce(
     (acc, item) => {
-      acc.totalStart += item.startQuantity || 0;
+      acc.totalStart += (item.startQuantity ?? 0) + (item.lockedSold ?? 0);
       acc.totalCurrent += item.remaining || 0;
       acc.totalSold += item.sold || 0;
       acc.totalRevenue += item.revenue || 0;
@@ -150,7 +150,8 @@ export function aggregateInventoryForRange(items: any[]) {
     }
   }
 
-  const deduplicatedItems = Array.from(uniqueByProductAndDate.values());
+  const deduplicatedItems = Array.from(uniqueByProductAndDate.values()).sort((a, b) =>
+    String(a.date ?? "").localeCompare(String(b.date ?? "")));
 
   const productLatestEntry = new Map<string, any>();
   const productFirstStart = new Map<string, number>();

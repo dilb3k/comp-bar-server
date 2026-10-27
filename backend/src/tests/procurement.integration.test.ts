@@ -1,3 +1,4 @@
+import { productService } from "../modules/products/product.service";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import mongoose from "mongoose";
@@ -295,4 +296,22 @@ test("limited session can revalidate and logout but cannot mutate auth or existi
   assert.equal((await runMiddleware(req))?.statusCode,403);
   const createReq:any={headers:{authorization:`Bearer ${token}`},method:"POST",path:"/",baseUrl:"/api/products"};
   assert.equal((await runMiddleware(createReq))?.statusCode,403);
+});
+
+
+test("product creation records initial stock once; procurement creation owns one batch receipt", async () => {
+  const owner = actor(await user());
+  const payload = {localId: 'initial-product', deviceId: 'test', name: 'Initial product', unit: 'kg', quantity: 2.5, buyPrice: 10, sellPrice: 20};
+  const create = () => withIdempotency(owner.userId, 'initial-retry', async () => ({status:201, data: await productService.create(owner, payload as any)}), {operation:'products.create',payload});
+  await create(); await create();
+  let receipts: any[] = await ProcurementModel.find({ownerAdminId: owner.userId}).lean();
+  assert.equal(receipts.length, 1); assert.equal(receipts[0].totalCost, 25);
+  assert.equal(receipts[0].items[0].quantity, 2.5); assert.equal(receipts[0].items[0].productId, payload.localId);
+  await productService.create(owner, {...payload,localId:'empty-product',quantity:0} as any);
+  assert.equal(await ProcurementModel.countDocuments({ownerAdminId: owner.userId}), 1);
+  await procurementService.submitBatch(owner, [{name:'Batch product',unit:'dona',quantity:3,buyPrice:10,sellPrice:20}]);
+  receipts = await ProcurementModel.find({ownerAdminId: owner.userId}).lean();
+  assert.equal(receipts.length, 2); assert.equal(receipts.reduce((sum,r)=>sum+r.totalCost,0),55);
+  const products: any[] = await ProductModel.find({ownerAdminId:owner.userId}).lean();
+  assert.equal(products.find(p=>p.name==='Batch product').quantity,3);
 });

@@ -227,7 +227,7 @@ export class ProcurementService {
       sellPrice,
       deviceId: item.deviceId ?? "procurement",
       barcodes: item.barcodes,
-    } as any);
+    } as any, { recordInitialReceipt: false });
 
     return {
       productId: (created as any).localId,

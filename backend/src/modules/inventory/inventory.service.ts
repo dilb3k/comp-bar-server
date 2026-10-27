@@ -427,7 +427,9 @@ export class InventoryService {
           let lockedSold = toNumber((existing as any)?.lockedSold ?? 0);
           let nextStartQuantity = startQuantity;
 
-          // `lineRevenue` restates the money taken for everything this entry
+          // `lineRevenue` replaces the TOTAL money taken, including locked sales.
+          // Preserve their historical cost (lockedRevenue - lockedProfit).
+          // It restates the money taken for everything this entry
           // counts as sold — the "Kutilgan tushum" field on the inventory
           // screen. The whole derived span therefore moves into the locked
           // accumulators at that amount and collapses (start meets current),
@@ -435,11 +437,14 @@ export class InventoryService {
           // follows on its own: the cost of those units has not changed, so
           // every so'm taken off the revenue comes straight off the profit.
           const derivedSold = roundQty(Math.max(startQuantity - currentQuantity, 0));
-          if (item.lineRevenue !== undefined && derivedSold > 0) {
+          if (item.lineRevenue !== undefined && roundMoney(item.lineRevenue) > 0 && derivedSold + lockedSold === 0) {
+            throw new AppError("Revenue requires at least one sold unit", 422);
+          }
+          if (item.lineRevenue !== undefined && (derivedSold > 0 || lockedSold > 0)) {
             const stated = roundMoney(item.lineRevenue);
             lockedSold = roundQty(lockedSold + derivedSold);
-            lockedRevenue = roundMoney(lockedRevenue + stated);
-            lockedProfit = roundMoney(lockedProfit + stated - derivedSold * buyPrice);
+            lockedProfit = roundMoney(lockedProfit + stated - lockedRevenue - derivedSold * buyPrice);
+            lockedRevenue = stated;
             nextStartQuantity = currentQuantity;
           }
 
