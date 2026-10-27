@@ -1,3 +1,4 @@
+import { tezcheckRoutes } from "./tezcheck.routes";
 import { Router } from "express";
 import { z } from "zod";
 import { listReviewQueue } from "./payment-history.service";
@@ -30,6 +31,7 @@ import {
 const router = Router();
 
 router.use(botAuth);
+router.use("/payments/tezcheck", tezcheckRoutes);
 
 router.post("/password-reset", validateRequest({ body: passwordResetRequestSchema }), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");

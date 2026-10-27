@@ -78,6 +78,7 @@ export class PaymentService {
     const target=await this.getDocument(paymentId);
     return withOwnerTransaction(target.userId,async session=>{
       const payment=await this.getDocument(paymentId);
+      if(payment.method==='tezcheck'&&!payment.needsReconciliation)throw new AppError('Online payment must be reconciled with provider',409);
       if(payment.status==='rejected') return {payment:payment.toJSON(),wasDowngraded:false,needsReconciliation:payment.needsReconciliation??false};
       if(!['pending','provisioned'].includes(payment.status)) throw new AppError('Payment is not pending',409);
       const legacy=payment.status==='provisioned';

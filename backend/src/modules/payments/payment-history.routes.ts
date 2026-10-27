@@ -34,7 +34,7 @@ export const paymentHistoryQuerySchema = z
         "cancelled",
       ])
       .optional(),
-    method: z.enum(["manual_card", "click"]).optional(),
+    method: z.enum(["manual_card", "click", "tezcheck"]).optional(),
     tier: z.enum(["bor", "pro"]).optional(),
     from: date.optional(),
     to: date.optional(),

@@ -1,6 +1,6 @@
 import { Schema, model, models } from "mongoose";
 
-export type PaymentMethod = "click" | "manual_card";
+export type PaymentMethod = "click" | "manual_card" | "tezcheck";
 // "provisioned" sits between pending and completed: the OCR on a submitted
 // receipt matched the expected amount, so the user's tier was already
 // upgraded on trust, but a human hasn't confirmed the receipt yet. It
@@ -22,6 +22,14 @@ export interface IPaymentSenderCardDetails {
 }
 
 export interface IPayment {
+  tezcheckRequestKey?: string;
+  tezcheckBillId?: string;
+  tezcheckPaymentId?: string;
+  tezcheckPayUrl?: string;
+  tezcheckEventIds?: string[];
+  tezcheckNetMinor?: number;
+  tezcheckFeeMinor?: number;
+  tezcheckRefundedMinor?: number;
   subscriptionId?: string;
   grantId?: string;
   needsReconciliation?: boolean;
@@ -66,6 +74,14 @@ export interface IPayment {
 
 const paymentSchema = new Schema<IPayment>(
   {
+    tezcheckNetMinor: {type:Number},
+    tezcheckFeeMinor: {type:Number},
+    tezcheckRefundedMinor: {type:Number},
+    tezcheckRequestKey: {type:String},
+    tezcheckBillId: {type:String},
+    tezcheckPaymentId: {type:String},
+    tezcheckPayUrl: {type:String},
+    tezcheckEventIds: {type:[String],default:[]},
     subscriptionId: {type:String},
     grantId: {type:String},
     needsReconciliation: {type:Boolean,default:false,index:true},
@@ -75,7 +91,7 @@ const paymentSchema = new Schema<IPayment>(
     tier: { type: String, required: true, enum: ["bor", "pro"] },
     durationMonths: { type: Number, required: true, enum: [1, 6, 12] },
     amount: { type: Number, required: true },
-    method: { type: String, required: true, enum: ["click", "manual_card"] },
+    method: { type: String, required: true, enum: ["click", "manual_card", "tezcheck"] },
     status: {
       type: String,
       required: true,
@@ -157,4 +173,7 @@ paymentSchema.index({userId:1,createdAt:-1});
 paymentSchema.index({clickTransId:1},{unique:true,partialFilterExpression:{clickTransId:{$type:"string"}},name:"idx_unique_click_transaction"});
 paymentSchema.index({merchantTransId:1},{unique:true,partialFilterExpression:{merchantTransId:{$type:"string"}},name:"idx_unique_merchant_transaction"});
 
+for (const field of ['tezcheckRequestKey','tezcheckBillId','tezcheckPaymentId']) {
+  paymentSchema.index({[field]:1},{unique:true,partialFilterExpression:{[field]:{$type:'string'}}});
+}
 export const PaymentModel = models.Payment ?? model<IPayment>("Payment", paymentSchema);
