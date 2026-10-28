@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
-import type { ZodError, ZodTypeAny } from "zod";
+import type { ZodError, ZodType } from "zod";
 
 import { AppError } from "../utils/app-error";
 import { detectLanguage, translateMessage } from "../utils/i18n";
@@ -12,9 +12,9 @@ function formatZodError(error: ZodError, lang: string) {
 }
 
 export function validateRequest(schema: {
-  body?: ZodTypeAny;
-  query?: ZodTypeAny;
-  params?: ZodTypeAny;
+  body?: ZodType<any>;
+  query?: ZodType<any>;
+  params?: ZodType<any>;
 }) {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {

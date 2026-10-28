@@ -44,7 +44,7 @@
     "pdfkit": "^0.20.2",
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -53,9 +53,9 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^2.2.0",
     "@types/node": "^22.10.2",
+    "@types/pdfkit": "^0.17.6",
     "tsx": "^4.19.2",
-    "typescript": "^5.9.3",
-    "@types/pdfkit": "^0.17.6"
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "qs": "^6.16.0",

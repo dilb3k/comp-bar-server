@@ -21,7 +21,11 @@ export const tezcheckPayments={
  async bind(id:string,input:{telegramUserId:string;billId:string;payUrl:string}){
   const url=new URL(input.payUrl);if(url.protocol!=='https:' || !(url.hostname==='tezcheck.uz'||url.hostname.endsWith('.tezcheck.uz')))throw new AppError('Untrusted checkout URL',422);
   const p=await PaymentModel.findOneAndUpdate({_id:id,method:'tezcheck',telegramUserId:input.telegramUserId,status:'pending',$or:[{tezcheckBillId:{$exists:false}},{tezcheckBillId:input.billId}]},{$set:{tezcheckBillId:input.billId,tezcheckPayUrl:input.payUrl}},{new:true});
-  if(!p)throw new AppError('Order cannot be bound',409);return p.toJSON();
+  if(p)return p.toJSON();
+  // A paid webhook can finish before the checkout response is persisted.
+  const completed=await PaymentModel.findOne({_id:id,method:'tezcheck',telegramUserId:input.telegramUserId,status:'completed',tezcheckBillId:input.billId});
+  if(completed)return completed.toJSON();
+  throw new AppError('Order cannot be bound',409);
  },
  async settle(id:string,input:Settlement){
   const target=await PaymentModel.findById(id);if(!target)throw new AppError('Payment not found',404);
